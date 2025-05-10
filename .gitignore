@@ -1,0 +1,14 @@
+# IntelliJ project files
+.idea/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+
+# Credentials / Secrets
+google_creds.json
+tsi_creds.json
