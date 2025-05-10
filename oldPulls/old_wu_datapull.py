@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Load Weather Underground API key
-with open('./wu_api_key.json') as f:
+with open('../wu_api_key.json') as f:
     wu_key = json.load(f)['test_api_key']
 
 stations = [

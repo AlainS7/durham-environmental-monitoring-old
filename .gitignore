@@ -12,3 +12,4 @@ venv/
 # Credentials / Secrets
 google_creds.json
 tsi_creds.json
+wu_api_key.json

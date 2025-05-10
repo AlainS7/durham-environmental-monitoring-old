@@ -5,13 +5,13 @@ import pandas as pd
 from datetime import datetime
 #%%
 
-with open('./tsi_creds.json') as f:
+with open('../tsi_creds.json') as f:
     creds = json.load(f)
 
 tsi_key = creds['key']
 tsi_secret = creds['secret']
 
-with open('./wu_api_key.json') as f:
+with open('../wu_api_key.json') as f:
     wu_key = json.load(f)['test_api_key']
 #%%
 # Authorization flow

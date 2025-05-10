@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hot Durham Sensor Map</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>#map { height: 100vh; }</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([36.0014, -78.9382], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const sensors = [
+    { name: "Duke-MS-01", id: "KNCDURHA548", lat: 36.001, lon: -78.939 },
+    { name: "Duke-MS-02", id: "KNCDURHA549", lat: 36.003, lon: -78.94 },
+    { name: "Duke-MS-03", id: "KNCDURHA209", lat: 36.004, lon: -78.938 },
+    { name: "Duke-MS-05", id: "KNCDURHA284", lat: 36.002, lon: -78.937 }
+  ];
+
+  sensors.forEach(sensor => {
+    const marker = L.circleMarker([sensor.lat, sensor.lon], {
+      radius: 8,
+      color: 'green'
+    }).addTo(map);
+
+    marker.on('mouseover', async () => {
+      try {
+        const res = await fetch(`/api/wu/${sensor.id}`);
+        const data = await res.json();
+        marker.bindTooltip(
+          `<strong>${sensor.name}</strong><br>
+          Temp: ${data.temp}°C<br>
+          Humidity: ${data.humidity}%<br>
+          Wind: ${data.wind} km/h`
+        ).openTooltip();
+      } catch (err) {
+        marker.bindTooltip('Data unavailable').openTooltip();
+      }
+    });
+
+    marker.on('mouseout', () => marker.closeTooltip());
+  });
+</script>
+
+</body>
+</html>
