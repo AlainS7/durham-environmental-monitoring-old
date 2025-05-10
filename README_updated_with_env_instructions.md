@@ -45,7 +45,7 @@ pip install -r requirements.txt
 - Save your TSI API credentials as `tsi_creds.json`
 - Save your Google service account credentials as `google_creds.json`
 
-> ⚠️ Both files are in `.gitignore` and should never be committed to GitHub (for security reasons).
+> ⚠️ Both files are in `.gitignore` and should never be committed to GitHub.
 
 5. **Run the script**
 
@@ -63,15 +63,15 @@ If you're using IntelliJ IDEA with Python:
 python3 -m venv .venv
 ```
 
-2. **In IntelliJ**: Go to `File > Project Structure > SDKs`
-    - Click the **`+`** icon > select `Python SDK`
-    - Choose **"Add Local Interpreter"** > "Virtualenv Environment"
-    - Browse to `.venv/bin/python` and add it
+2. **In IntelliJ**: Go to `File > Project Structure > SDKs`  
+   - Click the **`+`** icon > select `Python SDK`
+   - Choose **"Add Local Interpreter"** > "Virtualenv Environment"
+   - Browse to `.venv/bin/python` and add it
 
 3. Then go to `Project Structure > Project` and set the **Project SDK** to that `.venv` interpreter.
 
-4. Also check `Project Structure > Modules > Dependencies tab`
-    - Make sure **Module SDK** is set to the same `.venv`
+4. Also check `Project Structure > Modules > Dependencies tab`  
+   - Make sure **Module SDK** is set to the same `.venv`
 
 5. Finally, open the IntelliJ terminal and activate your environment (if needed):
 ```bash
