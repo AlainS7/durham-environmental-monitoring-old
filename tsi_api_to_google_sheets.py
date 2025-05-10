@@ -44,7 +44,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_name('google_creds.json', sc
 client = gspread.authorize(creds)
 sheet_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 spreadsheet = client.create(f"TSI Data - {sheet_timestamp}")
-spreadsheet.share('your-email@gmail.com', perm_type='user', role='writer')
+spreadsheet.share('your-email@gmail.com', perm_type='user', role='writer')  #replace your-email@gmail.com
 print("🔗 Google Sheet URL:", spreadsheet.url)
 
 # Columns for data
@@ -56,7 +56,7 @@ for device in devices:
     friendly_name = device['metadata']['friendlyName']
 
     params = {
-        'age': 1,
+        'age': 1,   #how many days back to get data
         'device_id': cloud_device_id
     }
 
