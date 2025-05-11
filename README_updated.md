@@ -100,8 +100,8 @@ __pycache__/
 
 ## 📬 Contact
 
-Alain Soto
-Powered by TSI + Google Sheets + Streamlit.
+Alain Soto - Powered by TSI + Google Sheets + Streamlit.
+
 ---
 
 ## ✅ Notes
