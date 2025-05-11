@@ -98,10 +98,10 @@ __pycache__/
 
 ---
 
-## 📬 Maintainer
+## 📬 Contact
 
-Built by Alain Soto — powered by TSI + Google Sheets + Streamlit.
-
+Alain Soto
+Powered by TSI + Google Sheets + Streamlit.
 ---
 
 ## ✅ Notes
