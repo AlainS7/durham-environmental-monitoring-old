@@ -4,6 +4,7 @@
 # Python bytecode
 __pycache__/
 *.py[cod]
+*.pyc
 
 # Virtual environments
 venv/
@@ -13,3 +14,10 @@ venv/
 google_creds.json
 tsi_creds.json
 wu_api_key.json
+
+# Streamlit's upload cache (just in case)
+.streamlit/
+
+# Output files
+*.zip
+*.log

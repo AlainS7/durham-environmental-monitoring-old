@@ -6,3 +6,4 @@ pandas
 requests
 python-dateutil
 oauth2client
+streamlit
