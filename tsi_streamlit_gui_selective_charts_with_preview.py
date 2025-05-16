@@ -1,4 +1,3 @@
-
 import streamlit as st
 from datetime import datetime
 import subprocess
@@ -15,14 +14,21 @@ st.set_page_config(page_title="TSI Sensor Uploader", layout="centered")
 st.title("📊 TSI Sensor → Google Sheets (Selective Charts + Preview)")
 st.markdown("Upload credentials, select date range and charts, preview them, then upload to Google Sheets.")
 
+# Use session state to persist uploaded TSI file
+if 'tsi_file_content' not in st.session_state:
+    st.session_state['tsi_file_content'] = None
+
 tsi_file = st.file_uploader("🔑 TSI Credentials (tsi_creds.json)", type="json")
+if tsi_file is not None:
+    st.session_state['tsi_file_content'] = tsi_file.getvalue()
+
 google_file = st.file_uploader("📄 Google Credentials (google_creds.json)", type="json")
 
 col1, col2 = st.columns(2)
 with col1:
-    start_date = st.date_input("📅 Start Date", value=datetime(2025, 4, 1))
+    start_date = st.date_input("📅 Start Date", value=datetime(2025, 3, 1))
 with col2:
-    end_date = st.date_input("📅 End Date", value=datetime(2025, 5, 10))
+    end_date = st.date_input("📅 End Date", value=datetime(2025, 4, 30))
 
 combine = st.checkbox("Combine all device data into one sheet", value=False)
 email = st.text_input("📧 Google account to share sheet with:", placeholder="you@example.com")
@@ -47,48 +53,57 @@ def extract_value(row, target_type):
                 return m.get("data", {}).get("value", None)
     return None
 
-if preview and tsi_file:
-    try:
-        creds = json.load(tsi_file)
-        tsi_key = creds['key']
-        tsi_secret = creds['secret']
-        base_url = 'https://api-prd.tsilink.com/api/v3/external'
-        token_url = f"{base_url}/oauth/client_credential/accesstoken"
-        data = {'client_id': tsi_key, 'client_secret': tsi_secret, 'grant_type': 'client_credentials'}
-        token = requests.post(token_url, data=data).json()['access_token']
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-        device_list = requests.get(f"{base_url}/devices", headers=headers).json()
+if preview:
+    if st.session_state['tsi_file_content'] is None:
+        st.error("Please upload the TSI credentials file before previewing charts.")
+    else:
+        try:
+            creds = json.loads(st.session_state['tsi_file_content'])
+            tsi_key = creds['key']
+            tsi_secret = creds['secret']
+            base_url = 'https://api-prd.tsilink.com/api/v3/external'
+            token_url = f"{base_url}/oauth/client_credential/accesstoken"
+            data = {'client_id': tsi_key, 'client_secret': tsi_secret, 'grant_type': 'client_credentials'}
+            token_headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+            token_response = requests.post(token_url, data=data, headers=token_headers)
+            token_json = token_response.json()
+            if 'access_token' not in token_json:
+                st.error(f"TSI authentication failed: {token_json.get('error_description', token_json)}")
+            else:
+                token = token_json['access_token']
+                headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+                device_list = requests.get(f"{base_url}/devices", headers=headers).json()
 
-        st.markdown("### 🔍 Chart Preview (1st Device Only)")
-        first_device = device_list[0]
-        device_id = first_device['device_id']
-        params = {
-            "device_id": device_id,
-            "start_date": start_date.strftime("%Y-%m-%dT00:00:00Z"),
-            "end_date": end_date.strftime("%Y-%m-%dT23:59:59Z")
-        }
-        telemetry = requests.get(f"{base_url}/telemetry", headers=headers, params=params).json()
-        rows = []
-        for row in telemetry:
-            ts_utc = parser.isoparse(row['cloud_timestamp'])
-            ts_est = ts_utc.astimezone(ZoneInfo('America/New_York'))
-            rows.append({
-                "Time": ts_est,
-                "PM2.5": extract_value(row, "mcpm2x5"),
-                "Temp": extract_value(row, "temp_c"),
-                "RH": extract_value(row, "rh_percent")
-            })
-        df = pd.DataFrame(rows).dropna()
+                st.markdown("### 🔍 Chart Preview (1st Device Only)")
+                first_device = device_list[0]
+                device_id = first_device['device_id']
+                params = {
+                    "device_id": device_id,
+                    "start_date": start_date.strftime("%Y-%m-%dT00:00:00Z"),
+                    "end_date": end_date.strftime("%Y-%m-%dT23:59:59Z")
+                }
+                telemetry = requests.get(f"{base_url}/telemetry", headers=headers, params=params).json()
+                rows = []
+                for row in telemetry:
+                    ts_utc = parser.isoparse(row['cloud_timestamp'])
+                    ts_est = ts_utc.astimezone(ZoneInfo('America/New_York'))
+                    rows.append({
+                        "Time": ts_est,
+                        "PM2.5": extract_value(row, "mcpm2x5"),
+                        "Temp": extract_value(row, "temp_c"),
+                        "RH": extract_value(row, "rh_percent")
+                    })
+                df = pd.DataFrame(rows).dropna()
 
-        if pm25:
-            st.line_chart(df.set_index("Time")[["PM2.5"]])
-        if temp_min or temp_max:
-            st.line_chart(df.set_index("Time")[["Temp"]])
-        if rh:
-            st.line_chart(df.set_index("Time")[["RH"]])
+                if pm25:
+                    st.line_chart(df.set_index("Time")[["PM2.5"]])
+                if temp_min or temp_max:
+                    st.line_chart(df.set_index("Time")[["Temp"]])
+                if rh:
+                    st.line_chart(df.set_index("Time")[["RH"]])
 
-    except Exception as e:
-        st.error(f"❌ Failed to preview data: {e}")
+        except Exception as e:
+            st.error(f"❌ Failed to preview data: {e}")
 
 if run:
     if not tsi_file or not google_file:
@@ -117,7 +132,7 @@ if run:
 
         st.info("Running script. This may take a few moments...")
         result = subprocess.run(
-            ["python3", "unified_tsi_complete_script_gui_final_charts_conditional_clean.py"],
+            ["python3", "unified_tsi_complete_script_gui_final_charts_conditional.py"],
             input=f"{combine_arg}\n{start_str}\n{end_str}\n{email}\n" + "\n".join(chart_flags) + "\n",
             capture_output=True,
             text=True
@@ -131,3 +146,11 @@ if run:
         else:
             st.error("❌ Something went wrong.")
             st.text(result.stderr)
+
+if __name__ == "__main__":
+    import sys
+    if not any("streamlit" in arg for arg in sys.argv[0:2]):
+        print("This script is intended to be run with 'streamlit run tsi_streamlit_gui_selective_charts_with_preview.py'.")
+        print("Please use: streamlit run tsi_streamlit_gui_selective_charts_with_preview.py")
+        exit(0)
+

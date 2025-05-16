@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import os
 import requests
@@ -7,6 +6,7 @@ import pandas as pd
 from zoneinfo import ZoneInfo
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from dateutil import parser  # Add this import at the top
 
 # Load TSI API credentials
 with open('tsi_creds.json') as f:
@@ -79,7 +79,7 @@ for device in devices:
 
         for row in response.json():
             tz_utc = row['cloud_timestamp'].replace('T', ' ').replace('Z', '+00:00')
-            tz_utc = datetime.fromisoformat(tz_utc)
+            tz_utc = parser.isoparse(tz_utc)  # Use dateutil's parser instead
             tz_est = tz_utc.astimezone(ZoneInfo('America/New_York'))
             timestamp_hour = tz_est.replace(minute=0, second=0, microsecond=0)
 

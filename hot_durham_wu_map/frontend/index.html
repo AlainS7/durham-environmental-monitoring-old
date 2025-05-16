@@ -18,17 +18,19 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  const sensors = [
+  const wuSensors = [
     { name: "Duke-MS-01", id: "KNCDURHA548", lat: 36.001, lon: -78.939 },
     { name: "Duke-MS-02", id: "KNCDURHA549", lat: 36.003, lon: -78.94 },
     { name: "Duke-MS-03", id: "KNCDURHA209", lat: 36.004, lon: -78.938 },
     { name: "Duke-MS-05", id: "KNCDURHA284", lat: 36.002, lon: -78.937 }
   ];
 
-  sensors.forEach(sensor => {
+  wuSensors.forEach(sensor => {
     const marker = L.circleMarker([sensor.lat, sensor.lon], {
       radius: 8,
-      color: 'green'
+      color: 'green',
+      fillColor: 'green',
+      fillOpacity: 0.7
     }).addTo(map);
 
     marker.on('mouseover', async () => {
@@ -36,18 +38,51 @@
         const res = await fetch(`/api/wu/${sensor.id}`);
         const data = await res.json();
         marker.bindTooltip(
-          `<strong>${sensor.name}</strong><br>
+          `<strong>${sensor.name} (WU)</strong><br>
           Temp: ${data.temp}°C<br>
           Humidity: ${data.humidity}%<br>
           Wind: ${data.wind} km/h`
         ).openTooltip();
       } catch (err) {
-        marker.bindTooltip('Data unavailable').openTooltip();
+        marker.bindTooltip('WU Data unavailable').openTooltip();
       }
     });
-
     marker.on('mouseout', () => marker.closeTooltip());
   });
+
+  // Fetch and display TSI devices
+  fetch('/api/tsi/devices')
+    .then(res => res.json())
+    .then(devices => {
+      devices.forEach(device => {
+        // If you have lat/lon in metadata, use them. Otherwise, use a default or skip.
+        const lat = device.metadata && device.metadata.latitude ? device.metadata.latitude : null;
+        const lon = device.metadata && device.metadata.longitude ? device.metadata.longitude : null;
+        if (lat && lon) {
+          const marker = L.circleMarker([lat, lon], {
+            radius: 8,
+            color: 'blue',
+            fillColor: 'blue',
+            fillOpacity: 0.7
+          }).addTo(map);
+          marker.on('mouseover', async () => {
+            try {
+              const res = await fetch(`/api/tsi/${device.device_id}`);
+              const data = await res.json();
+              marker.bindTooltip(
+                `<strong>${device.metadata.friendlyName || device.device_id} (TSI)</strong><br>
+                PM2.5: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'mcpm2x5')?.data?.value ?? 'N/A'}<br>
+                Temp: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'temp_c')?.data?.value ?? 'N/A'}°C<br>
+                RH: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'rh_percent')?.data?.value ?? 'N/A'}%`
+              ).openTooltip();
+            } catch (err) {
+              marker.bindTooltip('TSI Data unavailable').openTooltip();
+            }
+          });
+          marker.on('mouseout', () => marker.closeTooltip());
+        }
+      });
+    });
 </script>
 
 </body>

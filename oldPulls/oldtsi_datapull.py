@@ -103,3 +103,8 @@ for device in devices:
             print(f"No data found for device {friendly_name}")
     else:
         print(f"Error fetching data for device {friendly_name}")
+        # add local download as an option, see if it can go to onedrive as well
+        # try onedrive // for space
+        # shortcut teams
+        # upload automatically to a folder,
+        # check old code for route
