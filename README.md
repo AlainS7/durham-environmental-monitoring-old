@@ -1,91 +1,91 @@
-# TSI Data Uploader to Google Sheets
+# 🔥 Hot Durham Sensor Dashboard
 
-This Python script connects to the TSI Link API, retrieves air quality telemetry data from registered devices, and uploads the structured data to a Google Sheet — with one worksheet per device.
+This project collects environmental sensor data from TSI devices and uploads it to Google Sheets. It supports both command-line and GUI interfaces, allows for live data preview, and selective chart generation.
+
+---
 
 ## 🚀 Features
 
-- Secure OAuth2 authentication with TSI Link API
-- Retrieves device-level telemetry data
-- Converts timestamps from UTC to Eastern Time (EST)
-- Formats sensor data into structured tables
-- Creates a single Google Sheet with a tab for each device
+- Pulls telemetry from TSI cloud API
+- Logs hourly and weekly summary data
+- Option to combine all sensors into a single sheet
+- Generate charts for PM2.5, Min/Max Temperature, Relative Humidity
+- Streamlit GUI with live chart previews
+- Auto-shares Google Sheet with your email
+- Data exported to Google Sheets using `gspread`
 
-## 📦 Requirements
+---
 
-- Python 3.8+
-- Google Cloud service account credentials (`google_creds.json`)
-- TSI API credentials (`tsi_creds.json`)
-- Required Python packages (see below)
+## 📁 Project Structure
 
-## 🔧 Setup Instructions
+- `creds/` — Credential files (`google_creds.json`, `tsi_creds.json`, `wu_api_key.json`)
+- `scripts/` — Main and utility Python scripts
+- `hot_durham_wu_map/backend/` — Backend server code (Node.js)
+- `hot_durham_wu_map/frontend/` — Frontend code (HTML/JS)
+- `oldPulls/` — Legacy scripts
+- `README.md`, `README_updated.md` — Documentation
+- `requirements.txt`, `package.json` — Dependency management
+
+---
+
+## 🧪 Usage
+
+### ▶️ Command-Line
+
+```bash
+python scripts/combined_wu_tsi_to_sheets.py
+```
+You'll be prompted for:
+- Sheet format (combined or separate)
+- Start and end date
+- Google account email
+- Chart inclusion and selection
+
+---
+
+### 🖼️ GUI (Streamlit)
+
+```bash
+streamlit run scripts/tsi_streamlit_gui_with_preview.py
+```
+1. Upload your credentials
+2. Choose the date range and sheet format
+3. Preview PM2.5, Temp, RH charts
+4. Upload to Google Sheets
+
+---
+
+## ⚙️ Setup
 
 1. **Clone the repository**
-
-```bash
-git clone git@github.com:AQUHI/tsi-data-uploader.git
-cd tsi-data-uploader
-```
+   ```bash
+   git clone <your-repo-url>
+   cd Hot Durham
+   ```
 
 2. **Create a virtual environment (recommended)**
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
 
 3. **Install dependencies**
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
 
 4. **Place credentials**
+   - Save your TSI API credentials as `creds/tsi_creds.json`
+   - Save your Google service account credentials as `creds/google_creds.json`
+   - Save your Weather Underground API key as `creds/wu_api_key.json`
 
-- Save your TSI API credentials as `tsi_creds.json`
-- Save your Google service account credentials as `google_creds.json`
+   > ⚠️ These files are in `.gitignore` and should never be committed to GitHub.
 
-> ⚠️ Both files are in `.gitignore` and should never be committed to GitHub (for security reasons).
+---
 
-5. **Run the script**
+## 📝 Notes
 
-```bash
-python tsi_api_to_google_sheets.py
-```
-
-## 🧠 IntelliJ: Setting Up Python Interpreter and Virtual Environment
-
-If you're using IntelliJ IDEA with Python:
-
-1. **Create a virtual environment manually** (if not done yet):
-
-```bash
-python3 -m venv .venv
-```
-
-2. **In IntelliJ**: Go to `File > Project Structure > SDKs`
-    - Click the **`+`** icon > select `Python SDK`
-    - Choose **"Add Local Interpreter"** > "Virtualenv Environment"
-    - Browse to `.venv/bin/python` and add it
-
-3. Then go to `Project Structure > Project` and set the **Project SDK** to that `.venv` interpreter.
-
-4. Also check `Project Structure > Modules > Dependencies tab`
-    - Make sure **Module SDK** is set to the same `.venv`
-
-5. Finally, open the IntelliJ terminal and activate your environment (if needed):
-```bash
-source .venv/bin/activate
-```
-
-Now IntelliJ will correctly use your virtual environment to run and debug the script.
-
-## 📊 Output
-
-- A Google Sheet is created, named with the current timestamp.
-- Each tab contains telemetry from a different TSI device.
-- Columns include timestamp, PM data, NC counts, temperature, humidity, and calibration offsets.
-
-## 📝 License
-
-© AQUHI. All rights reserved. For internal use or by permission only.
+- For backend/frontend development, see `hot_durham_wu_map/`.
+- For legacy scripts, see `oldPulls/`.
+- For any issues, check the `toDo` file or open an issue on GitHub.

@@ -36,7 +36,14 @@ def get_user_inputs():
         if re.match(r"[^@]+@[^@]+\.[^@]+", share_email):
             break
         print("Invalid email address. Please enter a valid Google email address.")
-    return fetch_wu, fetch_tsi, start_date, end_date, share_email
+    # Local download prompt
+    local_download = input_with_default("Do you want to save the data locally as well? (y/n)", "y").lower() == 'y'
+    if local_download:
+        file_format = input_with_default("Choose file format: 1 for CSV, 2 for Excel", "1")
+        file_format = 'csv' if file_format == '1' else 'excel'
+    else:
+        file_format = None
+    return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format
 
 def create_gspread_client():
     scope = [
@@ -194,11 +201,13 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes'):
     return df
 
 def main():
-    fetch_wu, fetch_tsi, start_date, end_date, share_email = get_user_inputs()
+    fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format = get_user_inputs()
     client = create_gspread_client()
     spreadsheet = client.create(f"Combined WU & TSI Data - {start_date} to {end_date}")
     spreadsheet.share(share_email, perm_type='user', role='writer')
     print("🔗 Google Sheet URL:", spreadsheet.url)
+    if not os.path.exists('data'):
+        os.makedirs('data')
     if fetch_wu:
         print("Fetching Weather Underground data...")
         wu_df = fetch_wu_data(start_date, end_date)
@@ -206,6 +215,13 @@ def main():
         ws_wu.update_title('WU')
         ws_wu.update([wu_df.columns.values.tolist()] + wu_df.values.tolist())
         print("WU data uploaded to sheet 'WU'.")
+        if local_download:
+            wu_filename = f"data/WU_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}"
+            if file_format == 'csv':
+                wu_df.to_csv(wu_filename, index=False)
+            else:
+                wu_df.to_excel(wu_filename, index=False)
+            print(f"WU data also saved locally to {wu_filename}")
     if fetch_tsi:
         print("Fetching TSI data...")
         tsi_df = fetch_tsi_data(start_date, end_date)
@@ -216,6 +232,13 @@ def main():
             ws_tsi.update_title('TSI')
         ws_tsi.update([tsi_df.columns.values.tolist()] + tsi_df.values.tolist())
         print("TSI data uploaded to sheet 'TSI'.")
+        if local_download:
+            tsi_filename = f"data/TSI_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}"
+            if file_format == 'csv':
+                tsi_df.to_csv(tsi_filename, index=False)
+            else:
+                tsi_df.to_excel(tsi_filename, index=False)
+            print(f"TSI data also saved locally to {tsi_filename}")
     print("Done.")
 
 if __name__ == "__main__":
