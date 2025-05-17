@@ -23,3 +23,10 @@ hot_durham_wu_map/backend/wu_api_key.json
 # Output files
 *.zip
 *.log
+
+# Node modules
+node_modules/
+
+# Ignore Java archives and BFG tool
+*.jar
+bfg.jar
