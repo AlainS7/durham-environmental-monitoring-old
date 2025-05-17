@@ -132,7 +132,7 @@ if run:
 
         st.info("Running script. This may take a few moments...")
         result = subprocess.run(
-            ["python3", "unified_tsi_complete_script_gui_final_charts_conditional.py"],
+            ["python3", "tsi_to_google_sheets.py"],
             input=f"{combine_arg}\n{start_str}\n{end_str}\n{email}\n" + "\n".join(chart_flags) + "\n",
             capture_output=True,
             text=True
