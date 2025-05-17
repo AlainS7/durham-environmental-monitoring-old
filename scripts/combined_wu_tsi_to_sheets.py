@@ -17,6 +17,12 @@ from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2.service_account import Credentials as GCreds
 from googleapiclient.discovery import build
 
+# Add for OneDrive upload
+try:
+    import msal
+except ImportError:
+    msal = None
+
 def input_with_default(prompt, default):
     user_input = input(f"{prompt} [{default}]: ").strip()
     return user_input if user_input else default
@@ -41,9 +47,17 @@ def get_user_inputs():
     if local_download:
         file_format = input_with_default("Choose file format: 1 for CSV, 2 for Excel", "1")
         file_format = 'csv' if file_format == '1' else 'excel'
+        download_dir = input_with_default("Enter directory to save files (leave blank for ./data):", "data").strip() or "data"
     else:
         file_format = None
-    return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format
+        download_dir = None
+    # OneDrive upload prompt
+    upload_onedrive = input_with_default("Do you want to upload the exported files to OneDrive? (y/n)", "n").lower() == 'y'
+    if upload_onedrive:
+        onedrive_folder = input_with_default("Enter OneDrive folder path (e.g. /Documents/HotDurham):", "/Documents/HotDurham")
+    else:
+        onedrive_folder = None
+    return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format, download_dir, upload_onedrive, onedrive_folder
 
 def create_gspread_client():
     scope = [
@@ -141,7 +155,7 @@ def fetch_wu_data(start_date_str, end_date_str):
     df = df.fillna('')
     return df
 
-def fetch_tsi_data(start_date, end_date, combine_mode='yes'):
+def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     with open('tsi_creds.json') as f:
         tsi_creds = json.load(f)
     auth_resp = requests.post(
@@ -154,6 +168,7 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes'):
     devices = requests.get("https://api-prd.tsilink.com/api/v3/external/devices", headers=headers).json()
     col = ['timestamp', 'PM 2.5', 'T (C)', 'RH (%)', 'PM 1', 'PM 4', 'PM 10', 'NC (0.5)', 'NC (1)', 'NC (2.5)', 'NC (4)', 'NC (10)', 'PM 2.5 AQI']
     combined_data = []
+    per_device_dfs = {}
     def extract_value(row, t):
         for s in row.get('sensors', []):
             for m in s.get('measurements', []):
@@ -170,6 +185,7 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes'):
         if r.status_code != 200:
             continue
         seen = set()
+        device_data = []
         for row in r.json():
             try:
                 ts = parser.isoparse(row['cloud_timestamp']).astimezone(ZoneInfo('America/New_York'))
@@ -194,20 +210,60 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes'):
                 extract_value(row, 'mcpm2x5_aqi')
             ]
             combined_data.append([name] + values)
+            device_data.append([name] + values)
+        if per_device:
+            headers = ["Device Name"] + col
+            per_device_dfs[name] = pd.DataFrame(device_data, columns=headers)
     headers = ["Device Name"] + col
     df = pd.DataFrame(combined_data, columns=headers)
     df = df.replace([pd.NA, pd.NaT, float('inf'), float('-inf')], '')
     df = df.fillna('')
-    return df
+    return df, per_device_dfs if per_device else None
+
+# OneDrive upload helper
+
+def upload_to_onedrive(local_path, remote_folder, filename):
+    """
+    Uploads a file to OneDrive using Microsoft Graph API.
+    Requires creds/onedrive_creds.json with client_id, client_secret, tenant_id.
+    """
+    if msal is None:
+        print("msal library not installed. Please install it with 'pip install msal'. Skipping OneDrive upload.")
+        return
+    import json
+    with open('creds/onedrive_creds.json') as f:
+        creds = json.load(f)
+    client_id = creds['client_id']
+    client_secret = creds['client_secret']
+    tenant_id = creds['tenant_id']
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    scope = ["https://graph.microsoft.com/.default"]
+    app = msal.ConfidentialClientApplication(client_id, authority=authority, client_credential=client_secret)
+    result = app.acquire_token_for_client(scopes=scope)
+    if "access_token" not in result:
+        print("Failed to get access token for OneDrive upload.")
+        return
+    access_token = result["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/octet-stream"}
+    # Remove leading slash for API
+    remote_folder = remote_folder.lstrip('/')
+    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{remote_folder}/{filename}:/content"
+    with open(local_path, 'rb') as f:
+        resp = requests.put(upload_url, headers=headers, data=f)
+    if resp.status_code in (200, 201):
+        print(f"Uploaded {filename} to OneDrive folder {remote_folder}")
+    else:
+        print(f"Failed to upload {filename} to OneDrive: {resp.status_code} {resp.text}")
 
 def main():
-    fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format = get_user_inputs()
+    fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format, download_dir, upload_onedrive, onedrive_folder = get_user_inputs()
     client = create_gspread_client()
     spreadsheet = client.create(f"Combined WU & TSI Data - {start_date} to {end_date}")
     spreadsheet.share(share_email, perm_type='user', role='writer')
     print("🔗 Google Sheet URL:", spreadsheet.url)
-    if not os.path.exists('data'):
-        os.makedirs('data')
+    exported_files = []
+    if local_download and not os.path.exists(download_dir):
+        os.makedirs(download_dir)
     if fetch_wu:
         print("Fetching Weather Underground data...")
         wu_df = fetch_wu_data(start_date, end_date)
@@ -216,15 +272,16 @@ def main():
         ws_wu.update([wu_df.columns.values.tolist()] + wu_df.values.tolist())
         print("WU data uploaded to sheet 'WU'.")
         if local_download:
-            wu_filename = f"data/WU_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}"
+            wu_filename = os.path.join(download_dir, f"WU_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}")
             if file_format == 'csv':
                 wu_df.to_csv(wu_filename, index=False)
             else:
                 wu_df.to_excel(wu_filename, index=False)
             print(f"WU data also saved locally to {wu_filename}")
+            exported_files.append(wu_filename)
     if fetch_tsi:
         print("Fetching TSI data...")
-        tsi_df = fetch_tsi_data(start_date, end_date)
+        tsi_df, per_device_dfs = fetch_tsi_data(start_date, end_date, per_device=True)
         if fetch_wu:
             ws_tsi = spreadsheet.add_worksheet(title='TSI', rows=str(len(tsi_df)+1), cols=str(len(tsi_df.columns)))
         else:
@@ -233,14 +290,27 @@ def main():
         ws_tsi.update([tsi_df.columns.values.tolist()] + tsi_df.values.tolist())
         print("TSI data uploaded to sheet 'TSI'.")
         if local_download:
-            tsi_filename = f"data/TSI_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}"
+            tsi_filename = os.path.join(download_dir, f"TSI_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}")
             if file_format == 'csv':
                 tsi_df.to_csv(tsi_filename, index=False)
             else:
                 tsi_df.to_excel(tsi_filename, index=False)
             print(f"TSI data also saved locally to {tsi_filename}")
+            exported_files.append(tsi_filename)
+            # Per-device export
+            for device_name, device_df in per_device_dfs.items():
+                safe_name = re.sub(r'[^\w\-_\. ]', '_', device_name)
+                device_file = os.path.join(download_dir, f"TSI_{safe_name}_{start_date}_to_{end_date}.{ 'csv' if file_format == 'csv' else 'xlsx'}")
+                if file_format == 'csv':
+                    device_df.to_csv(device_file, index=False)
+                else:
+                    device_df.to_excel(device_file, index=False)
+                print(f"TSI per-device data saved to {device_file}")
+                exported_files.append(device_file)
+    # Upload to OneDrive if requested
+    if upload_onedrive:
+        for fpath in exported_files:
+            fname = os.path.basename(fpath)
+            upload_to_onedrive(fpath, onedrive_folder, fname)
     print("Done.")
-
-if __name__ == "__main__":
-    main()
 

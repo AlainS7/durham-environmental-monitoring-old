@@ -14,6 +14,8 @@ venv/
 google_creds.json
 tsi_creds.json
 wu_api_key.json
+creds/*.json
+hot_durham_wu_map/backend/wu_api_key.json
 
 # Streamlit's upload cache (just in case)
 .streamlit/
