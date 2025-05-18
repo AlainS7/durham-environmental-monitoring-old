@@ -81,8 +81,7 @@ creds = Credentials.from_service_account_file(google_creds_path, scopes=scope)
 client = gspread.authorize(creds)
 
 spreadsheet = client.create(f"TSI Data - {datetime.now().strftime('%Y%m%d_%H%M%S')}")
-# Delete the default empty sheet
-spreadsheet.del_worksheet(spreadsheet.sheet1)
+
 print("🔗 Google Sheet URL:", spreadsheet.url)
 
 if user_email:
