@@ -1,31 +1,49 @@
-# Data Pull & Storage
-local download as an option, see if it can go to onedrive as well
-future goal: upload automatically to a folder
-check old code for route
-one folder dedicated to raw data pull (weekly or biweekly for both)
-one automatically updated folder (to never lose data each week, to bypass 90 day expiration)
-52 files in a year for one
-another one with the whole year's data in one sheet (keeps getting updated)
-check wu's max pull, tsi is 15 mins
-pull every week
-inside data is very important to pull often
+# Hot Durham Project: To-Do List
 
-# Analysis & Visualization
-analyzing data:
-    see why it decreases
-visualization
-plot with each device
-different categories on same plot (try at least 2 data categories)
+## I. Data Pull & Storage
 
-# Collaboration & Automation
-shortcut teams
-organizing lab and playing with sensors next week
+### A. Local & Cloud Storage Options
+- [ ] Implement local download as an option for pulled data.
+- [ ] Investigate and implement OneDrive upload functionality for local downloads.
+    - Future Goal: Automate uploads to a specific OneDrive folder.
+    - Check old code for existing routes/logic for cloud uploads.
 
-# Future/Advanced
-for someone (pub or with access) to request data themselves
-maybe with server
-maybe credentials stay local (so they don't need it)
+### B. Data Organization & Retention
+- [ ] Designate a dedicated folder for raw data pulls (consider weekly or bi-weekly pulls for both WU and TSI).
+- [ ] Create an automatically updated folder/system to prevent data loss due to the 90-day expiration limit (especially for TSI).
+    - This ensures a continuous archive of all sensor readings.
+- [ ] Maintain 52 individual weekly data files for each year (one file per week).
+- [ ] Create a consolidated sheet/file containing the entire year's data, which is continuously updated.
 
+### C. Data Pull Frequency & Limits
+- [ ] Confirm Weather Underground's maximum data pull limits and frequency.
+    - Note: TSI's limit is data every 15 minutes.
+- [ ] Establish a regular data pull schedule (e.g., weekly) to ensure timely data collection.
+- [ ] Prioritize frequent pulls for "inside data" (if this refers to specific indoor sensors or critical data points).
 
+## II. Data Analysis & Visualization
 
-fix the options, if i say only wu then the code does not work the same
+### A. Data Analysis
+- [ ] Investigate reasons for any observed decreases or anomalies in sensor data.
+    - Perform trend analysis.
+    - Correlate with external events if possible.
+
+### B. Data Visualization
+- [ ] Create plots/charts for each individual device/sensor.
+- [ ] Develop visualizations that combine multiple data categories on the same plot.
+    - Aim for at least two different data categories (e.g., PM2.5 and Temperature) on a single chart for comparison.
+- [ ] Ensure device names are clearly visible in chart legends for easy identification.
+
+## III. Script & Application Enhancements
+
+- [ ] Review and refactor existing scripts for clarity, efficiency, and error handling.
+- [ ] Enhance the Streamlit GUI (`tsi_streamlit_gui_with_preview.py`):
+    - [ ] Add support for Weather Underground data.
+    - [ ] Improve live preview capabilities.
+- [ ] Update and maintain `requirements.txt` and `README.md` as the project evolves.
+
+## IV. General Tasks & Reminders
+
+- [ ] Regularly back up credential files and critical data.
+- [ ] Document any new features or changes to the workflow.
+- [ ] Address any items noted in the `toDo` file (meta-task!).
