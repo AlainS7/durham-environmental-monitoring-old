@@ -26,3 +26,6 @@ for someone (pub or with access) to request data themselves
 maybe with server
 maybe credentials stay local (so they don't need it)
 
+
+
+fix the options, if i say only wu then the code does not work the same

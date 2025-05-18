@@ -449,9 +449,9 @@ if __name__ == "__main__":
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
             weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'TSI Weekly Summary'), None)
             if weekly_id:
-                # create a separate sheet for charts
+                # create TSI weekly charts
                 charts_title = 'TSI Weekly Charts'
-                charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=100, cols=20)
+                charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
                 # retrieve chart sheet ID
                 meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
                 charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
@@ -499,7 +499,7 @@ if __name__ == "__main__":
                         series.append({
                             "series": {"sourceRange": {"sources": [{
                                         "sheetId": pivot_id,
-                                        "startRowIndex": 1,
+                                        "startRowIndex": 0,  # include header row for legend labels
                                         "endRowIndex": len(weeks)+1,
                                         "startColumnIndex": i,
                                         "endColumnIndex": i+1
@@ -549,3 +549,50 @@ if __name__ == "__main__":
                     }
                     sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
                     chart_row_offset += len(weeks) + 3
+            # now generate WU charts unconditionally (if data present)
+            if fetch_wu and wu_df is not None and not wu_df.empty:
+                wu_charts_title = 'WU Charts'
+                wu_charts_ws = spreadsheet.add_worksheet(title=wu_charts_title, rows=20000, cols=20)
+                meta3 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                wu_charts_id = next((s['properties']['sheetId'] for s in meta3['sheets'] if s['properties']['title'] == wu_charts_title), None)
+                wu_chart_row_offset = 0
+                wu_metrics = [
+                    ('tempAvg', 'Temp (°C)'),
+                    ('humidityAvg', 'Humidity (%)'),
+                    ('solarRadiationHigh', 'Solar Radiation (High)'),
+                    ('windspeedAvg', 'Wind Speed (Avg)'),
+                    ('precipTotal', 'Precipitation (Total)'),
+                    ('heatindexAvg', 'Heat Index')
+                ]
+                # map Weather Underground station IDs to friendly names
+                station_name_map = {
+                    'KNCDURHA548': 'Duke-MS-01',
+                    'KNCDURHA549': 'Duke-MS-02',
+                    'KNCDURHA209': 'Duke-MS-03',
+                    'KNCDURHA551': 'Duke-MS-05',
+                    'KNCDURHA555': 'Duke-MS-06',
+                    'KNCDURHA556': 'Duke-MS-07',
+                    'KNCDURHA590': 'Duke-Kestrel-01'
+                }
+                times = sorted(wu_df['obsTimeUtc'].unique())
+                # preserve IDs for data lookup but use names for headers
+                station_ids = sorted(wu_df['stationId'].unique())
+                station_names = [station_name_map.get(s, s) for s in station_ids]
+                for metric, y_label in wu_metrics:
+                    pivot_header = ['Time'] + station_names
+                    pivot_rows = [[t] + [wu_df[(wu_df['obsTimeUtc'] == t) & (wu_df['stationId'] == s)][metric].iloc[0] if not wu_df[(wu_df['obsTimeUtc'] == t) & (wu_df['stationId'] == s)][metric].empty else '' for s in station_ids] for t in times]
+                    title = f"WU {metric} Data"
+                    try:
+                        old = spreadsheet.worksheet(title)
+                        spreadsheet.del_worksheet(old)
+                    except:
+                        pass
+                    pivot_ws = spreadsheet.add_worksheet(title=title, rows=len(pivot_rows)+1, cols=len(station_names)+1)
+                    pivot_ws.update([pivot_header] + pivot_rows)
+                    meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                    pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
+                    series = [{'series': {'sourceRange': {'sources': [{'sheetId': pivot_id, 'startRowIndex': 0, 'endRowIndex': len(times)+1, 'startColumnIndex': i, 'endColumnIndex': i+1}]}}, 'targetAxis': 'LEFT_AXIS'} for i, _ in enumerate(station_ids, start=1)]
+                    domain = {'domain': {'sourceRange': {'sources': [{'sheetId': pivot_id, 'startRowIndex': 1, 'endRowIndex': len(times)+1, 'startColumnIndex': 0, 'endColumnIndex': 1}]}}}
+                    chart = {'requests': [{'addChart': {'chart': {'spec': {'title': f'WU {metric} Trend', 'basicChart': {'chartType': 'LINE', 'legendPosition': 'BOTTOM_LEGEND', 'axis': [{'position': 'BOTTOM_AXIS', 'title': 'Time'}, {'position': 'LEFT_AXIS', 'title': y_label}], 'domains': [domain], 'series': series}}, 'position': {'overlayPosition': {'anchorCell': {'sheetId': wu_charts_id, 'rowIndex': wu_chart_row_offset, 'columnIndex': 0}}}}}}]}
+                    sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                    wu_chart_row_offset += 15  # stack charts with fixed 15-row spacing
