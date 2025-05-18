@@ -503,7 +503,7 @@ if __name__ == "__main__":
                                         "endRowIndex": len(weeks)+1,
                                         "startColumnIndex": i,
                                         "endColumnIndex": i+1
-                        }]}},
+                            }]}},
                             "targetAxis": "LEFT_AXIS"
                         })
                     # domain
@@ -530,7 +530,8 @@ if __name__ == "__main__":
                                                     {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
                                                 "domains": [domain],
-                                                "series": series
+                                                "series": series,
+                                                "headerCount": 1
                                             }
                                         },
                                         "position": {
@@ -593,6 +594,6 @@ if __name__ == "__main__":
                     pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
                     series = [{'series': {'sourceRange': {'sources': [{'sheetId': pivot_id, 'startRowIndex': 0, 'endRowIndex': len(times)+1, 'startColumnIndex': i, 'endColumnIndex': i+1}]}}, 'targetAxis': 'LEFT_AXIS'} for i, _ in enumerate(station_ids, start=1)]
                     domain = {'domain': {'sourceRange': {'sources': [{'sheetId': pivot_id, 'startRowIndex': 1, 'endRowIndex': len(times)+1, 'startColumnIndex': 0, 'endColumnIndex': 1}]}}}
-                    chart = {'requests': [{'addChart': {'chart': {'spec': {'title': f'WU {metric} Trend', 'basicChart': {'chartType': 'LINE', 'legendPosition': 'BOTTOM_LEGEND', 'axis': [{'position': 'BOTTOM_AXIS', 'title': 'Time'}, {'position': 'LEFT_AXIS', 'title': y_label}], 'domains': [domain], 'series': series}}, 'position': {'overlayPosition': {'anchorCell': {'sheetId': wu_charts_id, 'rowIndex': wu_chart_row_offset, 'columnIndex': 0}}}}}}]}
+                    chart = {'requests': [{'addChart': {'chart': {'spec': {'title': f'WU {metric} Trend', 'basicChart': {'chartType': 'LINE', 'legendPosition': 'BOTTOM_LEGEND', 'axis': [{'position': 'BOTTOM_AXIS', 'title': 'Time'}, {'position': 'LEFT_AXIS', 'title': y_label}], 'domains': [domain], 'series': series, 'headerCount': 1}}, 'position': {'overlayPosition': {'anchorCell': {'sheetId': wu_charts_id, 'rowIndex': wu_chart_row_offset, 'columnIndex': 0}}}}}}]}
                     sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
                     wu_chart_row_offset += 15  # stack charts with fixed 15-row spacing
