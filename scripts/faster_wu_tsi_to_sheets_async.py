@@ -42,10 +42,10 @@ def read_or_fallback(prompt, default=None):
         return val if val else (default if default is not None else "")
 
 # Use robust file path gathering for creds
-script_dir = os.path.dirname(os.path.abspath(__file__))
-ts_creds_abs = os.path.join(script_dir, 'creds', 'tsi_creds.json')
-google_creds_abs = os.path.join(script_dir, 'creds', 'google_creds.json')
-wu_api_key_abs = os.path.join(script_dir, 'creds', 'wu_api_key.json')
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
+google_creds_abs = os.path.join(project_root, 'creds', 'google_creds.json')
+wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
 if not os.path.exists(ts_creds_abs):
     print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
@@ -114,7 +114,7 @@ def fetch_wu_data(start_date_str, end_date_str):
         {"name": "Duke-MS-07", "stationId": "KNCDURHA556"},
         {"name": "Duke-Kestrel-01", "stationId": "KNCDURHA590"}
     ]
-    def get_station_data(stationId, date, key):
+    def get_station_data(stationId, date, key, max_retries=2):
         base_url = "https://api.weather.com/v2"
         params = {
             "stationId": stationId,
@@ -125,18 +125,22 @@ def fetch_wu_data(start_date_str, end_date_str):
             "numericPrecision": "decimal",
         }
         url = os.path.join(base_url, "pws", "history/hourly")
-        try:
-            r = requests.get(url, params=params, timeout=30)
-            return r
-        except requests.exceptions.Timeout:
-            print(f"Timeout occurred for station {stationId} on {date}")
-            return None
-        except requests.exceptions.RequestException as e:
-            print(f"Request failed for station {stationId} on {date}: {e}")
-            return None
+        timeout_seconds = 15
+        backoff_seconds = 1
+        for attempt in range(1, max_retries + 1):
+            try:
+                r = requests.get(url, params=params, timeout=(5,10))
+                if r.status_code == 200:
+                    return r
+                print(f"Non-200 response for station {stationId} on {date}: {r.status_code}")
+            except requests.exceptions.RequestException as e:
+                print(f"Attempt {attempt} failed for {stationId} on {date}: {e}")
+            import time
+            time.sleep(backoff_seconds)
+        return None
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-    def fetch_all_data_parallel(stations, start_date, end_date, wu_key, max_workers=30):
+    def fetch_all_data_parallel(stations, start_date, end_date, wu_key, max_workers=20):
         all_data = []
         total_requests = ((end_date - start_date).days + 1) * len(stations)
         tasks = []
@@ -153,7 +157,7 @@ def fetch_wu_data(start_date_str, end_date_str):
                         all_data.append(result)
                     pbar.update(1)
         return all_data
-    all_data = fetch_all_data_parallel(stations, start_date, end_date, wu_key, max_workers=30)
+    all_data = fetch_all_data_parallel(stations, start_date, end_date, wu_key, max_workers=20)
     collected_data = []
     columns = [
         'stationId', 'obsTimeUtc', 'tempAvg', 'humidityAvg', 'solarRadiationHigh',
@@ -257,13 +261,15 @@ async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_
         async with semaphore:
             return await fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, per_device)
     async with httpx.AsyncClient() as client:
-        for coro in tqdm([bound_fetch(device) for device in devices], desc="Fetching TSI data", unit="device"):
-            result = await coro
-            results.append(result)
+        # launch all fetch tasks concurrently
+        tasks = [asyncio.create_task(bound_fetch(device)) for device in devices]
+        # collect results as they complete with a progress bar
+        for fut in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching TSI data", unit="device"):
+            results.append(await fut)
     return results
 
 def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
-    ts_creds_abs = os.path.abspath(os.path.join(os.path.dirname(__file__), 'creds', 'tsi_creds.json'))
+    # Use the global ts_creds_abs defined at the top
     if not os.path.exists(ts_creds_abs):
         print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
         return pd.DataFrame(), {}
@@ -442,59 +448,97 @@ if __name__ == "__main__":
             sheet_id = spreadsheet.id
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
             weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'TSI Weekly Summary'), None)
-            anchor_col = len(weekly_headers) - 1
             if weekly_id:
-                row_idx = 1
-                for device, rows in weekly_summary.items():
-                    chart_req = {
+                # create a separate sheet for charts
+                charts_title = 'TSI Weekly Charts'
+                charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=100, cols=20)
+                # retrieve chart sheet ID
+                meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
+                # prepare vertical offset for each chart
+                chart_row_offset = 0
+                # pivot and chart per-device lines
+                data_columns = [
+                    ('Avg PM2.5', 'PM2.5 (µg/m³)'),
+                    ('Min Temp', 'Min Temp (°C)'),
+                    ('Max Temp', 'Max Temp (°C)'),
+                    ('Avg RH', 'Avg RH (%)')
+                ]
+                for col_name, y_label in data_columns:
+                    # pivot weekly_summary
+                    weeks = sorted({row[0] for rows in weekly_summary.values() for row in rows})
+                    devices = list(weekly_summary.keys())
+                    pivot_header = ['Week Start'] + devices
+                    idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
+                    pivot_rows = []
+                    for week in weeks:
+                        row = [week]
+                        for device in devices:
+                            val = ''
+                            for r in weekly_summary.get(device, []):
+                                if r[0] == week:
+                                    val = r[idx_map[col_name]]
+                                    break
+                            row.append(val)
+                        pivot_rows.append(row)
+                    # recreate pivot sheet
+                    pivot_title = f"{col_name} Weekly Data"
+                    try:
+                        old = spreadsheet.worksheet(pivot_title)
+                        spreadsheet.del_worksheet(old)
+                    except:
+                        pass
+                    pivot_ws = spreadsheet.add_worksheet(title=pivot_title, rows=len(pivot_rows)+1, cols=len(devices)+1)
+                    pivot_ws.update([pivot_header] + pivot_rows)
+                    # get pivot sheetId
+                    meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                    pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == pivot_title)
+                    # build chart series
+                    series = []
+                    for i, device in enumerate(devices, start=1):
+                        series.append({
+                            "series": {"sourceRange": {"sources": [{
+                                        "sheetId": pivot_id,
+                                        "startRowIndex": 1,
+                                        "endRowIndex": len(weeks)+1,
+                                        "startColumnIndex": i,
+                                        "endColumnIndex": i+1
+                        }]}},
+                            "targetAxis": "LEFT_AXIS"
+                        })
+                    # domain
+                    domain = {"domain": {"sourceRange": {"sources": [{
+                                "sheetId": pivot_id,
+                                "startRowIndex": 1,
+                                "endRowIndex": len(weeks)+1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                    }]}}}
+                    # add chart for this metric
+                    chart = {
                         "requests": [
                             {
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Weekly PM2.5 Trend - {device}",
+                                            "title": f"Weekly {col_name} Trend (By Device)",
                                             "basicChart": {
                                                 "chartType": "LINE",
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
                                                     {"position": "BOTTOM_AXIS", "title": "Week"},
-                                                    {"position": "LEFT_AXIS", "title": "PM2.5 (µg/m³)"}
+                                                    {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
-                                                "domains": [{
-                                                    "domain": {
-                                                        "sourceRange": {
-                                                            "sources": [{
-                                                                "sheetId": weekly_id,
-                                                                "startRowIndex": row_idx,
-                                                                "endRowIndex": row_idx + len(rows),
-                                                                "startColumnIndex": 1,
-                                                                "endColumnIndex": 2
-                                                            }]
-                                                        }
-                                                    }
-                                                }],
-                                                "series": [{
-                                                    "series": {
-                                                        "sourceRange": {
-                                                            "sources": [{
-                                                                "sheetId": weekly_id,
-                                                                "startRowIndex": row_idx,
-                                                                "endRowIndex": row_idx + len(rows),
-                                                                "startColumnIndex": 2,
-                                                                "endColumnIndex": 3
-                                                            }]
-                                                        }
-                                                    },
-                                                    "targetAxis": "LEFT_AXIS"
-                                                }]
+                                                "domains": [domain],
+                                                "series": series
                                             }
                                         },
                                         "position": {
                                             "overlayPosition": {
                                                 "anchorCell": {
-                                                    "sheetId": weekly_id,
-                                                    "rowIndex": row_idx,
-                                                    "columnIndex": anchor_col
+                                                    "sheetId": charts_id,
+                                                    "rowIndex": chart_row_offset,
+                                                    "columnIndex": 0
                                                 }
                                             }
                                         }
@@ -503,6 +547,5 @@ if __name__ == "__main__":
                             }
                         ]
                     }
-                    sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart_req).execute()
-                    row_idx += len(rows)
-
+                    sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                    chart_row_offset += len(weeks) + 3

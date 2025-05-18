@@ -33,7 +33,7 @@ This project collects environmental sensor data from TSI devices and uploads it 
 ### ▶️ Command-Line
 
 ```bash
-python scripts/combined_wu_tsi_to_sheets.py
+python scripts/combined_wu_tsi_to_sheets_using_parallel.py
 ```
 You'll be prompted for:
 - Sheet format (combined or separate)

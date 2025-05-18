@@ -1,28 +1,28 @@
-        # add local download as an option, see if it can go to onedrive as well
-        # try onedrive // for space
-        # shortcut teams
-future goal:    upload automatically to a folder,
+# Data Pull & Storage
+local download as an option, see if it can go to onedrive as well
+future goal: upload automatically to a folder
 check old code for route
 one folder dedicated to raw data pull (weekly or biweekly for both)
-one automatically updated folder (to never lose data each week 90 day thing)
+one automatically updated folder (to never lose data each week, to bypass 90 day expiration)
 52 files in a year for one
 another one with the whole year's data in one sheet (keeps getting updated)
 check wu's max pull, tsi is 15 mins
 pull every week
-inside data is very important to pull
+inside data is very important to pull often
 
+# Analysis & Visualization
 analyzing data:
     see why it decreases
-
 visualization
 plot with each device
 different categories on same plot (try at least 2 data categories)
 
-for gmail: put into folder (hotdurham)
-
+# Collaboration & Automation
+shortcut teams
 organizing lab and playing with sensors next week
 
-future:
+# Future/Advanced
 for someone (pub or with access) to request data themselves
 maybe with server
 maybe credentials stay local (so they don't need it)
+

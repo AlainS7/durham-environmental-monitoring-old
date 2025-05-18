@@ -492,60 +492,74 @@ if __name__ == "__main__":
             sheet_id = spreadsheet.id
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
             weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'TSI Weekly Summary'), None)
-            # Dynamically set anchor column to just after the last column
             anchor_col = len(weekly_headers) - 1
             if weekly_id:
-                row_idx = 1
-                for device, rows in weekly_summary.items():
+                # For each data column (e.g., PM2.5, Min Temp, Max Temp, Avg RH), create a chart with all devices as series
+                data_columns = [
+                    (2, 'Avg PM2.5', 'PM2.5 (µg/m³)'),
+                    (3, 'Min Temp', 'Min Temp (°C)'),
+                    (4, 'Max Temp', 'Max Temp (°C)'),
+                    (5, 'Avg RH', 'Avg RH (%)')
+                ]
+                for col_idx, col_name, y_label in data_columns:
+                    device_row_ranges = []
+                    row_idx = 1
+                    for device, rows in weekly_summary.items():
+                        device_row_ranges.append((device, row_idx, row_idx + len(rows)))
+                        row_idx += len(rows)
+                    chart_series = []
+                    for device, start_row, end_row in device_row_ranges:
+                        chart_series.append({
+                            "series": {
+                                "sourceRange": {
+                                    "sources": [{
+                                        "sheetId": weekly_id,
+                                        "startRowIndex": start_row,
+                                        "endRowIndex": end_row,
+                                        "startColumnIndex": col_idx,
+                                        "endColumnIndex": col_idx + 1
+                                    }]
+                                }
+                            },
+                            "targetAxis": "LEFT_AXIS",
+                            "seriesOverride": {"pointShape": "CIRCLE"}
+                        })
                     chart_req = {
                         "requests": [
                             {
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Weekly PM2.5 Trend - {device}",
+                                            "title": f"Weekly {col_name} Trend (All Devices)",
                                             "basicChart": {
                                                 "chartType": "LINE",
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
                                                     {"position": "BOTTOM_AXIS", "title": "Week"},
-                                                    {"position": "LEFT_AXIS", "title": "PM2.5 (µg/m³)"}
+                                                    {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
                                                 "domains": [{
                                                     "domain": {
                                                         "sourceRange": {
                                                             "sources": [{
                                                                 "sheetId": weekly_id,
-                                                                "startRowIndex": row_idx,
-                                                                "endRowIndex": row_idx + len(rows),
+                                                                "startRowIndex": 1,
+                                                                "endRowIndex": row_idx,
                                                                 "startColumnIndex": 1,
                                                                 "endColumnIndex": 2
                                                             }]
                                                         }
                                                     }
                                                 }],
-                                                "series": [{
-                                                    "series": {
-                                                        "sourceRange": {
-                                                            "sources": [{
-                                                                "sheetId": weekly_id,
-                                                                "startRowIndex": row_idx,
-                                                                "endRowIndex": row_idx + len(rows),
-                                                                "startColumnIndex": 2,
-                                                                "endColumnIndex": 3
-                                                            }]
-                                                        }
-                                                    },
-                                                    "targetAxis": "LEFT_AXIS"
-                                                }]
+                                                "series": chart_series
                                             }
                                         },
                                         "position": {
                                             "overlayPosition": {
                                                 "anchorCell": {
                                                     "sheetId": weekly_id,
-                                                    "rowIndex": row_idx,
-                                                    "columnIndex": anchor_col
+                                                    "rowIndex": 0,
+                                                    "columnIndex": anchor_col + col_idx
                                                 }
                                             }
                                         }
@@ -555,5 +569,3 @@ if __name__ == "__main__":
                         ]
                     }
                     sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart_req).execute()
-                    row_idx += len(rows)
-
