@@ -31,7 +31,7 @@ with col2:
     end_date = st.date_input("📅 End Date", value=datetime(2025, 4, 30))
 
 combine = st.checkbox("Combine all device data into one sheet", value=False)
-email = st.text_input("📧 Google account to share sheet with:", placeholder="you@example.com")
+email = st.text_input("📧 Google account to share sheet with:", value="hotdurham@gmail.com", placeholder="you@example.com")
 
 make_charts = st.radio("Include charts in Google Sheet?", ["yes", "no"], index=0)
 
@@ -113,9 +113,9 @@ if run:
     elif not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         st.error("Please enter a valid email address.")
     else:
-        with open("tsi_creds.json", "wb") as f:
+        with open("creds/tsi_creds.json", "wb") as f:
             f.write(tsi_file.read())
-        with open("google_creds.json", "wb") as f:
+        with open("creds/google_creds.json", "wb") as f:
             f.write(google_file.read())
 
         combine_arg = "yes" if combine else "no"

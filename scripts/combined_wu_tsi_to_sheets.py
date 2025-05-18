@@ -23,38 +23,71 @@ try:
 except ImportError:
     msal = None
 
-def input_with_default(prompt, default):
-    user_input = input(f"{prompt} [{default}]: ").strip()
-    return user_input if user_input else default
+def read_or_fallback(prompt, default=None):
+    try:
+        if sys.stdin.isatty():
+            val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+            return val if val else (default if default is not None else "")
+        import select
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            val = sys.stdin.readline().strip()
+            return val if val else (default if default is not None else "")
+        else:
+            val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+            return val if val else (default if default is not None else "")
+    except Exception:
+        val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+        return val if val else (default if default is not None else "")
+
+# Use robust file path gathering for creds
+script_dir = os.path.dirname(os.path.abspath(__file__))
+tsi_creds_path = os.path.join(script_dir, '..', 'creds', 'tsi_creds.json')
+google_creds_path = os.path.join(script_dir, '..', 'creds', 'google_creds.json')
+wu_api_key_path = os.path.join(script_dir, '..', 'creds', 'wu_api_key.json')
+
+# Normalize to absolute paths
+ts_creds_abs = os.path.abspath(tsi_creds_path)
+google_creds_abs = os.path.abspath(google_creds_path)
+wu_api_key_abs = os.path.abspath(wu_api_key_path)
+
+if not os.path.exists(ts_creds_abs):
+    print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
+    sys.exit(1)
+if not os.path.exists(google_creds_abs):
+    print(f"❌ ERROR: Google credentials not found at {google_creds_abs}. Please upload or place your google_creds.json in the creds/ folder.")
+    sys.exit(1)
+if not os.path.exists(wu_api_key_abs):
+    print(f"❌ ERROR: WU API key not found at {wu_api_key_abs}. Please upload or place your wu_api_key.json in the creds/ folder.")
+    sys.exit(1)
 
 def get_user_inputs():
     print("Select data sources to fetch:")
     print("1. Weather Underground (WU)")
     print("2. TSI")
     print("3. Both")
-    source_choice = input_with_default("Enter 1, 2, or 3", "3")
+    source_choice = read_or_fallback("Enter 1, 2, or 3", "3")
     fetch_wu = source_choice in ("1", "3")
     fetch_tsi = source_choice in ("2", "3")
-    start_date = input_with_default("Enter the start date (YYYY-MM-DD):", "2025-03-01")
-    end_date = input_with_default("Enter the end date (YYYY-MM-DD):", "2025-04-30")
+    start_date = read_or_fallback("Enter the start date (YYYY-MM-DD):", "2025-03-01")
+    end_date = read_or_fallback("Enter the end date (YYYY-MM-DD):", "2025-04-30")
     while True:
-        share_email = input("Enter the email address to share the Google Sheet with: ").strip()
+        share_email = read_or_fallback("Enter the email address to share the Google Sheet with:", "hotdurham@gmail.com").strip()
         if re.match(r"[^@]+@[^@]+\.[^@]+", share_email):
             break
         print("Invalid email address. Please enter a valid Google email address.")
     # Local download prompt
-    local_download = input_with_default("Do you want to save the data locally as well? (y/n)", "y").lower() == 'y'
+    local_download = read_or_fallback("Do you want to save the data locally as well? (y/n)", "y").lower() == 'y'
     if local_download:
-        file_format = input_with_default("Choose file format: 1 for CSV, 2 for Excel", "1")
+        file_format = read_or_fallback("Choose file format: 1 for CSV, 2 for Excel", "1")
         file_format = 'csv' if file_format == '1' else 'excel'
-        download_dir = input_with_default("Enter directory to save files (leave blank for ./data):", "data").strip() or "data"
+        download_dir = read_or_fallback("Enter directory to save files (leave blank for ./data):", "data").strip() or "data"
     else:
         file_format = None
         download_dir = None
     # OneDrive upload prompt
-    upload_onedrive = input_with_default("Do you want to upload the exported files to OneDrive? (y/n)", "n").lower() == 'y'
+    upload_onedrive = read_or_fallback("Do you want to upload the exported files to OneDrive? (y/n)", "n").lower() == 'y'
     if upload_onedrive:
-        onedrive_folder = input_with_default("Enter OneDrive folder path (e.g. /Documents/HotDurham):", "/Documents/HotDurham")
+        onedrive_folder = read_or_fallback("Enter OneDrive folder path (e.g. /Documents/HotDurham):", "/Documents/HotDurham")
     else:
         onedrive_folder = None
     return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format, download_dir, upload_onedrive, onedrive_folder
@@ -64,15 +97,15 @@ def create_gspread_client():
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_name('google_creds.json', scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name(google_creds_abs, scope)
     return gspread.authorize(creds)
 
 def create_gspread_client_v2():
     scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-    return GCreds.from_service_account_file('google_creds.json', scopes=scope)
+    return GCreds.from_service_account_file(google_creds_abs, scopes=scope)
 
 def fetch_wu_data(start_date_str, end_date_str):
-    with open('./wu_api_key.json') as f:
+    with open(wu_api_key_abs) as f:
         wu_key = json.load(f)['test_api_key']
     stations = [
         {"name": "Duke-MS-01", "stationId": "KNCDURHA548"},
@@ -156,7 +189,7 @@ def fetch_wu_data(start_date_str, end_date_str):
     return df
 
 def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
-    with open('tsi_creds.json') as f:
+    with open(ts_creds_abs) as f:
         tsi_creds = json.load(f)
     auth_resp = requests.post(
         'https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken',

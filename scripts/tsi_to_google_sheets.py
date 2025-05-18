@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta
 import os
 import sys
@@ -13,42 +12,59 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import time
 
-def read_or_fallback(prompt):
+def read_or_fallback(prompt, default=None):
     import sys
     try:
         if sys.stdin.isatty():
-            # Interactive terminal
-            return input(prompt)
+            val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+            return val if val else (default if default is not None else "")
         import select
         if select.select([sys.stdin], [], [], 0.1)[0]:
-            return sys.stdin.readline().strip()
+            val = sys.stdin.readline().strip()
+            return val if val else (default if default is not None else "")
         else:
-            return input(prompt)
+            val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+            return val if val else (default if default is not None else "")
     except Exception:
-        return input(prompt)
+        val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+        return val if val else (default if default is not None else "")
 
-combine_mode = read_or_fallback("Combine all data into one sheet? (yes/no): ").lower()
-start_date = read_or_fallback("Enter start date (YYYY-MM-DD): ")
-end_date = read_or_fallback("Enter end date (YYYY-MM-DD): ")
-user_email = read_or_fallback("Enter email to share the sheet with: ")
+combine_mode = read_or_fallback("Combine all data into one sheet? (y/n):", "n").lower()
+start_date = read_or_fallback("Enter start date (YYYY-MM-DD):", "2025-03-01")
+end_date = read_or_fallback("Enter end date (YYYY-MM-DD):", "2025-04-30")
+user_email = read_or_fallback("Enter email to share the sheet with:", "hotdurham@gmail.com")
 
-make_charts = read_or_fallback("Include charts in Google Sheet? (yes/no): ").strip().lower()
+make_charts = read_or_fallback("Include charts in Google Sheet? (y/n): ").strip().lower()
 include_pm25 = include_temp_min = include_temp_max = include_rh = False
-if make_charts == "yes":
-    include_pm25 = read_or_fallback("Include PM2.5 chart? (yes/no): ").strip().lower() == "yes"
-    include_temp_min = read_or_fallback("Include Min Temperature chart? (yes/no): ").strip().lower() == "yes"
-    include_temp_max = read_or_fallback("Include Max Temperature chart? (yes/no): ").strip().lower() == "yes"
-    include_rh = read_or_fallback("Include Relative Humidity chart? (yes/no): ").strip().lower() == "yes"
-
+if make_charts == "y":
+    include_pm25 = read_or_fallback("Include PM2.5 chart? (y/n): ").strip().lower() == "y"
+    include_temp_min = read_or_fallback("Include Min Temperature chart? (y/n): ").strip().lower() == "y"
+    include_temp_max = read_or_fallback("Include Max Temperature chart? (y/n): ").strip().lower() == "y"
+    include_rh = read_or_fallback("Include Relative Humidity chart? (y/n): ").strip().lower() == "y"
 
 start_dt = datetime.fromisoformat(start_date).strftime('%Y-%m-%dT00:00:00Z')
 end_dt = datetime.fromisoformat(end_date).strftime('%Y-%m-%dT23:59:59Z')
 
-with open('tsi_creds.json') as f:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+tsi_creds_path = os.path.join(script_dir, '../creds/tsi_creds.json')
+google_creds_path = os.path.join(script_dir, '../creds/google_creds.json')
+
+ts_creds_abs = os.path.abspath(tsi_creds_path)
+google_creds_abs = os.path.abspath(google_creds_path)
+
+
+if not os.path.exists(ts_creds_abs):
+    print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
+    sys.exit(1)
+if not os.path.exists(google_creds_abs):
+    print(f"❌ ERROR: Google credentials not found at {google_creds_abs}. Please upload or place your google_creds.json in the creds/ folder.")
+    sys.exit(1)
+
+with open(ts_creds_abs) as f:
     tsi_creds = json.load(f)
 
-with open('google_creds.json') as f:
-    google_creds_path = 'google_creds.json'
+with open(google_creds_abs) as f:
+    pass  # google_creds_path is already set above
 
 auth_resp = requests.post(
     'https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken',
@@ -65,6 +81,8 @@ creds = Credentials.from_service_account_file(google_creds_path, scopes=scope)
 client = gspread.authorize(creds)
 
 spreadsheet = client.create(f"TSI Data - {datetime.now().strftime('%Y%m%d_%H%M%S')}")
+# Delete the default empty sheet
+spreadsheet.del_worksheet(spreadsheet.sheet1)
 print("🔗 Google Sheet URL:", spreadsheet.url)
 
 if user_email:
@@ -124,12 +142,12 @@ for d in devices:
             extract_value(row, 'mcpm2x5_aqi')
         ]
 
-        if combine_mode == "yes":
+        if combine_mode == "y":
             combined_data.append([name] + values)
         else:
             data.append(values)
 
-    if combine_mode != "yes" and data:
+    if combine_mode != "y" and data:
         df = pd.DataFrame(data, columns=col)
         ws = spreadsheet.add_worksheet(title=name[:50], rows=str(len(df)+1), cols=str(len(col)))
         ws.update([col] + data)
@@ -159,7 +177,7 @@ for d in devices:
                 round(row['Avg RH'], 2)
             ])
 
-if combine_mode == "yes" and combined_data:
+if combine_mode == "y" and combined_data:
     headers = ["Device Name"] + col
     ws = spreadsheet.sheet1
     ws.update([headers] + combined_data)
@@ -251,8 +269,8 @@ if weekly_id:
         row_idx += len(rows)
 
 
-if make_charts == "yes":
-    
+if make_charts == "y":
+
     # === Add Chart Sheets ===
     import time
     sheets_api = build('sheets', 'v4', credentials=creds)
