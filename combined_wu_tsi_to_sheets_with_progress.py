@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import re
 import requests
 from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from zoneinfo import ZoneInfo
 from dateutil import parser
@@ -46,9 +47,10 @@ google_creds_path = os.path.join(script_dir, '..', 'creds', 'google_creds.json')
 wu_api_key_path = os.path.join(script_dir, '..', 'creds', 'wu_api_key.json')
 
 # Normalize to absolute paths
-ts_creds_abs = os.path.abspath(tsi_creds_path)
-google_creds_abs = os.path.abspath(google_creds_path)
-wu_api_key_abs = os.path.abspath(wu_api_key_path)
+project_root = os.path.dirname(os.path.abspath(__file__))
+ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
+google_creds_abs = os.path.join(project_root, 'creds', 'google_creds.json')
+wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
 if not os.path.exists(ts_creds_abs):
     print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
@@ -191,25 +193,108 @@ def fetch_wu_data(start_date_str, end_date_str):
     df = df.fillna('')
     return df
 
-def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
-    import pandas as pd
-    import requests
-    import time
-    from datetime import datetime
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from tqdm import tqdm
-    # Ensure ISO 8601 format for TSI API
-    def to_iso8601(date_str):
+
+import nest_asyncio
+import asyncio
+import httpx
+import pandas as pd
+from datetime import datetime, timedelta
+
+nest_asyncio.apply()
+
+def to_iso8601(date_str):
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%Y-%m-%dT00:00:00Z")
+    except Exception:
+        return date_str
+
+async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, per_device):
+    device_id = device.get('device_id')
+    device_name = device.get('metadata', {}).get('friendlyName') or device_id
+    data_url = "https://api-prd.tsilink.com/api/v3/external/telemetry"
+    params = {
+        'device_id': device_id,
+        'start_date': start_date_iso,
+        'end_date': end_date_iso
+    }
+
+    for attempt in range(3):
         try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            return dt.strftime("%Y-%m-%dT00:00:00Z")
+            response = await client.get(data_url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                break
         except Exception:
-            return date_str  # fallback if already in correct format
-    start_date_iso = to_iso8601(start_date)
-    end_date_iso = to_iso8601(end_date)
+            pass
+        await asyncio.sleep(2)
+
+    if response.status_code != 200:
+        print(f"Failed to fetch data for device {device_name}. Status code: {response.status_code}")
+        return None, device_name
+
+    data_json = response.json()
+    records = data_json if isinstance(data_json, list) else data_json.get('data', [])
+    if not records:
+        return None, device_name
+
+    df = pd.DataFrame(records)
+
+    def extract_measurements(sensors):
+        result = {}
+        if isinstance(sensors, list):
+            for sensor in sensors:
+                for m in sensor.get('measurements', []):
+                    mtype = m.get('type')
+                    value = m.get('data', {}).get('value')
+                    timestamp = m.get('data', {}).get('timestamp')
+                    if mtype is not None:
+                        if mtype in result:
+                            prev_timestamp = result.get(mtype + '_ts')
+                            if prev_timestamp and timestamp and timestamp > prev_timestamp:
+                                result[mtype] = value
+                                result[mtype + '_ts'] = timestamp
+                        else:
+                            result[mtype] = value
+                            result[mtype + '_ts'] = timestamp
+        return {k: v for k, v in result.items() if not k.endswith('_ts')}
+
+    if 'sensors' in df.columns:
+        measurements_df = df['sensors'].apply(extract_measurements).apply(pd.Series)
+        df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
+
+    df['device_id'] = device_id
+    df['device_name'] = device_name
+
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        df = df.dropna(subset=['timestamp'])
+        df['timestamp_hour'] = df['timestamp'].dt.floor('h')
+        df = df.sort_values('timestamp').drop_duplicates(['timestamp_hour'], keep='first')
+        df = df.drop(columns=['timestamp_hour'])
+
+    return df, device_name
+
+async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_device):
+    async with httpx.AsyncClient() as client:
+        tasks = [
+            fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, per_device)
+            for device in devices
+        ]
+        return await asyncio.gather(*tasks)
+
+def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
+    import json
+    from pathlib import Path
+
+    import os
+    ts_creds_abs = os.path.abspath(os.path.join(os.path.dirname(__file__), 'creds', 'tsi_creds.json'))
+    if not os.path.exists(ts_creds_abs):
+        print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
+        return pd.DataFrame(), {}
     with open(ts_creds_abs) as f:
         tsi_creds = json.load(f)
-    auth_resp = requests.post(
+
+    auth_resp = httpx.post(
         'https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken',
         params={'grant_type': 'client_credentials'},
         data={'client_id': tsi_creds['key'], 'client_secret': tsi_creds['secret']}
@@ -218,48 +303,41 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     if not access_token:
         print("Failed to authenticate with TSI API.")
         return pd.DataFrame(), {}
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    # 1. Get device list
+
     devices_url = "https://api-prd.tsilink.com/api/v3/external/devices"
-    devices_resp = requests.get(devices_url, headers=headers)
+    devices_resp = httpx.get(devices_url, headers=headers)
     if devices_resp.status_code != 200:
         print(f"Failed to fetch TSI devices. Status code: {devices_resp.status_code}")
-        print(f"Response: {devices_resp.text}")
         return pd.DataFrame(), {}
-    try:
-        devices_json = devices_resp.json()
-        # Fetch a sample device's data to inspect available fields
-        if devices_json and isinstance(devices_json, list):
-            sample_device = devices_json[0]
-            device_id = sample_device.get('device_id')
-            if device_id:
-                data_url = "https://api-prd.tsilink.com/api/v3/external/telemetry"
-                params = {
-                    'device_id': device_id,
-                    'start_date': start_date_iso,
-                    'end_date': end_date_iso
-                }
-                data_resp = requests.get(data_url, headers=headers, params=params)
-                if data_resp.status_code == 200:
-                    data_json = data_resp.json()
-                    if isinstance(data_json, list) and data_json:
-                        pass  # No print
-                    else:
-                        pass  # No print
-                else:
-                    pass  # No print
-    except Exception as e:
-        print("Failed to parse TSI devices response as JSON:", e)
-        return pd.DataFrame(), {}
-    devices = devices_json  # FIX: API returns a list, not a dict
-    if not devices:
+
+    devices_json = devices_resp.json()
+    if not devices_json or not isinstance(devices_json, list):
         print("No TSI devices found.")
         return pd.DataFrame(), {}
-    # Always include all devices, no prompt
-    selected_devices = devices
+
+    selected_devices = devices_json
+    start_date_iso = to_iso8601(start_date)
+    end_date_iso = to_iso8601(end_date)
+
+    results = asyncio.run(fetch_all_devices(selected_devices, start_date_iso, end_date_iso, headers, per_device))
+
+    all_rows = []
+    per_device_dfs = {}
+    for df, device_name in results:
+        if df is not None:
+            all_rows.append(df)
+            if per_device:
+                per_device_dfs[device_name] = df.copy()
+
+    if not all_rows:
+        return pd.DataFrame(), per_device_dfs
+    combined_df = pd.concat(all_rows, ignore_index=True)
+    return combined_df, per_device_dfs
 
     def fetch_device_data(device):
         device_id = device.get('device_id')
