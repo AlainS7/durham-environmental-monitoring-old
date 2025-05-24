@@ -29,10 +29,10 @@
     - Correlate with external events if possible.
 
 ### B. Data Visualization
-- [ ] Create plots/charts for each individual device/sensor.
+- [x] Create plots/charts for each individual device/sensor.
 - [ ] Develop visualizations that combine multiple data categories on the same plot.
     - Aim for at least two different data categories (e.g., PM2.5 and Temperature) on a single chart for comparison.
-- [ ] Ensure device names are clearly visible in chart legends for easy identification.
+- [x] Ensure device names are clearly visible in chart legends for easy identification.
 
 ## III. Script & Application Enhancements
 

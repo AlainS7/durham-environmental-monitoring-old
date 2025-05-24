@@ -31,10 +31,15 @@ def read_or_fallback(prompt, default=None):
         if sys.stdin.isatty():
             val = input(f"{prompt} [{default}]: ") if default else input(prompt)
             return val if val else (default if default is not None else "")
-        if select.select([sys.stdin], [], [], 0.1)[0]:
-            val = sys.stdin.readline().strip()
-            return val if val else (default if default is not None else "")
-        else:
+        try:
+            import select
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                val = sys.stdin.readline().strip()
+                return val if val else (default if default is not None else "")
+            else:
+                val = input(f"{prompt} [{default}]: ") if default else input(prompt)
+                return val if val else (default if default is not None else "")
+        except ImportError:
             val = input(f"{prompt} [{default}]: ") if default else input(prompt)
             return val if val else (default if default is not None else "")
     except Exception:
@@ -131,6 +136,7 @@ def fetch_wu_data(start_date_str, end_date_str):
         for attempt_num in range(1, max_attempts + 1):
             response = None
             try:
+                # print(f"DEBUG: WU API Request (httpx) to {url} with params {{'stationId': '{stationId}', 'date': '{date}'}} using timeout={client.timeout} (Attempt: {attempt_num})")
                 response = client.get(url, params=params)
 
                 if response.status_code == 200:
@@ -156,6 +162,7 @@ def fetch_wu_data(start_date_str, end_date_str):
                             ]
                             processed_rows.append(row)
                         if not processed_rows:
+                            # print(f"No observations found for {stationId} on {date}.")
                             return []
                         return processed_rows
                     except json.JSONDecodeError:
@@ -166,10 +173,10 @@ def fetch_wu_data(start_date_str, end_date_str):
                     print(f"No content (204) for {stationId} on {date}. Assuming no data.")
                     return []
                 else:
-                    print(f"Attempt {attempt_num}/{max_attempts} received non-200 response for {stationId} on {date}: {response.status_code}")
+                    print(f"Attempt {attempt_num}/{max_attempts} received non-200 response (httpx) for {stationId} on {date}: {response.status_code} {response.text[:200]}")
 
             except httpx.TimeoutException:
-                print(f"Attempt {attempt_num}/{max_attempts} timed out for {stationId} on {date}.")
+                print(f"Attempt {attempt_num}/{max_attempts} timed out (httpx) for {stationId} on {date}.")
             except httpx.RequestError as e:
                 print(f"Attempt {attempt_num}/{max_attempts} failed for {stationId} on {date} with httpx.RequestError: {e}")
             except Exception as e:
@@ -183,7 +190,7 @@ def fetch_wu_data(start_date_str, end_date_str):
             else:
                 print(f"Final attempt {attempt_num}/{max_attempts} failed for {stationId} on {date}.")
 
-        print(f"All {max_attempts} attempts failed to fetch/process data for {stationId} on {date} after exhausting retries.")
+        print(f"All {max_attempts} attempts failed to fetch/process data for {stationId} on {date} after exhausting retries (httpx).")
         return None
 
     start_date_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
@@ -348,7 +355,6 @@ if __name__ == "__main__":
         fetch_wu, fetch_tsi, start_date, end_date, share_email,
         local_download, file_format, download_dir, upload_onedrive, onedrive_folder
     ) = get_user_inputs()
-    
     if fetch_wu:
         wu_df = fetch_wu_data(start_date, end_date)
     else:
@@ -394,12 +400,10 @@ if __name__ == "__main__":
         for k, v in rename_map.items():
             if k in tsi_df.columns:
                 tsi_df.rename(columns={k: v}, inplace=True)
-        
         combined_data = []
         summary_data = []
         weekly_summary = {}
         seen = set()
-        
         for _, row in tsi_df.iterrows():
             name = row.get('Device Name', row.get('device_name', 'Unknown'))
             ts = row.get('timestamp')
@@ -428,10 +432,6 @@ if __name__ == "__main__":
                 row.get('PM 2.5 AQI', '')
             ]
             combined_data.append([name] + values)
-        
-        # Create DataFrame for aggregation BEFORE sanitizing for Google Sheets
-        combined_df = pd.DataFrame(combined_data, columns=["Device Name"] + col)
-        
         def sanitize_for_gs(data):
             def safe(x):
                 if isinstance(x, float):
@@ -439,10 +439,13 @@ if __name__ == "__main__":
                         return ''
                 return x
             return [[safe(v) for v in row] for row in data]
-        
+        combined_data = sanitize_for_gs(combined_data)
+        summary_data = sanitize_for_gs(summary_data)
+        for k in weekly_summary:
+            weekly_summary[k] = sanitize_for_gs(weekly_summary[k])
+        combined_df = pd.DataFrame(combined_data, columns=["Device Name"] + col)
         for name, group in combined_df.groupby('Device Name'):
             group = group.copy()
-            # Keep numeric columns as numeric for aggregation
             for key in ['PM 2.5', 'T (C)', 'RH (%)']:
                 group[key] = pd.to_numeric(group[key], errors='coerce')
             summary_data.append([
@@ -467,426 +470,394 @@ if __name__ == "__main__":
                     round(wrow['Avg RH'], 2) if not pd.isna(wrow['Avg RH']) else ''
                 ])
         
-        # NOW sanitize the combined_data for Google Sheets upload
-        combined_data = sanitize_for_gs(combined_data)
-        
-        # Debug: Check if weekly summary has data
-        if weekly_summary:
-            total_weeks = sum(len(rows) for rows in weekly_summary.values())
-            print(f"📊 Weekly summary generated: {len(weekly_summary)} devices, {total_weeks} total week entries")
-        else:
-            print("⚠️ No weekly summary data generated")
-        
-        # Update spreadsheet with TSI data
+        # Only update Google Sheets if spreadsheet was created successfully
         if spreadsheet is not None:
             ws = spreadsheet.sheet1
             ws.update([['Device Name'] + col] + combined_data)
             ws.update_title(f"Combined_TSI_{start_date}_to_{end_date}")
-            
             if summary_data:
                 summary_headers = ['Device Name', 'Avg PM2.5 (µg/m³)', 'Max Temp (°C)', 'Min Temp (°C)', 'Avg RH (%)']
                 ws_summary = spreadsheet.add_worksheet(title="TSI Summary", rows=len(summary_data)+1, cols=5)
                 ws_summary.update([summary_headers] + summary_data)
-        
         weekly_headers = ['Device Name', 'Week Start', 'Avg PM2.5 (µg/m³)', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg RH (%)']
         weekly_rows = []
         for device, rows in weekly_summary.items():
             for row in rows:
                 weekly_rows.append([device] + row)
-        
         if weekly_rows and spreadsheet is not None:
             weekly_ws = spreadsheet.add_worksheet(title="TSI Weekly Summary", rows=len(weekly_rows)+1, cols=6)
             weekly_ws.update([weekly_headers] + weekly_rows)
-
-    # Add WU data to spreadsheet if available
-    if fetch_wu and wu_df is not None and not wu_df.empty and spreadsheet is not None:
-        wu_headers = wu_df.columns.tolist()
-        wu_ws = spreadsheet.add_worksheet(title="WU Data", rows=len(wu_df)+1, cols=len(wu_headers))
-        wu_ws.update([wu_headers] + wu_df.values.tolist())
-
-    # Add charts
-    add_charts = read_or_fallback("Do you want to add charts to the Google Sheet? (y/n)", "y").lower() == 'y'
-    if add_charts and spreadsheet is not None:
-        creds = create_gspread_client_v2()
-        sheets_api = build('sheets', 'v4', credentials=creds)
-        sheet_id = spreadsheet.id
-        meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-        
-        # Create charts sheet
-        charts_title = 'TSI and WU Charts'
-        charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
-        meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-        charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
-        chart_row_offset = 0
-        
-        # TSI Weekly Charts
-        if fetch_tsi and tsi_df is not None and not tsi_df.empty and weekly_summary:
-            data_columns = [
-                ('Avg PM2.5', 'PM2.5 (µg/m³)'),
-                ('Min Temp', 'Min Temp (°C)'),
-                ('Max Temp', 'Max Temp (°C)'),
-                ('Avg RH', 'Avg RH (%)')
-            ]
-            
-            for col_name, y_label in data_columns:
-                weeks = sorted({row[0] for rows in weekly_summary.values() for row in rows})
-                devices = list(weekly_summary.keys())
-                pivot_header = ['Week Start'] + devices
-                idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
-                
-                pivot_rows = []
-                for week in weeks:
-                    row = [week]
-                    for device in devices:
-                        val = ''
-                        for r in weekly_summary.get(device, []):
-                            if r[0] == week:
-                                val = r[idx_map[col_name]]
-                                break
-                        row.append(val)
-                    pivot_rows.append(row)
-                
-                def safe_gs_value(x):
-                    if isinstance(x, (pd.Timestamp,)):
-                        return str(x)
-                    if isinstance(x, float):
-                        if pd.isna(x) or x == float('inf') or x == float('-inf'):
-                            return ''
-                    if x is None:
-                        return ''
-                    return str(x)
-                
-                pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
-                pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
-                
-                # Skip if there's no meaningful data (only empty strings or no data)
-                has_data = False
-                for row in pivot_rows_safe[1:]:  # Skip header row
-                    for val in row[1:]:  # Skip week column
-                        if val and val != '' and val != '0' and val != '0.0':
-                            try:
-                                if float(val) > 0:
-                                    has_data = True
+        if fetch_wu and wu_df is not None and not wu_df.empty and spreadsheet is not None:
+            wu_headers = wu_df.columns.tolist()
+            wu_ws = spreadsheet.add_worksheet(title="WU Data", rows=len(wu_df)+1, cols=len(wu_headers))
+            wu_ws.update([wu_headers] + wu_df.values.tolist())
+        add_charts = read_or_fallback("Do you want to add charts to the Google Sheet? (y/n)", "y").lower() == 'y'
+        if add_charts and spreadsheet is not None:
+            creds = create_gspread_client_v2()
+            sheets_api = build('sheets', 'v4', credentials=creds)
+            sheet_id = spreadsheet.id
+            meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'TSI Weekly Summary'), None)
+            if weekly_id:
+                charts_title = 'TSI and WU Weekly Charts'
+                charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
+                meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
+                chart_row_offset = 0
+                data_columns = [
+                    ('Avg PM2.5', 'PM2.5 (µg/m³)'),
+                    ('Min Temp', 'Min Temp (°C)'),
+                    ('Max Temp', 'Max Temp (°C)'),
+                    ('Avg RH', 'Avg RH (%)')
+                ]
+                for col_name, y_label in data_columns:
+                    weeks = sorted({row[0] for rows in weekly_summary.values() for row in rows})
+                    devices = list(weekly_summary.keys())
+                    pivot_header = ['Week Start'] + devices
+                    idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
+                    # Build wide-format pivot: each row is [week, dev1_val, dev2_val, ...]
+                    pivot_rows = []
+                    for week in weeks:
+                        row = [week]
+                        for device in devices:
+                            val = ''
+                            for r in weekly_summary.get(device, []):
+                                if r[0] == week:
+                                    val = r[idx_map[col_name]]
                                     break
-                            except (ValueError, TypeError):
-                                pass
-                    if has_data:
-                        break
-                
-                if not has_data:
-                    print(f"⚠️ Skipping {col_name} Weekly Data chart - no meaningful data found")
-                    continue
-                
-                pivot_title = f"{col_name} Weekly Data"
-                try:
-                    old = spreadsheet.worksheet(pivot_title)
-                    spreadsheet.del_worksheet(old)
-                except Exception:
-                    pass
-                
-                pivot_ws = spreadsheet.add_worksheet(title=pivot_title, rows=len(pivot_rows_safe)+1, cols=len(devices)+1)
-                pivot_ws.update([pivot_header_safe] + pivot_rows_safe)
-                
-                meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == pivot_title)
-                
-                series = []
-                for i, device in enumerate(devices, start=1):
-                    series.append({
-                        "series": {"sourceRange": {"sources": [{
-                                    "sheetId": pivot_id,
-                                    "startRowIndex": 0,
-                                    "endRowIndex": len(weeks)+1,
-                                    "startColumnIndex": i,
-                                    "endColumnIndex": i+1
-                        }]}},
-                        "targetAxis": "LEFT_AXIS"
-                    })
-                
-                domain = {"domain": {"sourceRange": {"sources": [{
-                            "sheetId": pivot_id,
-                            "startRowIndex": 1,
-                            "endRowIndex": len(weeks)+1,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 1
-                }]}}}
-                
-                chart = {
-                    "requests": [{
-                        "addChart": {
-                            "chart": {
-                                "spec": {
-                                    "title": f"Weekly {col_name} Trend (By Device)",
-                                    "basicChart": {
-                                        "chartType": "LINE",
-                                        "legendPosition": "BOTTOM_LEGEND",
-                                        "axis": [
-                                            {"position": "BOTTOM_AXIS", "title": "Week"},
-                                            {"position": "LEFT_AXIS", "title": y_label}
-                                        ],
-                                        "domains": [domain],
-                                        "series": series,
-                                        "headerCount": 1
-                                    }
-                                },
-                                "position": {
-                                    "overlayPosition": {
-                                        "anchorCell": {
-                                            "sheetId": charts_id,
-                                            "rowIndex": chart_row_offset,
-                                            "columnIndex": 0
+                            row.append(val)
+                        pivot_rows.append(row)
+                    def safe_gs_value(x):
+                        import pandas as pd
+                        import numpy as np
+                        if isinstance(x, (pd.Timestamp,)):
+                            return str(x)
+                        if isinstance(x, float):
+                            if pd.isna(x) or x == float('inf') or x == float('-inf'):
+                                return ''
+                            return x  # Keep numeric values as numbers
+                        if isinstance(x, (int, np.integer)):
+                            return x  # Keep integers as numbers
+                        if x is None:
+                            return ''
+                        # Try to convert string representations of numbers to float
+                        try:
+                            float_val = float(x)
+                            return float_val
+                        except (ValueError, TypeError):
+                            return str(x)
+                    pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
+                    pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
+                    pivot_title = f"{col_name} Weekly Data"
+                    try:
+                        old = spreadsheet.worksheet(pivot_title)
+                        spreadsheet.del_worksheet(old)
+                    except Exception:
+                        pass
+                    pivot_ws = spreadsheet.add_worksheet(title=pivot_title, rows=len(pivot_rows_safe)+1, cols=len(devices)+1)
+                    pivot_ws.update([pivot_header_safe] + pivot_rows_safe)
+                    meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                    pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == pivot_title)
+                    series = []
+                    for i, device in enumerate(devices, start=1):
+                        series.append({
+                            "series": {"sourceRange": {"sources": [{
+                                        "sheetId": pivot_id,
+                                        "startRowIndex": 0,
+                                        "endRowIndex": len(weeks)+1,
+                                        "startColumnIndex": i,
+                                        "endColumnIndex": i+1
+                            }]}},
+                            "targetAxis": "LEFT_AXIS"
+                        })
+                    domain = {"domain": {"sourceRange": {"sources": [{
+                                "sheetId": pivot_id,
+                                "startRowIndex": 1,
+                                "endRowIndex": len(weeks)+1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                    }]}}}
+                    chart = {
+                        "requests": [
+                            {
+                                "addChart": {
+                                    "chart": {
+                                        "spec": {
+                                            "title": f"Weekly {col_name} Trend (By Device)",
+                                            "basicChart": {
+                                                "chartType": "LINE",
+                                                "legendPosition": "BOTTOM_LEGEND",
+                                                "axis": [
+                                                    {"position": "BOTTOM_AXIS", "title": "Week"},
+                                                    {"position": "LEFT_AXIS", "title": y_label}
+                                                ],
+                                                "domains": [domain],
+                                                "series": series,
+                                                "headerCount": 1
+                                            }
+                                        },
+                                        "position": {
+                                            "overlayPosition": {
+                                                "anchorCell": {
+                                                    "sheetId": charts_id,
+                                                    "rowIndex": chart_row_offset,
+                                                    "columnIndex": 0
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }]
-                }
-                sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                chart_row_offset += 20
-
-        # WU Charts
-        if fetch_wu and wu_df is not None and not wu_df.empty:
-            wu_metrics = [
-                ('tempAvg', 'Temperature (C)'),
-                ('humidityAvg', 'Humidity (%)'),
-                ('solarRadiationHigh', 'Solar Radiation'),
-                ('precipTotal', 'Precipitation (mm)'),
-                ('windspeedAvg', 'Wind Speed (Avg)')
-            ]
-            
-            # Parse obsTimeUtc back to datetime for proper time handling
-            wu_df['obsTimeUtc'] = pd.to_datetime(wu_df['obsTimeUtc'], errors='coerce')
-            wu_df = wu_df.dropna(subset=['obsTimeUtc'])
-            
-            station_id_to_name = {
-                "KNCDURHA548": "Duke-MS-01",
-                "KNCDURHA549": "Duke-MS-02",
-                "KNCDURHA209": "Duke-MS-03",
-                "KNCDURHA551": "Duke-MS-05",
-                "KNCDURHA555": "Duke-MS-06",
-                "KNCDURHA556": "Duke-MS-07",
-                "KNCDURHA590": "Duke-Kestrel-01"
-            }
-            wu_df['Station Name'] = wu_df['stationID'].map(station_id_to_name).fillna(wu_df['stationID'])
-            station_names = sorted(wu_df['Station Name'].unique())
-            
-            all_times = sorted(wu_df['obsTimeUtc'].unique())
-            
-            # Ensure all metric columns are numeric for pivot_table
-            for metric, _ in wu_metrics:
-                if metric in wu_df.columns:
-                    wu_df[metric] = pd.to_numeric(wu_df[metric], errors='coerce')
-            
-            for metric, y_label in wu_metrics:
-                # Skip if metric column doesn't exist
-                if metric not in wu_df.columns:
-                    continue
-                    
-                # Use pivot_table for cleaner data reshaping
-                pivot = wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
-                pivot = pivot.reindex(all_times)  # Ensure all times are present
-                pivot.reset_index(inplace=True)
-                pivot['obsTimeUtc'] = pivot['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Skip if there's no data (all NaN values except timestamp column)
-                data_columns = [col for col in pivot.columns if col != 'obsTimeUtc']
-                if not data_columns or pivot[data_columns].isna().all().all():
-                    continue
-                
-                # Convert to safe format for Google Sheets
-                def safe_gs_value(x):
-                    if isinstance(x, (pd.Timestamp,)):
-                        return x.strftime('%Y-%m-%d %H:%M:%S')
-                    if isinstance(x, float):
-                        if pd.isna(x) or x == float('inf') or x == float('-inf'):
-                            return ''
-                    if x is None:
-                        return ''
-                    return str(x)
-                
-                title = f"WU {metric} Data"
-                try:
-                    old = spreadsheet.worksheet(title)
-                    spreadsheet.del_worksheet(old)
-                except:
-                    pass
-                
-                ws = spreadsheet.add_worksheet(title=title, rows=len(pivot)+1, cols=len(station_names)+1)
-                # Convert pivot to safe format
-                pivot_safe = pivot.fillna('')
-                for col in pivot_safe.columns:
-                    if col != 'obsTimeUtc':
-                        pivot_safe[col] = pivot_safe[col].apply(safe_gs_value)
-                ws.update([['Time'] + station_names] + pivot_safe.values.tolist())
-                
-                meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
-                
-                series = [
-                    {
-                        'series': {
-                            'sourceRange': {
-                                'sources': [{
-                                    'sheetId': pivot_id,
-                                    'startRowIndex': 0,
-                                    'endRowIndex': len(all_times)+1,
-                                    'startColumnIndex': i,
-                                    'endColumnIndex': i+1
-                                }]
-                            }
-                        },
-                        'targetAxis': 'LEFT_AXIS'
+                        ]
                     }
-                    for i, _ in enumerate(station_names, start=1)
-                ]
-                
-                domain = {
-                    'domain': {
-                        'sourceRange': {
-                            'sources': [{
-                                'sheetId': pivot_id,
-                                'startRowIndex': 1,
-                                'endRowIndex': len(all_times)+1,
-                                'startColumnIndex': 0,
-                                'endColumnIndex': 1
+                    sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                    chart_row_offset += 20  # Use a fixed offset to prevent overlap
+
+                # Add charts for WU data if available
+                if fetch_wu and wu_df is not None and not wu_df.empty:
+                    wu_metrics = [
+                        ('tempAvg', 'Temperature (C)'),
+                        ('humidityAvg', 'Humidity (%)'),
+                        ('solarRadiationHigh', 'Solar Radiation'),
+                        ('precipTotal', 'Precipitation (mm)'),
+                        ('windspeedAvg', 'Wind Speed (Avg)'),
+                        ('heatindexAvg', 'Heat Index (C)'),
+                        ('heatIndexAvg', 'Heat Index (C)'),  # Alternative casing
+                        ('heat_index_avg', 'Heat Index (C)'),  # Alternative naming
+                        ('dewptAvg', 'Dew Point (C)')  # Additional useful metric
+                    ]
+                    # Parse obsTimeUtc back to datetime for proper time handling
+                    wu_df['obsTimeUtc'] = pd.to_datetime(wu_df['obsTimeUtc'], errors='coerce')
+                    # Remove any rows where obsTimeUtc couldn't be parsed
+                    wu_df = wu_df.dropna(subset=['obsTimeUtc'])
+                    
+                    station_id_to_name = {
+                        "KNCDURHA548": "Duke-MS-01",
+                        "KNCDURHA549": "Duke-MS-02",
+                        "KNCDURHA209": "Duke-MS-03",
+                        "KNCDURHA551": "Duke-MS-05",
+                        "KNCDURHA555": "Duke-MS-06",
+                        "KNCDURHA556": "Duke-MS-07",
+                        "KNCDURHA590": "Duke-Kestrel-01"
+                    }
+                    wu_df['Station Name'] = wu_df['stationID'].map(station_id_to_name).fillna(wu_df['stationID'])
+                    station_names = sorted(wu_df['Station Name'].unique())
+                    
+                    # Create a consistent time string column for lookup
+                    wu_df['obsTimeUtc_str'] = wu_df['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                    all_times = sorted(wu_df['obsTimeUtc'].unique())
+                    
+                    # Ensure all metric columns are numeric for pivot_table, skip if column missing
+                    for metric, _ in wu_metrics:
+                        if metric in wu_df.columns:
+                            wu_df[metric] = pd.to_numeric(wu_df[metric], errors='coerce')
+                    for metric, y_label in wu_metrics:
+                        # Skip if metric column doesn't exist
+                        if metric not in wu_df.columns:
+                            continue
+                            
+                        # Use pivot_table for cleaner data reshaping
+                        pivot = wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
+                        pivot = pivot.reindex(all_times)  # Ensure all times are present
+                        pivot.reset_index(inplace=True)
+                        pivot['obsTimeUtc'] = pivot['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Skip if there's no data (all NaN values except timestamp column)
+                        data_columns = [col for col in pivot.columns if col != 'obsTimeUtc']
+                        if not data_columns or pivot[data_columns].isna().all().all():
+                            continue
+                        
+                        # Convert to safe format for Google Sheets
+                        def safe_gs_value(x):
+                            import pandas as pd
+                            import numpy as np
+                            if isinstance(x, (pd.Timestamp,)):
+                                return x.strftime('%Y-%m-%d %H:%M:%S')
+                            if isinstance(x, float):
+                                if pd.isna(x) or x == float('inf') or x == float('-inf'):
+                                    return ''
+                                return x  # Keep numeric values as numbers
+                            if isinstance(x, (int, np.integer)):
+                                return x  # Keep integers as numbers
+                            if x is None:
+                                return ''
+                            # Try to convert string representations of numbers to float
+                            try:
+                                float_val = float(x)
+                                return float_val
+                            except (ValueError, TypeError):
+                                return str(x)
+                        
+                        title = f"WU {metric} Data"
+                        try:
+                            old = spreadsheet.worksheet(title)
+                            spreadsheet.del_worksheet(old)
+                        except:
+                            pass
+                        ws = spreadsheet.add_worksheet(title=title, rows=len(pivot)+1, cols=len(station_names)+1)
+                        # Convert pivot to safe format
+                        pivot_safe = pivot.fillna('')
+                        for col in pivot_safe.columns:
+                            if col != 'obsTimeUtc':
+                                pivot_safe[col] = pivot_safe[col].apply(safe_gs_value)
+                        ws.update([['Time'] + station_names] + pivot_safe.values.tolist())
+                        meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                        pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
+                        series = [
+                            {
+                                'series': {
+                                    'sourceRange': {
+                                        'sources': [{
+                                            'sheetId': pivot_id,
+                                            'startRowIndex': 0,
+                                            'endRowIndex': len(all_times)+1,
+                                            'startColumnIndex': i,
+                                            'endColumnIndex': i+1
+                                        }]
+                                    }
+                                },
+                                'targetAxis': 'LEFT_AXIS'
+                            }
+                            for i, _ in enumerate(station_names, start=1)
+                        ]
+                        domain = {
+                            'domain': {
+                                'sourceRange': {
+                                    'sources': [{
+                                        'sheetId': pivot_id,
+                                        'startRowIndex': 1,  # Corrected from 0
+                                        'endRowIndex': len(all_times)+1,
+                                        'startColumnIndex': 0,
+                                        'endColumnIndex': 1
+                                    }]
+                                }
+                            }
+                        }
+                        chart = {
+                            'requests': [{
+                                'addChart': {
+                                    'chart': {
+                                        'spec': {
+                                            'title': f'WU {metric} Trend',
+                                            'basicChart': {
+                                                'chartType': 'LINE',
+                                                'legendPosition': 'BOTTOM_LEGEND',
+                                                'axis': [
+                                                    {'position': 'BOTTOM_AXIS', 'title': 'Time'},
+                                                    {'position': 'LEFT_AXIS', 'title': y_label}
+                                                ],
+                                                'domains': [domain],
+                                                'series': series,
+                                                'headerCount': 1
+                                            }
+                                        },
+                                        'position': {
+                                            'overlayPosition': {
+                                                'anchorCell': {
+                                                    'sheetId': charts_id,
+                                                    'rowIndex': chart_row_offset,
+                                                    'columnIndex': 0
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }]
                         }
-                    }
-                }
-                
-                chart = {
-                    'requests': [{
-                        'addChart': {
-                            'chart': {
-                                'spec': {
-                                    'title': f'WU {metric} Trend',
-                                    'basicChart': {
-                                        'chartType': 'LINE',
-                                        'legendPosition': 'BOTTOM_LEGEND',
-                                        'axis': [
-                                            {'position': 'BOTTOM_AXIS', 'title': 'Time'},
-                                            {'position': 'LEFT_AXIS', 'title': y_label}
-                                        ],
-                                        'domains': [domain],
-                                        'series': series,
-                                        'headerCount': 1
-                                    }
-                                },
-                                'position': {
-                                    'overlayPosition': {
-                                        'anchorCell': {
-                                            'sheetId': charts_id,
-                                            'rowIndex': chart_row_offset,
-                                            'columnIndex': 0
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }]
-                }
-                sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                chart_row_offset += 15
+                        sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                        chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
-        # TSI Time Series Charts
-        if fetch_tsi and tsi_df is not None and not tsi_df.empty:
-            tsi_metrics = [
-                ('PM 2.5', 'PM2.5 (µg/m³)'),
-                ('T (C)', 'Temperature (C)'),
-                ('RH (%)', 'Humidity (%)'),
-                ('PM 10', 'PM10 (µg/m³)')
-            ]
-            
-            # Get all unique device names and all unique timestamps
-            tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce')
-            device_names = sorted(tsi_df['Device Name'].unique())
-            all_times = sorted(tsi_df['timestamp'].dropna().unique())
-            
-            for metric, y_label in tsi_metrics:
-                # Pivot: rows = timestamp, columns = device, values = metric
-                pivot = tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
-                pivot = pivot.reindex(all_times)  # Ensure all times are present
-                pivot.reset_index(inplace=True)
-                pivot['timestamp'] = pivot['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Skip if there's no data (all NaN values except timestamp column)
-                data_columns = [col for col in pivot.columns if col != 'timestamp']
-                if not data_columns or pivot[data_columns].isna().all().all():
-                    continue
-                
-                sheet_title = f"TSI {metric} Time Series"
-                try:
-                    old = spreadsheet.worksheet(sheet_title)
-                    spreadsheet.del_worksheet(old)
-                except:
-                    pass
-                
-                ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(device_names)+1)
-                ws.update([['Time'] + device_names] + pivot.fillna('').values.tolist())
-                
-                # Add chart for this metric
-                meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                sheet_id_pivot = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == sheet_title)
-                
-                series = []
-                for i, device in enumerate(device_names, start=1):
-                    series.append({
-                        "series": {"sourceRange": {"sources": [{
+                # --- NEW: Add full time-series (hourly) sheets and charts for TSI ---
+                if fetch_tsi and tsi_df is not None and not tsi_df.empty:
+                    # Prepare TSI time-series pivot tables and charts
+                    tsi_metrics = [
+                        ('PM 2.5', 'PM2.5 (µg/m³)'),
+                        ('T (C)', 'Temperature (C)'),
+                        ('RH (%)', 'Humidity (%)'),
+                        ('PM 10', 'PM10 (µg/m³)')
+                    ]
+                    # Get all unique device names and all unique timestamps
+                    tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce')
+                    device_names = sorted(tsi_df['Device Name'].unique())
+                    all_times = sorted(tsi_df['timestamp'].dropna().unique())
+                    for metric, y_label in tsi_metrics:
+                        # Pivot: rows = timestamp, columns = device, values = metric
+                        pivot = tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
+                        pivot = pivot.reindex(all_times)  # Ensure all times are present
+                        pivot.reset_index(inplace=True)
+                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Skip if there's no data (all NaN values except timestamp column)
+                        data_columns = [col for col in pivot.columns if col != 'timestamp']
+                        if not data_columns or pivot[data_columns].isna().all().all():
+                            continue
+                        sheet_title = f"TSI {metric} Time Series"
+                        try:
+                            old = spreadsheet.worksheet(sheet_title)
+                            spreadsheet.del_worksheet(old)
+                        except:
+                            pass
+                        ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(device_names)+1)
+                        ws.update([['Time'] + device_names] + pivot.fillna('').values.tolist())
+                        # Add chart for this metric
+                        meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                        sheet_id_pivot = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == sheet_title)
+                        series = []
+                        for i, device in enumerate(device_names, start=1):
+                            series.append({
+                                "series": {"sourceRange": {"sources": [{
+                                    "sheetId": sheet_id_pivot,
+                                    "startRowIndex": 0,
+                                    "endRowIndex": len(pivot)+1,
+                                    "startColumnIndex": i,
+                                    "endColumnIndex": i+1
+                                }]}},
+                                "targetAxis": "LEFT_AXIS"
+                            })
+                        domain = {"domain": {"sourceRange": {"sources": [{
                             "sheetId": sheet_id_pivot,
-                            "startRowIndex": 0,
+                            "startRowIndex": 1,
                             "endRowIndex": len(pivot)+1,
-                            "startColumnIndex": i,
-                            "endColumnIndex": i+1
-                        }]}},
-                        "targetAxis": "LEFT_AXIS"
-                    })
-                
-                domain = {"domain": {"sourceRange": {"sources": [{
-                    "sheetId": sheet_id_pivot,
-                    "startRowIndex": 1,
-                    "endRowIndex": len(pivot)+1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 1
-                }]}}}
-                
-                chart = {
-                    "requests": [{
-                        "addChart": {
-                            "chart": {
-                                "spec": {
-                                    "title": f"TSI {metric} Over Time (By Device)",
-                                    "basicChart": {
-                                        "chartType": "LINE",
-                                        "legendPosition": "BOTTOM_LEGEND",
-                                        "axis": [
-                                            {"position": "BOTTOM_AXIS", "title": "Time"},
-                                            {"position": "LEFT_AXIS", "title": y_label}
-                                        ],
-                                        "domains": [domain],
-                                        "series": series,
-                                        "headerCount": 1
-                                    }
-                                },
-                                "position": {
-                                    "overlayPosition": {
-                                        "anchorCell": {
-                                            "sheetId": charts_id,
-                                            "rowIndex": chart_row_offset,
-                                            "columnIndex": 0
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 1
+                        }]}}}
+                        chart = {
+                            "requests": [
+                                {
+                                    "addChart": {
+                                        "chart": {
+                                            "spec": {
+                                                "title": f"TSI {metric} Over Time (By Device)",
+                                                "basicChart": {
+                                                    "chartType": "LINE",
+                                                    "legendPosition": "BOTTOM_LEGEND",
+                                                    "axis": [
+                                                        {"position": "BOTTOM_AXIS", "title": "Time"},
+                                                        {"position": "LEFT_AXIS", "title": y_label}
+                                                    ],
+                                                    "domains": [domain],
+                                                    "series": series,
+                                                    "headerCount": 1
+                                                }
+                                            },
+                                            "position": {
+                                                "overlayPosition": {
+                                                    "anchorCell": {
+                                                        "sheetId": charts_id,
+                                                        "rowIndex": chart_row_offset,
+                                                        "columnIndex": 0
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
-                            }
+                            ]
                         }
-                    }]
-                }
-                sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                chart_row_offset += 20
+                        sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                        chart_row_offset += 20
 
     print("✅ All data processing and Google Sheet export complete!")
-    
-    # Local downloads
     if local_download and ((fetch_wu and wu_df is not None and not wu_df.empty) or (fetch_tsi and tsi_df is not None and not tsi_df.empty)):
         if download_dir is not None:
             os.makedirs(download_dir, exist_ok=True)
@@ -904,8 +875,6 @@ if __name__ == "__main__":
                 else:
                     tsi_df.to_csv(tsi_path, index=False)
                 print(f"TSI data saved to {tsi_path}")
-    
     if upload_onedrive and msal is not None:
         print("OneDrive upload not implemented in this script. Please use a separate tool or script for OneDrive uploads.")
-    
     print("Done.")

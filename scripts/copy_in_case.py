@@ -515,6 +515,7 @@ if __name__ == "__main__":
                     devices = list(weekly_summary.keys())
                     pivot_header = ['Week Start'] + devices
                     idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
+                    # Build wide-format pivot: each row is [week, dev1_val, dev2_val, ...]
                     pivot_rows = []
                     for week in weeks:
                         row = [week]
@@ -534,9 +535,17 @@ if __name__ == "__main__":
                         if isinstance(x, float):
                             if pd.isna(x) or x == float('inf') or x == float('-inf'):
                                 return ''
+                            return x  # Keep numeric values as numbers
+                        if isinstance(x, (int, np.integer)):
+                            return x  # Keep integers as numbers
                         if x is None:
                             return ''
-                        return str(x)
+                        # Try to convert string representations of numbers to float
+                        try:
+                            float_val = float(x)
+                            return float_val
+                        except (ValueError, TypeError):
+                            return str(x)
                     pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
                     pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
                     pivot_title = f"{col_name} Weekly Data"
@@ -612,7 +621,10 @@ if __name__ == "__main__":
                         ('solarRadiationHigh', 'Solar Radiation'),
                         ('precipTotal', 'Precipitation (mm)'),
                         ('windspeedAvg', 'Wind Speed (Avg)'),
-                        ('heatindexAvg', 'Heat Index')
+                        ('heatindexAvg', 'Heat Index (C)'),
+                        ('heatIndexAvg', 'Heat Index (C)'),  # Alternative casing
+                        ('heat_index_avg', 'Heat Index (C)'),  # Alternative naming
+                        ('dewptAvg', 'Dew Point (C)')  # Additional useful metric
                     ]
                     # Parse obsTimeUtc back to datetime for proper time handling
                     wu_df['obsTimeUtc'] = pd.to_datetime(wu_df['obsTimeUtc'], errors='coerce')
@@ -658,14 +670,23 @@ if __name__ == "__main__":
                         # Convert to safe format for Google Sheets
                         def safe_gs_value(x):
                             import pandas as pd
+                            import numpy as np
                             if isinstance(x, (pd.Timestamp,)):
                                 return x.strftime('%Y-%m-%d %H:%M:%S')
                             if isinstance(x, float):
                                 if pd.isna(x) or x == float('inf') or x == float('-inf'):
                                     return ''
+                                return x  # Keep numeric values as numbers
+                            if isinstance(x, (int, np.integer)):
+                                return x  # Keep integers as numbers
                             if x is None:
                                 return ''
-                            return str(x)
+                            # Try to convert string representations of numbers to float
+                            try:
+                                float_val = float(x)
+                                return float_val
+                            except (ValueError, TypeError):
+                                return str(x)
                         
                         title = f"WU {metric} Data"
                         try:
@@ -704,7 +725,7 @@ if __name__ == "__main__":
                                 'sourceRange': {
                                     'sources': [{
                                         'sheetId': pivot_id,
-                                        'startRowIndex': 1,
+                                        'startRowIndex': 1,  # Corrected from 0
                                         'endRowIndex': len(all_times)+1,
                                         'startColumnIndex': 0,
                                         'endColumnIndex': 1
@@ -744,7 +765,7 @@ if __name__ == "__main__":
                             }]
                         }
                         sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                        chart_row_offset += 15
+                        chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI ---
                 if fetch_tsi and tsi_df is not None and not tsi_df.empty:
