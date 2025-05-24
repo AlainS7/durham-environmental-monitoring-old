@@ -158,7 +158,9 @@ def fetch_wu_data(start_date_str, end_date_str):
                                 obs.get('metric', {}).get('windgustAvg'),
                                 obs.get('metric', {}).get('pressureMax'),
                                 obs.get('metric', {}).get('pressureMin'),
-                                obs.get('metric', {}).get('pressureTrend')
+                                obs.get('metric', {}).get('pressureTrend'),
+                                obs.get('metric', {}).get('heatindexAvg'),
+                                obs.get('metric', {}).get('dewptAvg')
                             ]
                             processed_rows.append(row)
                         if not processed_rows:
@@ -215,7 +217,7 @@ def fetch_wu_data(start_date_str, end_date_str):
     columns = [
         'stationID', 'obsTimeUtc', 'tempAvg', 'humidityAvg', 'solarRadiationHigh',
         'precipRate', 'precipTotal', 'winddirAvg', 'windspeedAvg', 'windgustAvg',
-        'pressureMax', 'pressureMin', 'pressureTrend'
+        'pressureMax', 'pressureMin', 'pressureTrend', 'heatindexAvg', 'dewptAvg'
     ]
 
     df = pd.DataFrame(all_rows, columns=columns)
@@ -618,12 +620,10 @@ if __name__ == "__main__":
                     wu_metrics = [
                         ('tempAvg', 'Temperature (C)'),
                         ('humidityAvg', 'Humidity (%)'),
+                        ('heatindexAvg', 'Heat Index (C)'),  # Prioritize this version first
                         ('solarRadiationHigh', 'Solar Radiation'),
                         ('precipTotal', 'Precipitation (mm)'),
                         ('windspeedAvg', 'Wind Speed (Avg)'),
-                        ('heatindexAvg', 'Heat Index (C)'),
-                        ('heatIndexAvg', 'Heat Index (C)'),  # Alternative casing
-                        ('heat_index_avg', 'Heat Index (C)'),  # Alternative naming
                         ('dewptAvg', 'Dew Point (C)')  # Additional useful metric
                     ]
                     # Parse obsTimeUtc back to datetime for proper time handling
