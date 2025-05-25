@@ -1,0 +1,11 @@
+# Ignore all credential files
+*.json
+*.key
+*.pem
+*.crt
+*.env
+*.secret
+*.token
+
+# Allow README documentation
+!README.md

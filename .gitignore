@@ -1,32 +1,126 @@
 # IntelliJ project files
 .idea/
+*.iml
 
 # Python bytecode
 __pycache__/
 *.py[cod]
 *.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
 venv/
 .venv/
+env/
+ENV/
 
 # Credentials / Secrets
 google_creds.json
 tsi_creds.json
 wu_api_key.json
+onedrive_creds.json
 creds/*.json
 hot_durham_wu_map/backend/wu_api_key.json
+*.pem
+*.key
+*.crt
+*.env
+.env
 
-# Streamlit's upload cache (just in case)
-.streamlit/
+# Raw data files (too large for Git)
+raw_pulls/
+data/raw_pulls/
+*.csv
+*.xlsx
+*.xls
+
+# Processed data files (generated content)
+processed/
+data/processed/
+reports/
+backup/
+
+# Log files
+*.log
+logs/
+data_management.log
+automation_log_*.json
+
+# Temporary files
+temp/
+data/temp/
+tmp/
+.tmp/
+*.tmp
 
 # Output files
 *.zip
-*.log
+*.tar.gz
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
 
 # Node modules
 node_modules/
 
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Streamlit cache
+.streamlit/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+
 # Ignore Java archives and BFG tool
 *.jar
 bfg.jar
+
+# System files
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
