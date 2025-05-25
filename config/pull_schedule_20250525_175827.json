@@ -1,0 +1,19 @@
+{
+  "created_at": "2025-05-25T17:58:27.755395",
+  "next_update": "2025-05-25T18:58:27.755397",
+  "priority_queues": {
+    "critical": [
+      {
+        "sensor_type": "tsi",
+        "sensor_id": "bs-01",
+        "sensor_name": "BS-01",
+        "priority": "critical",
+        "pull_frequency_minutes": 15,
+        "next_pull": "2025-05-25T18:13:27.755403",
+        "metadata": {
+          "device_id": "bs-01",
+          "device_name": "BS-01",
+          "friendly_name": "Indoor Air Quality - Main Office",
+          "location": "indoor office building",
+          "recent_pm25": 15.2,
+          "last_seen": 

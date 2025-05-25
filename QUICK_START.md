@@ -4,7 +4,7 @@
 
 ### 1. Install Dependencies
 ```bash
-cd "/Users/laptopUser/IdeaProjects/Hot Durham"
+cd "/Users/laptopUserName/IdeaProjects/Hot Durham"
 pip install pandas numpy matplotlib seaborn
 ```
 
