@@ -47,3 +47,12 @@
 - [ ] Regularly back up credential files and critical data.
 - [ ] Document any new features or changes to the workflow.
 - [ ] Address any items noted in the `toDo` file (meta-task!).
+
+
+Potential Applications:
+
+Air Quality Alerts: Automated notifications when PM2.5 exceeds healthy levels
+Heat Island Analysis: Study temperature variations across Durham neighborhoods
+Seasonal Patterns: Track how air quality changes throughout the year
+Community Reports: Generate monthly environmental health reports
+Public Dashboard: Share real-time data with Durham residents
