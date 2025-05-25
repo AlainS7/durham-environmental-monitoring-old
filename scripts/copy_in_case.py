@@ -765,7 +765,7 @@ if __name__ == "__main__":
                             }]
                         }
                         sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                        chart_row_offset += 15  # Use a fixed offset to prevent overlap
+                        chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI ---
                 if fetch_tsi and tsi_df is not None and not tsi_df.empty:

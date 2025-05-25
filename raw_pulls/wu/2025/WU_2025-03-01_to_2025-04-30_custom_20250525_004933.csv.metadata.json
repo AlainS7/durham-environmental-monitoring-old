@@ -1,0 +1,29 @@
+{
+  "source": "wu",
+  "start_date": "2025-03-01",
+  "end_date": "2025-04-30",
+  "pull_type": "custom",
+  "file_format": "csv",
+  "rows": 2562,
+  "columns": [
+    "stationID",
+    "obsTimeUtc",
+    "tempAvg",
+    "humidityAvg",
+    "solarRadiationHigh",
+    "precipRate",
+    "precipTotal",
+    "winddirAvg",
+    "windspeedAvg",
+    "windgustAvg",
+    "pressureMax",
+    "pressureMin",
+    "pressureTrend",
+    "heatindexAvg",
+    "dewptAvg",
+    "Station Name",
+    "obsTimeUtc_str"
+  ],
+  "created_date": "20250525_004933",
+  "file_size_bytes": 341877
+}

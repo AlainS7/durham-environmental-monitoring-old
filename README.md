@@ -1,21 +1,66 @@
 # 🔥 Hot Durham Sensor Dashboard
 
-This project collects environmental sensor data from Weather Underground (WU) and TSI devices, uploads it to Google Sheets, and provides options for local data storage and OneDrive integration. It supports both command-line and GUI interfaces, allows for live data preview, and selective chart generation.
+This project collects environmental sensor data from Weather Underground (WU) and TSI devices, uploads it to Google Sheets, and provides comprehensive data management with automated scheduling and cloud synchronization.
 
 ---
 
 ## 🚀 Features
 
+### 📊 Data Collection & Processing
 - Pulls telemetry from WU and TSI cloud APIs
 - Logs hourly and weekly summary data
 - Option to combine all sensors into a single sheet or keep them separate
-- Generates charts for various metrics including PM2.5, Temperature, Relative Humidity, Solar Radiation, Wind Speed, Precipitation, and Heat Index.
-- Device names are included in chart legends.
-- Streamlit GUI for TSI data with live chart previews
+- Generates charts for various metrics including PM2.5, Temperature, Relative Humidity, Solar Radiation, Wind Speed, Precipitation, and Heat Index
+- Device names are included in chart legends
 - Auto-shares Google Sheet with a specified email address
-- Data exported to Google Sheets using `gspread`
-- Optional local data download in CSV or Excel format
-- Optional OneDrive upload for exported files
+
+### 🗂️ **NEW: Automated Data Management System**
+- **Organized folder structure** for raw data pulls (weekly, bi-weekly, monthly)
+- **Automated scheduling** via cron jobs for regular data collection
+- **Google Drive sync** for cloud backup and collaboration
+- **Smart file naming** with timestamps and date ranges
+- **Data integrity monitoring** and system health checks
+- **Comprehensive logging** and error tracking
+
+### 🖥️ User Interfaces
+- Command-line interface for automated operations
+- Streamlit GUI for TSI data with live chart previews
+- Status dashboard for monitoring system health
+
+### 💾 Data Export Options
+- Google Sheets export with automatic chart generation
+- Local data storage in CSV or Excel format
+- Optional OneDrive integration
+- Organized cloud storage with Google Drive sync
+
+---
+
+## ⚡ Quick Start
+
+### 1. Set up automated data management (Recommended)
+
+```bash
+# Set up the complete automated system
+./setup_automation.sh
+
+# Check system status
+python scripts/status_check.py
+
+# Test with a manual pull
+./run_weekly_pull.sh
+```
+
+### 2. Manual data collection
+
+```bash
+# Interactive data pull with GUI
+python scripts/faster_wu_tsi_to_sheets_async.py
+
+# Automated pull with specific parameters
+python scripts/automated_data_pull.py --weekly
+```
+
+For detailed setup and configuration, see [DATA_MANAGEMENT_README.md](DATA_MANAGEMENT_README.md)
 
 ---
 
@@ -151,3 +196,16 @@ This project includes a simple web application to display Weather Underground st
 
 *Last updated: May 18, 2025*
 
+
+
+# Weekly data pull
+python scripts/automated_data_pull.py --weekly
+
+# Bi-weekly data pull  
+python scripts/automated_data_pull.py --bi-weekly
+
+# System status check
+python scripts/status_check.py
+
+# Setup automation (cron jobs)
+./setup_automation.sh

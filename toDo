@@ -3,8 +3,8 @@
 ## I. Data Pull & Storage
 
 ### A. Local & Cloud Storage Options
-- [ ] Implement local download as an option for pulled data.
-- [ ] Investigate and implement OneDrive upload functionality for local downloads.
+- [x] Implement local download as an option for pulled data.
+- [x] Investigate and implement OneDrive upload functionality for local downloads.
     - Future Goal: Automate uploads to a specific OneDrive folder.
     - Check old code for existing routes/logic for cloud uploads.
 

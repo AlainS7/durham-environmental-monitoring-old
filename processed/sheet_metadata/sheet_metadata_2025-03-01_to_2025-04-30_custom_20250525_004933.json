@@ -1,0 +1,18 @@
+{
+  "sheet_id": "1yorWRNuASkOnyggdCWZQ2i4bfSTvNzrhLN7dqtPhd38",
+  "sheet_url": "https://docs.google.com/spreadsheets/d/1yorWRNuASkOnyggdCWZQ2i4bfSTvNzrhLN7dqtPhd38",
+  "created_date": "2025-05-25 00:49:33",
+  "date_range": "2025-03-01 to 2025-04-30",
+  "pull_type": "custom",
+  "data_sources": [
+    "Weather Underground",
+    "TSI"
+  ],
+  "metadata": {
+    "saved_date": "20250525_004933",
+    "start_date": "2025-03-01",
+    "end_date": "2025-04-30",
+    "pull_type": "custom",
+    "data_manager_version": "1.0"
+  }
+}

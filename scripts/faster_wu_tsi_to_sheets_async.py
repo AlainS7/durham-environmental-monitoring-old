@@ -24,6 +24,9 @@ try:
 except ImportError:
     msal = None
 
+# Import data management system
+from data_manager import DataManager
+
 nest_asyncio.apply()
 
 def read_or_fallback(prompt, default=None):
@@ -357,6 +360,25 @@ if __name__ == "__main__":
         fetch_wu, fetch_tsi, start_date, end_date, share_email,
         local_download, file_format, download_dir, upload_onedrive, onedrive_folder
     ) = get_user_inputs()
+    
+    # Initialize data manager for organized data storage and Google Drive sync
+    print("🗂️ Initializing data management system...")
+    data_manager = DataManager(project_root)
+    
+    # Determine pull type for naming (weekly, bi-weekly, etc.)
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    days_diff = (end_dt - start_dt).days
+    
+    if days_diff <= 7:
+        pull_type = "weekly"
+    elif days_diff <= 14:
+        pull_type = "bi_weekly"
+    elif days_diff <= 31:
+        pull_type = "monthly"
+    else:
+        pull_type = "custom"
+    
     if fetch_wu:
         wu_df = fetch_wu_data(start_date, end_date)
     else:
@@ -858,7 +880,61 @@ if __name__ == "__main__":
                         chart_row_offset += 20
 
     print("✅ All data processing and Google Sheet export complete!")
-    if local_download and ((fetch_wu and wu_df is not None and not wu_df.empty) or (fetch_tsi and tsi_df is not None and not tsi_df.empty)):
+    
+    # Save data using the data manager for organized storage
+    print("💾 Saving data with organized folder structure...")
+    if fetch_wu and wu_df is not None and not wu_df.empty:
+        wu_saved_path = data_manager.save_raw_data(
+            data=wu_df,
+            source='wu',
+            start_date=start_date,
+            end_date=end_date,
+            pull_type=pull_type,
+            file_format=file_format if file_format else 'csv'
+        )
+        print(f"📁 WU data saved to: {wu_saved_path}")
+    
+    if fetch_tsi and tsi_df is not None and not tsi_df.empty:
+        tsi_saved_path = data_manager.save_raw_data(
+            data=tsi_df,
+            source='tsi',
+            start_date=start_date,
+            end_date=end_date,
+            pull_type=pull_type,
+            file_format=file_format if file_format else 'csv'
+        )
+        print(f"📁 TSI data saved to: {tsi_saved_path}")
+    
+    # Save Google Sheet info for tracking
+    if spreadsheet is not None:
+        sheet_info = {
+            'sheet_id': sheet_id,
+            'sheet_url': spreadsheet.url,
+            'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'date_range': f"{start_date} to {end_date}",
+            'pull_type': pull_type,
+            'data_sources': []
+        }
+        if fetch_wu:
+            sheet_info['data_sources'].append('Weather Underground')
+        if fetch_tsi:
+            sheet_info['data_sources'].append('TSI')
+        
+        data_manager.save_sheet_metadata(sheet_info, start_date, end_date, pull_type)
+        print(f"📋 Google Sheet metadata saved")
+    
+    # Sync to Google Drive if enabled
+    print("☁️ Syncing data to Google Drive...")
+    try:
+        data_manager.sync_to_drive()
+        print("✅ Google Drive sync completed successfully!")
+    except Exception as e:
+        print(f"⚠️ Google Drive sync failed: {e}")
+        print("Data is still saved locally in the organized folder structure.")
+    
+    # Legacy local download support (for backward compatibility)
+    if local_download and download_dir and download_dir != "data":
+        print(f"📦 Also saving to legacy download directory: {download_dir}")
         if download_dir is not None:
             os.makedirs(download_dir, exist_ok=True)
             if fetch_wu and wu_df is not None and not wu_df.empty:
@@ -867,14 +943,16 @@ if __name__ == "__main__":
                     wu_df.to_excel(wu_path, index=False)
                 else:
                     wu_df.to_csv(wu_path, index=False)
-                print(f"WU data saved to {wu_path}")
+                print(f"WU data also saved to {wu_path}")
             if fetch_tsi and tsi_df is not None and not tsi_df.empty:
                 tsi_path = os.path.join(download_dir, f"TSI_{start_date}_to_{end_date}.{file_format if file_format else 'csv'}")
                 if file_format == 'excel':
                     tsi_df.to_excel(tsi_path, index=False)
                 else:
                     tsi_df.to_csv(tsi_path, index=False)
-                print(f"TSI data saved to {tsi_path}")
+                print(f"TSI data also saved to {tsi_path}")
+    
     if upload_onedrive and msal is not None:
         print("OneDrive upload not implemented in this script. Please use a separate tool or script for OneDrive uploads.")
-    print("Done.")
+    
+    print("🎉 Done! Data has been organized, saved locally, and synced to Google Drive.")
