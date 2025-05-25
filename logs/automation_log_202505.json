@@ -7,5 +7,32 @@
     "tsi_records": 0,
     "sheet_created": false,
     "sheet_url": null
+  },
+  {
+    "timestamp": "2025-05-25 01:15:20",
+    "pull_type": "weekly",
+    "date_range": "2025-05-12 to 2025-05-18",
+    "wu_records": 292,
+    "tsi_records": 558,
+    "sheet_created": false,
+    "sheet_url": null
+  },
+  {
+    "timestamp": "2025-05-25 01:22:16",
+    "pull_type": "weekly",
+    "date_range": "2025-05-12 to 2025-05-18",
+    "wu_records": 292,
+    "tsi_records": 0,
+    "sheet_created": false,
+    "sheet_url": null
+  },
+  {
+    "timestamp": "2025-05-25 01:27:47",
+    "pull_type": "weekly",
+    "date_range": "2025-05-12 to 2025-05-18",
+    "wu_records": 292,
+    "tsi_records": 0,
+    "sheet_created": false,
+    "sheet_url": null
   }
 ]
