@@ -80,7 +80,7 @@ def reorganize_files(base_path):
         ("scripts/production_data_pull_executor.py", "src/data_collection/production_data_pull_executor.py"),
         ("scripts/automated_data_pull.py", "src/data_collection/automated_data_pull.py"),
         ("scripts/faster_wu_tsi_to_sheets_async.py", "src/data_collection/faster_wu_tsi_to_sheets_async.py"),
-        ("scripts/combined_wu_tsi_to_sheets_using_parallel.py", "src/data_collection/combined_wu_tsi_to_sheets_using_parallel.py"),
+        # combined_wu_tsi_to_sheets_using_parallel.py has been archived
     ]
     
     # GUI moves

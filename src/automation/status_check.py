@@ -237,7 +237,7 @@ def main():
         print("   • Run ./setup_automation.sh to configure automated pulls")
     
     if summary['wu_pulls'] == 0 and summary['tsi_pulls'] == 0:
-        print("   • Test data pulling with: python scripts/automated_data_pull.py --weekly")
+        print("   • Test data pulling with: python src/data_collection/automated_data_pull.py --weekly")
     
     if integrity_report['issues']:
         print("   • Fix data integrity issues listed above")

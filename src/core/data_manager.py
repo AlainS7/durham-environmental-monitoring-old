@@ -92,7 +92,7 @@ class DataManager:
             self.logger.warning("Google Drive integration not available")
             return None
             
-        creds_path = Path(__file__).parent.parent / "creds" / "google_creds.json"
+        creds_path = Path(__file__).parent.parent.parent / "creds" / "google_creds.json"
         if not creds_path.exists():
             self.logger.warning(f"Google credentials not found at {creds_path}")
             return None

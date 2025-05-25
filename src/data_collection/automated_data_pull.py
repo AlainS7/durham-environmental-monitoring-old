@@ -20,13 +20,13 @@ from datetime import datetime, timedelta
 import json
 
 # Add the project root to the path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-sys.path.append(os.path.join(project_root, 'scripts'))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(project_root, 'src', 'core'))
+sys.path.append(os.path.join(project_root, 'src', 'data_collection'))
 
 from data_manager import DataManager
 
-# Import the data fetching functions from the main script
+# Import the data fetching functions from the main script  
 from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
 
 def get_date_range(pull_type):

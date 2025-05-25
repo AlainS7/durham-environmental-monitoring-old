@@ -1,118 +1,123 @@
 #!/bin/bash
 
-# Cron Setup Script for Hot Durham Automated Data Pulls
-# This script helps set up automated scheduling for data pulls
+# Hot Durham Weather Monitoring - Automated Scheduling Setup
+# This script sets up cron jobs for automated report generation
 
-PROJECT_ROOT="/Users/alainsoto/IdeaProjects/Hot Durham"
-PYTHON_PATH=$(which python3)
-SCRIPT_PATH="$PROJECT_ROOT/scripts/automated_data_pull.py"
+echo "=== Hot Durham Weather Monitoring - Automated Scheduling Setup ==="
 
-echo "🤖 Hot Durham - Automated Data Pull Setup"
-echo "=========================================="
-echo ""
-
-# Check if the script exists
-if [ ! -f "$SCRIPT_PATH" ]; then
-    echo "❌ Error: automated_data_pull.py not found at $SCRIPT_PATH"
-    exit 1
-fi
-
-# Check if Python 3 is available
-if [ ! -x "$PYTHON_PATH" ]; then
-    echo "❌ Error: Python 3 not found. Please install Python 3."
-    exit 1
-fi
-
-echo "✅ Script found: $SCRIPT_PATH"
-echo "✅ Python found: $PYTHON_PATH"
-echo ""
-
-# Create log directory
-LOG_DIR="$PROJECT_ROOT/logs"
-mkdir -p "$LOG_DIR"
-echo "📁 Log directory: $LOG_DIR"
-echo ""
-
-# Display current crontab
-echo "📋 Current crontab entries:"
-crontab -l 2>/dev/null | grep -v "Hot Durham" || echo "No existing Hot Durham cron jobs found."
-echo ""
-
-# Offer to set up cron jobs
-echo "🕒 Suggested cron schedules:"
-echo ""
-echo "1. Weekly data pull (every Monday at 6 AM):"
-echo "   0 6 * * 1 cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --weekly >> $LOG_DIR/weekly_pull.log 2>&1"
-echo ""
-echo "2. Bi-weekly data pull (every other Monday at 6 AM):"
-echo "   0 6 * * 1 [ \$(expr \$(date +\\%W) \\% 2) -eq 0 ] && cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --bi-weekly >> $LOG_DIR/biweekly_pull.log 2>&1"
-echo ""
-echo "3. Monthly data pull (1st of every month at 7 AM):"
-echo "   0 7 1 * * cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --monthly >> $LOG_DIR/monthly_pull.log 2>&1"
-echo ""
-
-read -p "Would you like to set up automated weekly pulls? (y/n): " -n 1 -r
-echo ""
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    # Create temporary cron file
-    TEMP_CRON=$(mktemp)
-    
-    # Get existing crontab (ignore errors if no crontab exists)
-    crontab -l 2>/dev/null > "$TEMP_CRON" || true
-    
-    # Add Hot Durham entries
-    echo "" >> "$TEMP_CRON"
-    echo "# Hot Durham Automated Data Pulls" >> "$TEMP_CRON"
-    echo "# Weekly data pull every Monday at 6 AM" >> "$TEMP_CRON"
-    echo "0 6 * * 1 cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --weekly >> $LOG_DIR/weekly_pull.log 2>&1" >> "$TEMP_CRON"
-    echo "# Monthly summary on 1st of each month at 7 AM" >> "$TEMP_CRON"
-    echo "0 7 1 * * cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --monthly >> $LOG_DIR/monthly_pull.log 2>&1" >> "$TEMP_CRON"
-    
-    # Install the new crontab
-    crontab "$TEMP_CRON"
-    
-    # Clean up
-    rm "$TEMP_CRON"
-    
-    echo "✅ Cron jobs installed successfully!"
-    echo ""
-    echo "📋 Updated crontab:"
-    crontab -l | grep -A 10 "Hot Durham"
+# Check if we're running on macOS or Linux
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "Detected macOS system"
+    SYSTEM="macos"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "Detected Linux system"
+    SYSTEM="linux"
 else
-    echo "ℹ️ No cron jobs installed. You can set them up manually later."
+    echo "Unsupported system: $OSTYPE"
+    exit 1
 fi
 
-echo ""
-echo "📖 Manual Setup Instructions:"
-echo "To edit cron jobs manually, run: crontab -e"
-echo "To view current cron jobs, run: crontab -l"
-echo "To test the script manually, run:"
-echo "cd $PROJECT_ROOT && $PYTHON_PATH $SCRIPT_PATH --weekly"
-echo ""
+# Get the project directory
+PROJECT_DIR="/Users/alainsoto/IdeaProjects/Hot Durham"
+PYTHON_PATH=$(which python3)
+SCRIPT_PATH="$PROJECT_DIR/scripts/automated_reporting.py"
 
-echo "📝 Log Files:"
-echo "Weekly pulls: $LOG_DIR/weekly_pull.log"
-echo "Monthly pulls: $LOG_DIR/monthly_pull.log"
-echo ""
+echo "Project Directory: $PROJECT_DIR"
+echo "Python Path: $PYTHON_PATH"
+echo "Script Path: $SCRIPT_PATH"
 
-echo "🎉 Setup complete! The automation will:"
-echo "• Pull data every Monday at 6 AM"
-echo "• Generate monthly summaries on the 1st of each month"
-echo "• Save data to organized folders in $PROJECT_ROOT/data/"
-echo "• Sync to Google Drive automatically"
-echo "• Create Google Sheets for each pull"
-echo ""
+# Make the automated reporting script executable
+chmod +x "$SCRIPT_PATH"
 
-# Create a wrapper script for easy testing
-WRAPPER_SCRIPT="$PROJECT_ROOT/run_weekly_pull.sh"
+# Create logs directory
+mkdir -p "$PROJECT_DIR/logs"
+
+# Create a wrapper script for cron (cron has minimal environment)
+WRAPPER_SCRIPT="$PROJECT_DIR/scripts/run_automated_reports.sh"
 cat > "$WRAPPER_SCRIPT" << EOF
 #!/bin/bash
-# Quick test script for weekly data pull
-cd "$PROJECT_ROOT"
-"$PYTHON_PATH" "$SCRIPT_PATH" --weekly
+export PATH=/usr/local/bin:/usr/bin:/bin
+cd "$PROJECT_DIR"
+"$PYTHON_PATH" "$SCRIPT_PATH" "$PROJECT_DIR" >> "$PROJECT_DIR/logs/cron_output.log" 2>&1
 EOF
 
 chmod +x "$WRAPPER_SCRIPT"
-echo "🔧 Created test script: $WRAPPER_SCRIPT"
-echo "   Run this script to test the weekly pull manually."
+
+echo "Created wrapper script: $WRAPPER_SCRIPT"
+
+# Create cron entries
+CRON_DAILY="0 6 * * * $WRAPPER_SCRIPT"
+CRON_WEEKLY="0 7 * * 1 $WRAPPER_SCRIPT"
+
+echo ""
+echo "=== CRON JOB SETUP ==="
+echo "Choose an option:"
+echo "1) Daily reports (6:00 AM every day)"
+echo "2) Weekly reports (7:00 AM every Monday)"
+echo "3) Both daily and weekly"
+echo "4) Custom schedule"
+echo "5) Just show commands (don't install)"
+echo ""
+read -p "Enter your choice (1-5): " choice
+
+case $choice in
+    1)
+        echo "Setting up daily reports..."
+        (crontab -l 2>/dev/null; echo "$CRON_DAILY") | crontab -
+        echo "Daily cron job installed: $CRON_DAILY"
+        ;;
+    2)
+        echo "Setting up weekly reports..."
+        (crontab -l 2>/dev/null; echo "$CRON_WEEKLY") | crontab -
+        echo "Weekly cron job installed: $CRON_WEEKLY"
+        ;;
+    3)
+        echo "Setting up both daily and weekly reports..."
+        (crontab -l 2>/dev/null; echo "$CRON_DAILY"; echo "$CRON_WEEKLY") | crontab -
+        echo "Both cron jobs installed:"
+        echo "  Daily: $CRON_DAILY"
+        echo "  Weekly: $CRON_WEEKLY"
+        ;;
+    4)
+        echo "For custom scheduling, manually add this line to your crontab:"
+        echo "  $WRAPPER_SCRIPT"
+        echo ""
+        echo "Example cron formats:"
+        echo "  0 6 * * *     # Daily at 6:00 AM"
+        echo "  0 */6 * * *   # Every 6 hours"
+        echo "  30 2 * * 1    # Weekly on Monday at 2:30 AM"
+        echo ""
+        echo "Run 'crontab -e' to edit your crontab manually"
+        ;;
+    5)
+        echo "Manual cron job commands:"
+        echo "For daily reports:"
+        echo "  (crontab -l 2>/dev/null; echo '$CRON_DAILY') | crontab -"
+        echo ""
+        echo "For weekly reports:"
+        echo "  (crontab -l 2>/dev/null; echo '$CRON_WEEKLY') | crontab -"
+        ;;
+    *)
+        echo "Invalid choice. Exiting without installing cron jobs."
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "=== SETUP COMPLETE ==="
+echo ""
+echo "Files created:"
+echo "  - Automated reporting script: $SCRIPT_PATH"
+echo "  - Wrapper script for cron: $WRAPPER_SCRIPT"
+echo "  - Logs directory: $PROJECT_DIR/logs"
+echo ""
+echo "To view current cron jobs: crontab -l"
+echo "To edit cron jobs: crontab -e"
+echo "To remove cron jobs: crontab -r"
+echo ""
+echo "Logs will be written to:"
+echo "  - Application logs: $PROJECT_DIR/logs/automated_reports_YYYYMMDD.log"
+echo "  - Cron output: $PROJECT_DIR/logs/cron_output.log"
+echo ""
+echo "Test the automated reporting manually:"
+echo "  $WRAPPER_SCRIPT"

@@ -41,9 +41,11 @@ def read_or_fallback(prompt, default=None):
 
 # Use robust file path gathering for creds
 script_dir = os.path.dirname(os.path.abspath(__file__))
-tsi_creds_path = os.path.join(script_dir, '..', 'creds', 'tsi_creds.json')
-google_creds_path = os.path.join(script_dir, '..', 'creds', 'google_creds.json')
-wu_api_key_path = os.path.join(script_dir, '..', 'creds', 'wu_api_key.json')
+# Navigate up from src/data_collection/ to project root, then to creds/
+project_root = os.path.join(script_dir, '..', '..')
+tsi_creds_path = os.path.join(project_root, 'creds', 'tsi_creds.json')
+google_creds_path = os.path.join(project_root, 'creds', 'google_creds.json')
+wu_api_key_path = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
 # Normalize to absolute paths
 ts_creds_abs = os.path.abspath(tsi_creds_path)

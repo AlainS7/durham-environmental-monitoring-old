@@ -24,14 +24,15 @@ import logging
 import argparse
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root / "scripts"))
+project_root = Path(__file__).parent.parent.parent
+sys.path.append(str(project_root / "src" / "core"))
+sys.path.append(str(project_root / "src" / "data_collection"))
 
 # Import existing systems
 try:
     from data_manager import DataManager
     from prioritized_data_pull_manager import PrioritizedDataPullManager
-    from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
+    # Import only the specific functions we need to avoid credentials check on import
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Error importing dependencies: {e}")

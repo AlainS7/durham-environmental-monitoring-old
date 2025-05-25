@@ -22,7 +22,12 @@ from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root / "scripts"))
+sys.path.append(str(project_root / "src" / "core"))
+sys.path.append(str(project_root / "src" / "analysis"))
+sys.path.append(str(project_root / "src" / "data_collection"))
+sys.path.append(str(project_root / "src" / "automation"))
+sys.path.append(str(project_root / "src" / "gui"))
+sys.path.append(str(project_root / "src" / "utils"))
 
 def test_imports():
     """Test that all new modules can be imported"""
@@ -62,6 +67,13 @@ def test_imports():
     except ImportError as e:
         print(f"  ❌ Failed to import analysis suite: {e}")
         return False
+    
+    try:
+        # Import from data_fetching_functions in scripts if available
+        from data_fetching_functions import fetch_tsi_data, fetch_wu_data
+        print("  ✅ Data fetching functions imported")
+    except ImportError:
+        print("Warning: Could not import data fetching functions")
     
     return True
 

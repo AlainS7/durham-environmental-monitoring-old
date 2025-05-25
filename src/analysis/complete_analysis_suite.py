@@ -143,12 +143,12 @@ def run_complete_analysis_suite():
             print("   - Weather Underground + TSI data support")
             print("   - Interactive Plotly visualizations")
             print("   - System status monitoring")
-            print("   - Run with: streamlit run scripts/enhanced_streamlit_gui.py")
+            print("   - Run with: streamlit run src/gui/enhanced_streamlit_gui.py")
             
             analysis_results["components"]["enhanced_gui"] = {
                 "status": "available",
                 "description": "Enhanced GUI ready for use",
-                "command": "streamlit run scripts/enhanced_streamlit_gui.py"
+                "command": "streamlit run src/gui/enhanced_streamlit_gui.py"
             }
         else:
             print("ℹ️  Enhanced Streamlit GUI not found")

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "created": "2025-05-25T18:30:44.405134",
+  "created": "2025-05-25T17:56:35.485043",
   "description": "Prioritized data pull configuration for Hot Durham sensors",
   "sensor_priorities": {
     "critical": {
