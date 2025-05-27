@@ -545,6 +545,16 @@ if __name__ == "__main__":
                 for col_name, y_label in data_columns:
                     weeks = sorted({row[0] for rows in weekly_summary.values() for row in rows})
                     devices = list(weekly_summary.keys())
+                    
+                    # Extract year from weeks for chart title
+                    current_year = datetime.now().year
+                    if weeks:
+                        try:
+                            first_week_date = datetime.strptime(weeks[0], '%Y-%m-%d')
+                            current_year = first_week_date.year
+                        except:
+                            pass
+                    
                     pivot_header = ['Week Start'] + devices
                     idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
                     # Build wide-format pivot: each row is [week, dev1_val, dev2_val, ...]
@@ -615,12 +625,12 @@ if __name__ == "__main__":
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Weekly {col_name} Trend (By Device)",
+                                            "title": f"Weekly {col_name} Trend - {current_year} (By Device)",
                                             "basicChart": {
                                                 "chartType": "LINE",
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
-                                                    {"position": "BOTTOM_AXIS", "title": "Week"},
+                                                    {"position": "BOTTOM_AXIS", "title": "Week Start"},
                                                     {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
                                                 "domains": [domain],
@@ -690,7 +700,10 @@ if __name__ == "__main__":
                         pivot = wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
-                        pivot['obsTimeUtc'] = pivot['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Extract year for chart title and format timestamp without year for better readability
+                        year = pivot['obsTimeUtc'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
+                        pivot['obsTimeUtc'] = pivot['obsTimeUtc'].dt.strftime('%m-%d %H:%M')
                         
                         # Skip if there's no data (all NaN values except timestamp column)
                         data_columns = [col for col in pivot.columns if col != 'obsTimeUtc']
@@ -768,12 +781,12 @@ if __name__ == "__main__":
                                 'addChart': {
                                     'chart': {
                                         'spec': {
-                                            'title': f'WU {metric} Trend',
+                                            'title': f'WU {metric} Trend - {year}',
                                             'basicChart': {
                                                 'chartType': 'LINE',
                                                 'legendPosition': 'BOTTOM_LEGEND',
                                                 'axis': [
-                                                    {'position': 'BOTTOM_AXIS', 'title': 'Time'},
+                                                    {'position': 'BOTTOM_AXIS', 'title': 'Date & Time'},
                                                     {'position': 'LEFT_AXIS', 'title': y_label}
                                                 ],
                                                 'domains': [domain],
@@ -815,7 +828,10 @@ if __name__ == "__main__":
                         pivot = tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
-                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Extract year for chart title and format timestamp without year for better readability
+                        year = pivot['timestamp'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
+                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%m-%d %H:%M')
                         
                         # Skip if there's no data (all NaN values except timestamp column)
                         data_columns = [col for col in pivot.columns if col != 'timestamp']
@@ -857,12 +873,12 @@ if __name__ == "__main__":
                                     "addChart": {
                                         "chart": {
                                             "spec": {
-                                                "title": f"TSI {metric} Over Time (By Device)",
+                                                "title": f"TSI {metric} Over Time - {year} (By Device)",
                                                 "basicChart": {
                                                     "chartType": "LINE",
                                                     "legendPosition": "BOTTOM_LEGEND",
                                                     "axis": [
-                                                        {"position": "BOTTOM_AXIS", "title": "Time"},
+                                                        {"position": "BOTTOM_AXIS", "title": "Date & Time"},
                                                         {"position": "LEFT_AXIS", "title": y_label}
                                                     ],
                                                     "domains": [domain],

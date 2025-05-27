@@ -32,7 +32,7 @@ class AutomatedReportingSystem:
         self.raw_data_dir = self.base_dir / "raw_data"
         self.processed_dir = self.base_dir / "processed"
         self.reports_dir = self.base_dir / "reports"
-        self.scripts_dir = self.base_dir / "scripts"
+        self.scripts_dir = self.base_dir / "src" / "analysis"
         
         # Ensure directories exist
         for dir_path in [self.processed_dir, self.reports_dir]:

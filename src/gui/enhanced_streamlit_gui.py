@@ -23,7 +23,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 sys.path.append(str(project_root / 'scripts'))
 
-from data_manager import DataManager
+from src.core.data_manager import DataManager
 
 # Configure Streamlit
 st.set_page_config(
@@ -150,7 +150,7 @@ def run_data_pull(sources, start_date, end_date, pull_type):
     try:
         cmd = [
             sys.executable,
-            str(project_root / "scripts" / "automated_data_pull.py"),
+            str(project_root / "src" / "data_collection" / "automated_data_pull.py"),
             f"--{pull_type}"
         ]
         
@@ -299,7 +299,7 @@ def main():
                     try:
                         result = subprocess.run([
                             sys.executable,
-                            str(project_root / "scripts" / "enhanced_data_analysis.py")
+                            str(project_root / "src" / "analysis" / "enhanced_data_analysis.py")
                         ], capture_output=True, text=True, cwd=project_root)
                         
                         if result.returncode == 0:
@@ -318,7 +318,7 @@ def main():
                 try:
                     result = subprocess.run([
                         sys.executable,
-                        str(project_root / "scripts" / "multi_category_visualization.py")
+                        str(project_root / "src" / "analysis" / "multi_category_visualization.py")
                     ], capture_output=True, text=True, cwd=project_root)
                     
                     if result.returncode == 0:

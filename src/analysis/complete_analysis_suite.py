@@ -136,7 +136,7 @@ def run_complete_analysis_suite():
     print("🖥️  4. Checking Enhanced Streamlit GUI...")
     print("-" * 50)
     try:
-        enhanced_gui_path = scripts_dir / "enhanced_streamlit_gui.py"
+        enhanced_gui_path = scripts_dir.parent / "gui" / "enhanced_streamlit_gui.py"
         if enhanced_gui_path.exists():
             print("✅ Enhanced Streamlit GUI available")
             print("   - Multi-tab interface with live dashboards")

@@ -19,7 +19,7 @@ import json
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(project_root, 'scripts'))
 
-from data_manager import DataManager
+from src.core.data_manager import DataManager
 
 def format_file_size(size_mb):
     """Format file size in human readable format"""

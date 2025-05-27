@@ -28,10 +28,10 @@ import subprocess
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root / "scripts"))
+sys.path.append(str(project_root / "src" / "core"))
 
 try:
-    from data_manager import DataManager
+    from src.core.data_manager import DataManager
     DATA_MANAGER_AVAILABLE = True
 except ImportError:
     DATA_MANAGER_AVAILABLE = False

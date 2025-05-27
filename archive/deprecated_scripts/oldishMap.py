@@ -401,7 +401,7 @@ class LiveSensorMapServer:
         except Exception as e:
             print(f"Error refreshing TSI sensors: {e}")
     
-    def run(self, host='localhost', port=5003, debug=True):
+    def run(self, host='localhost', port=5000, debug=True):
         """Run the Flask server"""
         print(f"🗺️ Starting Live Sensor Map Server on http://{host}:{port}")
         print(f"📍 Weather Underground sensors: {len(self.wu_sensors)}")
@@ -414,7 +414,7 @@ def main():
     """Main function"""
     project_root = Path(__file__).parent.parent.parent
     server = LiveSensorMapServer(str(project_root))
-    server.run(port=5003)  # Use port 5003 to avoid macOS AirPlay conflict
+    server.run()
 
 if __name__ == "__main__":
     main()

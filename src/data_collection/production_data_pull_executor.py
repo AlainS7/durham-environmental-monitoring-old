@@ -30,7 +30,7 @@ sys.path.append(str(project_root / "src" / "data_collection"))
 
 # Import existing systems
 try:
-    from data_manager import DataManager
+    from src.core.data_manager import DataManager
     from prioritized_data_pull_manager import PrioritizedDataPullManager
     # Import only the specific functions we need to avoid credentials check on import
     DEPENDENCIES_AVAILABLE = True

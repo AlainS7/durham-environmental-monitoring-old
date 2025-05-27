@@ -20,7 +20,7 @@ fi
 # Get the project directory
 PROJECT_DIR="/Users/alainsoto/IdeaProjects/Hot Durham"
 PYTHON_PATH=$(which python3)
-SCRIPT_PATH="$PROJECT_DIR/scripts/automated_reporting.py"
+SCRIPT_PATH="$PROJECT_DIR/src/automation/automated_reporting.py"
 
 echo "Project Directory: $PROJECT_DIR"
 echo "Python Path: $PYTHON_PATH"
@@ -33,7 +33,7 @@ chmod +x "$SCRIPT_PATH"
 mkdir -p "$PROJECT_DIR/logs"
 
 # Create a wrapper script for cron (cron has minimal environment)
-WRAPPER_SCRIPT="$PROJECT_DIR/scripts/run_automated_reports.sh"
+WRAPPER_SCRIPT="$PROJECT_DIR/src/automation/run_automated_reports.sh"
 cat > "$WRAPPER_SCRIPT" << EOF
 #!/bin/bash
 export PATH=/usr/local/bin:/usr/bin:/bin
