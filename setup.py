@@ -65,6 +65,7 @@ setup(
             "hot-durham-analyze=analysis.complete_analysis_suite:main",
             "hot-durham-backup=core.backup_system:main",
             "hot-durham-status=automation.status_check:main",
+            "hot-durham-cleanup=maintenance_cleanup:main",
         ],
     },
     include_package_data=True,

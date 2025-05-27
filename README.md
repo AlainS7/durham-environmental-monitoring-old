@@ -5,6 +5,7 @@
 [![Tests](https://img.shields.io/badge/tests-8%2F8%20passing-brightgreen)](tests/)
 [![Status](https://img.shields.io/badge/status-production%20ready-brightgreen)](#deployment)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](requirements.txt)
+[![Cleanup](https://img.shields.io/badge/cleanup-May%202025-blue)](docs/CLEANUP_SUMMARY.md)
 
 ## 🚀 Quick Start
 

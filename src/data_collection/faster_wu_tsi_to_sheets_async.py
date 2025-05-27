@@ -1,5 +1,12 @@
-import os
 import sys
+import os
+
+# Add project root to path FIRST, before importing from src
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, project_root)
+
+# Now we can import from src.core
+from src.core.data_manager import DataManager
 import json
 import pandas as pd
 from datetime import datetime, timedelta
@@ -25,7 +32,8 @@ except ImportError:
     msal = None
 
 # Import data management system
-from data_manager import DataManager
+# from data_manager import DataManager
+from src.core.data_manager import DataManager
 
 nest_asyncio.apply()
 
@@ -50,7 +58,7 @@ def read_or_fallback(prompt, default=None):
         return val if val else (default if default is not None else "")
 
 # Use robust file path gathering for creds
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
 google_creds_abs = os.path.join(project_root, 'creds', 'google_creds.json')
 wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
