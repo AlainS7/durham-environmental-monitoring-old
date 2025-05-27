@@ -61,11 +61,11 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "hot-durham-collect=data_collection.automated_data_pull:main",
-            "hot-durham-analyze=analysis.complete_analysis_suite:main",
-            "hot-durham-backup=core.backup_system:main",
-            "hot-durham-status=automation.status_check:main",
-            "hot-durham-cleanup=maintenance_cleanup:main",
+            'hot-durham-collect=src.data_collection.automated_data_pull:main',
+            'hot-durham-analyze=src.analysis.complete_analysis_suite:main',
+            'hot-durham-backup=src.core.backup_system:main',
+            'hot-durham-status=src.automation.status_check:main',
+            'hot-durham-cleanup=maintenance_cleanup:main', 
         ],
     },
     include_package_data=True,

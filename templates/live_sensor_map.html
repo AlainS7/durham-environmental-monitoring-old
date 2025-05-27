@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hot Durham Air Quality - Live Sensor Map</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Custom CSS -->
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #333;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .header p {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 80px);
+        }
+        
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.95);
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .sensor-info {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .sensor-info h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 18px;
+        }
+        
+        .sensor-type {
+            background: #667eea;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+        
+        .sensor-type.air-quality {
+            background: #f093fb;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .data-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .data-item .label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        
+        .data-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .status {
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .status.online {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status.no-data {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .last-updated {
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #888;
+            border-top: 1px solid #eee;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        
+        .legend h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .refresh-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 40vh;
+            }
+            
+            #map {
+                height: 60vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌡️ Hot Durham Air Quality - Live Sensor Map</h1>
+        <p>Real-time monitoring of air quality and weather conditions across Durham</p>
+    </div>
+    
+    <div class="main-container">
+        <div id="map"></div>
+        
+        <div class="sidebar">
+            <div id="sensor-list" class="loading">
+                Loading sensors...
+            </div>
+            <div class="last-updated" id="last-updated">
+                Last updated: --
+            </div>
+        </div>
+    </div>
+    
+    <div class="legend">
+        <h4>Legend</h4>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4CAF50;"></div>
+            Weather Station (Online)
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF9800;"></div>
+            Air Quality Sensor (Online)
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #F44336;"></div>
+            Sensor (Offline)
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #9E9E9E;"></div>
+            No Data Available
+        </div>
+    </div>
+    
+    <button class="refresh-btn" id="refresh-btn" onclick="refreshData()">
+        🔄 Refresh Data
+    </button>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Global variables
+        let map;
+        let markers = {};
+        let sensorData = {};
+        let selectedSensor = null;
+        
+        // Initialize map
+        function initMap() {
+            // Center on Durham, NC
+            map = L.map('map').setView([36.0014, -78.9392], 13);
+            
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Load initial data
+            loadSensors();
+        }
+        
+        // Load all sensors
+        async function loadSensors() {
+            try {
+                const response = await fetch('/api/sensors/all');
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Clear existing markers
+                Object.values(markers).forEach(marker => map.removeLayer(marker));
+                markers = {};
+                
+                // Add WU sensors
+                data.wu_sensors.forEach(sensor => {
+                    addSensorToMap(sensor, 'weather');
+                });
+                
+                // Add TSI sensors
+                data.tsi_sensors.forEach(sensor => {
+                    addSensorToMap(sensor, 'air-quality');
+                });
+                
+                // Update sidebar
+                updateSensorList();
+                
+                // Update last updated time
+                document.getElementById('last-updated').textContent = 
+                    `Last updated: ${new Date().toLocaleTimeString()}`;
+                
+            } catch (error) {
+                console.error('Error loading sensors:', error);
+                document.getElementById('sensor-list').innerHTML = 
+                    `<div class="sensor-info">Error loading sensors: ${error.message}</div>`;
+            }
+        }
+        
+        // Add sensor marker to map
+        function addSensorToMap(sensor, type) {
+            const lat = parseFloat(sensor.lat);
+            const lon = parseFloat(sensor.lon);
+            
+            if (isNaN(lat) || isNaN(lon)) {
+                console.warn(`Invalid coordinates for sensor ${sensor.id}`);
+                return;
+            }
+            
+            // Create marker with appropriate color
+            const color = type === 'weather' ? '#4CAF50' : '#FF9800';
+            
+            const marker = L.circleMarker([lat, lon], {
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.7,
+                radius: 8,
+                weight: 2
+            }).addTo(map);
+            
+            // Add popup
+            marker.bindPopup(`
+                <strong>${sensor.name}</strong><br>
+                ${sensor.location}<br>
+                Type: ${sensor.type}<br>
+                <em>Click for live data</em>
+            `);
+            
+            // Add click handler
+            marker.on('click', () => {
+                selectSensor(sensor, type);
+            });
+            
+            markers[sensor.id] = marker;
+            sensorData[sensor.id] = { sensor, type, marker };
+        }
+        
+        // Select a sensor and load its data
+        async function selectSensor(sensor, type) {
+            selectedSensor = sensor;
+            
+            // Highlight selected marker
+            Object.values(markers).forEach(marker => {
+                marker.setStyle({ weight: 2 });
+            });
+            markers[sensor.id].setStyle({ weight: 4 });
+            
+            // Load live data
+            await loadSensorData(sensor, type);
+            updateSensorList();
+        }
+        
+        // Load live data for a sensor
+        async function loadSensorData(sensor, type) {
+            try {
+                const endpoint = type === 'weather' ? 
+                    `/api/wu/${sensor.id}` : `/api/tsi/${sensor.id}`;
+                
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                
+                // Update sensor data
+                if (sensorData[sensor.id]) {
+                    sensorData[sensor.id].liveData = data;
+                    sensorData[sensor.id].lastUpdated = new Date();
+                    
+                    // Update marker color based on status
+                    const marker = markers[sensor.id];
+                    let color;
+                    if (data.status === 'online') {
+                        color = type === 'weather' ? '#4CAF50' : '#FF9800';
+                    } else if (data.status === 'offline') {
+                        color = '#F44336';
+                    } else {
+                        color = '#9E9E9E';
+                    }
+                    
+                    marker.setStyle({ 
+                        color: color, 
+                        fillColor: color 
+                    });
+                }
+                
+            } catch (error) {
+                console.error(`Error loading data for ${sensor.id}:`, error);
+                if (sensorData[sensor.id]) {
+                    sensorData[sensor.id].liveData = { 
+                        error: error.message, 
+                        status: 'offline' 
+                    };
+                }
+            }
+        }
+        
+        // Update sensor list in sidebar
+        function updateSensorList() {
+            const container = document.getElementById('sensor-list');
+            container.innerHTML = '';
+            
+            // Group sensors by type
+            const weatherSensors = [];
+            const airQualitySensors = [];
+            
+            Object.values(sensorData).forEach(item => {
+                if (item.type === 'weather') {
+                    weatherSensors.push(item);
+                } else {
+                    airQualitySensors.push(item);
+                }
+            });
+            
+            // Add weather sensors
+            if (weatherSensors.length > 0) {
+                container.appendChild(createSensorSection('Weather Stations', weatherSensors));
+            }
+            
+            // Add air quality sensors
+            if (airQualitySensors.length > 0) {
+                container.appendChild(createSensorSection('Air Quality Sensors', airQualitySensors));
+            }
+        }
+        
+        // Create sensor section
+        function createSensorSection(title, sensors) {
+            const section = document.createElement('div');
+            section.innerHTML = `
+                <div style="padding: 15px; background: #f8f9fa; font-weight: 600; border-bottom: 1px solid #dee2e6;">
+                    ${title}
+                </div>
+            `;
+            
+            sensors.forEach(item => {
+                const sensorDiv = createSensorInfo(item);
+                section.appendChild(sensorDiv);
+            });
+            
+            return section;
+        }
+        
+        // Create sensor info display
+        function createSensorInfo(item) {
+            const { sensor, type, liveData } = item;
+            const isSelected = selectedSensor && selectedSensor.id === sensor.id;
+            
+            const div = document.createElement('div');
+            div.className = `sensor-info ${isSelected ? 'selected' : ''}`;
+            div.style.cursor = 'pointer';
+            div.style.backgroundColor = isSelected ? '#e3f2fd' : '';
+            
+            let statusClass = 'offline';
+            let statusText = 'Offline';
+            
+            if (liveData) {
+                if (liveData.status === 'online') {
+                    statusClass = 'online';
+                    statusText = 'Online';
+                } else if (liveData.status === 'no_data') {
+                    statusClass = 'no-data';
+                    statusText = 'No Data';
+                }
+            }
+            
+            div.innerHTML = `
+                <h3>${sensor.name}</h3>
+                <div class="sensor-type ${type === 'weather' ? 'weather' : 'air-quality'}">
+                    ${sensor.type}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                    📍 ${sensor.location}
+                </div>
+                <div class="status ${statusClass}">${statusText}</div>
+                ${liveData && liveData.status === 'online' ? createDataGrid(liveData, type) : ''}
+                ${liveData && liveData.error ? `<div style="color: #d32f2f; font-size: 12px; margin-top: 10px;">${liveData.error}</div>` : ''}
+            `;
+            
+            div.addEventListener('click', () => {
+                selectSensor(sensor, type);
+            });
+            
+            return div;
+        }
+        
+        // Create data grid for sensor readings
+        function createDataGrid(data, type) {
+            if (type === 'weather') {
+                return `
+                    <div class="data-grid">
+                        ${data.temperature !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Temperature</div>
+                                <div class="value">${data.temperature}°C</div>
+                            </div>
+                        ` : ''}
+                        ${data.humidity !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Humidity</div>
+                                <div class="value">${data.humidity}%</div>
+                            </div>
+                        ` : ''}
+                        ${data.wind_speed !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Wind Speed</div>
+                                <div class="value">${data.wind_speed} m/s</div>
+                            </div>
+                        ` : ''}
+                        ${data.pressure !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Pressure</div>
+                                <div class="value">${data.pressure} mb</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            } else {
+                return `
+                    <div class="data-grid">
+                        ${data.pm25 !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">PM2.5</div>
+                                <div class="value">${data.pm25} μg/m³</div>
+                            </div>
+                        ` : ''}
+                        ${data.pm10 !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">PM10</div>
+                                <div class="value">${data.pm10} μg/m³</div>
+                            </div>
+                        ` : ''}
+                        ${data.temperature !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Temperature</div>
+                                <div class="value">${data.temperature}°C</div>
+                            </div>
+                        ` : ''}
+                        ${data.humidity !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">Humidity</div>
+                                <div class="value">${data.humidity}%</div>
+                            </div>
+                        ` : ''}
+                        ${data.aqi !== undefined ? `
+                            <div class="data-item">
+                                <div class="label">AQI</div>
+                                <div class="value">${data.aqi}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+        }
+        
+        // Refresh all data
+        async function refreshData() {
+            const btn = document.getElementById('refresh-btn');
+            btn.disabled = true;
+            btn.textContent = '🔄 Refreshing...';
+            
+            try {
+                await loadSensors();
+                
+                // Load live data for all sensors
+                const promises = Object.values(sensorData).map(item => 
+                    loadSensorData(item.sensor, item.type)
+                );
+                await Promise.all(promises);
+                
+                updateSensorList();
+                
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Refresh Data';
+            }
+        }
+        
+        // Auto-refresh every 5 minutes
+        setInterval(refreshData, 5 * 60 * 1000);
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initMap);
+    </script>
+</body>
+</html>

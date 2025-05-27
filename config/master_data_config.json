@@ -1,0 +1,68 @@
+{
+  "data_sources": {
+    "wu": {
+      "enabled": true,
+      "stations": [
+        "KNCDURHA209",
+        "KNCDURHA284", 
+        "KNCDURHA590",
+        "KNCDURHA548",
+        "KNCDURHA549"
+      ],
+      "metrics": [
+        "timestamp",
+        "tempf",
+        "humidity", 
+        "precipRate",
+        "windspeedAvg",
+        "winddir",
+        "solarRadiationHigh",
+        "pressure"
+      ],
+      "collection_start_date": "2023-01-01"
+    },
+    "tsi": {
+      "enabled": true,
+      "devices": "auto_discover",
+      "metrics": [
+        "timestamp",
+        "PM 2.5",
+        "T (C)", 
+        "RH (%)",
+        "PM 1",
+        "PM 4",
+        "PM 10",
+        "PM 2.5 AQI"
+      ],
+      "collection_start_date": "2023-01-01"
+    }
+  },
+  "master_file_settings": {
+    "update_frequency": "weekly",
+    "max_file_size_mb": 500,
+    "backup_retention_days": 365,
+    "enable_versioning": true,
+    "enable_sqlite_db": true
+  },
+  "data_quality": {
+    "enable_deduplication": true,
+    "enable_gap_detection": true,
+    "enable_outlier_detection": false,
+    "duplicate_tolerance_minutes": 5
+  },
+  "automation": {
+    "auto_weekly_update": true,
+    "update_day_of_week": "sunday",
+    "update_time": "02:00",
+    "enable_notifications": false
+  },
+  "export_settings": {
+    "enable_monthly_exports": true,
+    "enable_annual_exports": true,
+    "export_formats": [
+      "csv",
+      "excel",
+      "json"
+    ]
+  }
+}
