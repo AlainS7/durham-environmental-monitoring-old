@@ -5,9 +5,11 @@ import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'src', 'core'))
+sys.path.insert(0, os.path.join(project_root, 'config'))
 
-# Now we can import the data manager
+# Now we can import the data manager and test sensor config
 from data_manager import DataManager
+from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
 import json
 import pandas as pd
 from datetime import datetime, timedelta
@@ -363,6 +365,107 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     combined_df = pd.concat(all_rows, ignore_index=True)
     return combined_df, per_device_dfs
 
+def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
+    """Separate sensor data into test and production based on sensor IDs."""
+    test_data = {'wu': None, 'tsi': None}
+    prod_data = {'wu': None, 'tsi': None}
+    
+    # Separate Weather Underground data
+    if wu_df is not None and not wu_df.empty:
+        test_wu_rows = []
+        prod_wu_rows = []
+        
+        for _, row in wu_df.iterrows():
+            station_id = row.get('stationID', '')
+            if test_config.is_test_sensor(station_id):
+                test_wu_rows.append(row)
+            else:
+                prod_wu_rows.append(row)
+        
+        if test_wu_rows:
+            test_data['wu'] = pd.DataFrame(test_wu_rows)
+            print(f"🧪 Found {len(test_wu_rows)} WU test sensor records")
+        if prod_wu_rows:
+            prod_data['wu'] = pd.DataFrame(prod_wu_rows)
+            print(f"🏭 Found {len(prod_wu_rows)} WU production sensor records")
+    
+    # Separate TSI data
+    if tsi_df is not None and not tsi_df.empty:
+        test_tsi_rows = []
+        prod_tsi_rows = []
+        
+        for _, row in tsi_df.iterrows():
+            # Check multiple possible ID fields
+            device_id = row.get('device_id', '')
+            device_name = row.get('device_name', '')
+            friendly_name = row.get('Device Name', device_name)
+            
+            # Check if any of the identifiers match test sensors
+            is_test = (test_config.is_test_sensor(device_id) or 
+                      test_config.is_test_sensor(device_name) or 
+                      test_config.is_test_sensor(friendly_name))
+            
+            if is_test:
+                test_tsi_rows.append(row)
+            else:
+                prod_tsi_rows.append(row)
+        
+        if test_tsi_rows:
+            test_data['tsi'] = pd.DataFrame(test_tsi_rows)
+            print(f"🧪 Found {len(test_tsi_rows)} TSI test sensor records")
+        if prod_tsi_rows:
+            prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
+            print(f"🏭 Found {len(prod_tsi_rows)} TSI production sensor records")
+    
+    return test_data, prod_data
+
+def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, end_date, pull_type, file_format='csv'):
+    """Save separated sensor data to appropriate locations."""
+    saved_files = {'test': [], 'production': []}
+    
+    # Save test data
+    for data_type, df in test_data.items():
+        if df is not None and not df.empty:
+            # Get unique sensor IDs from test data
+            if data_type == 'wu':
+                sensor_ids = df['stationID'].unique()
+            else:  # tsi
+                sensor_ids = df['device_id'].unique() if 'device_id' in df.columns else df['device_name'].unique()
+            
+            for sensor_id in sensor_ids:
+                if data_type == 'wu':
+                    sensor_df = df[df['stationID'] == sensor_id]
+                else:
+                    if 'device_id' in df.columns:
+                        sensor_df = df[df['device_id'] == sensor_id]
+                    else:
+                        sensor_df = df[df['device_name'] == sensor_id]
+                
+                saved_path = data_manager.save_sensor_data(
+                    sensor_id=sensor_id,
+                    data_type=data_type,
+                    df=sensor_df,
+                    start_date=start_date,
+                    end_date=end_date,
+                    file_format=file_format
+                )
+                if saved_path:
+                    saved_files['test'].append(saved_path)
+    
+    # Save production data using existing method
+    for data_type, df in prod_data.items():
+        if df is not None and not df.empty:
+            saved_path = data_manager.pull_and_store_data(
+                data_type=data_type,
+                start_date=start_date.replace('-', ''),
+                end_date=end_date.replace('-', ''),
+                file_format=file_format
+            )
+            if saved_path:
+                saved_files['production'].append(saved_path)
+    
+    return saved_files
+
 if __name__ == "__main__":
     (
         fetch_wu, fetch_tsi, start_date, end_date, share_email,
@@ -372,6 +475,16 @@ if __name__ == "__main__":
     # Initialize data manager for organized data storage and Google Drive sync
     print("🗂️ Initializing data management system...")
     data_manager = DataManager(project_root)
+    
+    # Initialize test sensor configuration
+    print("🧪 Initializing test sensor configuration...")
+    test_config = TestSensorConfig(project_root)
+    
+    # Display test sensor configuration status
+    print(f"📋 Test sensor configuration loaded:")
+    print(f"   - Test sensors configured: {len(test_config.get_test_sensor_ids())}")
+    print(f"   - Test data path: {test_config.test_data_path}")
+    print(f"   - Production data path: {test_config.prod_data_path}")
     
     # Determine pull type for naming (weekly, bi-weekly, etc.)
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -386,7 +499,7 @@ if __name__ == "__main__":
         pull_type = "monthly"
     else:
         pull_type = "custom"
-    
+
     if fetch_wu:
         wu_df = fetch_wu_data(start_date, end_date)
     else:
@@ -395,6 +508,34 @@ if __name__ == "__main__":
         tsi_df, tsi_per_device = fetch_tsi_data(start_date, end_date)
     else:
         tsi_df, tsi_per_device = None, None
+
+    # Separate sensor data by type (test vs production)
+    print("🔍 Separating sensor data by type...")
+    test_data, prod_data = separate_sensor_data_by_type(wu_df, tsi_df, test_config)
+    
+    # Save data using appropriate routing
+    print("💾 Saving sensor data...")
+    saved_files = save_separated_sensor_data(data_manager, test_data, prod_data, start_date, end_date, pull_type, file_format or 'csv')
+    
+    # Display save summary
+    if saved_files['test']:
+        print(f"🧪 Test sensor data saved to {len(saved_files['test'])} files:")
+        for path in saved_files['test']:
+            print(f"   - {path}")
+    
+    if saved_files['production']:
+        print(f"🏭 Production sensor data saved to {len(saved_files['production'])} files:")
+        for path in saved_files['production']:
+            print(f"   - {path}")
+    
+    # Display test sensor summary
+    print("📊 Test sensor configuration summary:")
+    summary = data_manager.get_test_sensor_summary()
+    for key, value in summary.items():
+        if key == 'test_sensors':
+            print(f"   - {key}: {', '.join(value) if value else 'None'}")
+        else:
+            print(f"   - {key}: {value}")
 
     spreadsheet = None
     sheet_id = None

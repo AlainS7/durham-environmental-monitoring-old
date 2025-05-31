@@ -15,6 +15,11 @@ import logging
 from typing import Optional, Tuple, Dict, Any
 import time
 
+# Import test sensor configuration
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / 'config'))
+from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+
 # Optional imports
 try:
     import schedule
@@ -46,6 +51,10 @@ class DataManager:
     
     def __init__(self, base_dir: str = None):
         self.base_dir = Path(base_dir) if base_dir else Path(__file__).parent.parent / "data"
+        
+        # Initialize test sensor configuration
+        self.test_config = TestSensorConfig()
+        
         self.setup_directories()
         self.setup_logging()
         self.drive_service = self.setup_google_drive()
@@ -739,50 +748,125 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"Error logging automation run: {e}")
 
-def main():
-    """Main function for command-line usage."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Hot Durham Data Manager")
-    parser.add_argument("--mode", choices=["manual", "schedule", "sync"], 
-                       default="manual", help="Operation mode")
-    parser.add_argument("--data-types", nargs="+", choices=["wu", "tsi"], 
-                       default=["wu", "tsi"], help="Data types to pull")
-    parser.add_argument("--start-date", help="Start date (YYYYMMDD)")
-    parser.add_argument("--end-date", help="End date (YYYYMMDD)")
-    parser.add_argument("--format", choices=["csv", "excel"], default="csv", 
-                       help="Output file format")
-    
-    args = parser.parse_args()
-    
-    # Initialize data manager
-    dm = DataManager()
-    
-    if args.mode == "manual":
-        if not args.start_date or not args.end_date:
-            print("Manual mode requires --start-date and --end-date")
-            return
+    def get_sensor_file_paths(self, sensor_id: str, data_type: str, start_date: str, 
+                             end_date: str, file_format: str = "csv") -> Dict[str, Path]:
+        """Generate file paths for sensor data based on test vs production status."""
+        year, week, week_str = self.get_week_info(datetime.strptime(start_date, "%Y%m%d"))
         
-        results = dm.manual_pull(args.data_types, args.start_date, args.end_date, args.format)
-        print("Manual pull completed:")
-        for data_type, path in results.items():
-            if path:
-                print(f"  {data_type.upper()}: {path}")
-            else:
-                print(f"  {data_type.upper()}: Failed")
+        # Determine if this is a test sensor
+        is_test = self.test_config.is_test_sensor(sensor_id)
+        
+        if is_test:
+            # Use test data paths
+            base_path = self.test_config.get_data_path(sensor_id)
+            log_path = self.test_config.get_log_path(sensor_id)
+            prefix = self.test_config.get_filename_prefix(sensor_id)
+            
+            # Create test-specific subdirectories
+            week_folder = base_path / data_type / str(year) / f"week_{week:02d}"
+            week_folder.mkdir(parents=True, exist_ok=True)
+            
+            filename = f"{prefix}_{data_type}_data_{start_date}_to_{end_date}_{sensor_id}.{file_format}"
+            
+            return {
+                "raw": week_folder / filename,
+                "backup": base_path / "backup" / filename,
+                "temp": base_path / "temp" / filename,
+                "log": log_path / f"{prefix}_{data_type}_{datetime.now().strftime('%Y%m%d')}.log",
+                "type": "test"
+            }
+        else:
+            # Use production paths (existing logic)
+            week_folder = self.base_dir / "raw_pulls" / data_type / str(year) / f"week_{week:02d}"
+            week_folder.mkdir(parents=True, exist_ok=True)
+            
+            filename = f"{data_type}_data_{start_date}_to_{end_date}.{file_format}"
+            
+            return {
+                "raw": week_folder / filename,
+                "weekly": self.base_dir / "processed" / "weekly_summaries" / f"{data_type}_week_{week_str}.{file_format}",
+                "backup": self.base_dir / "backup" / "local_archive" / filename,
+                "temp": self.base_dir / "temp" / filename,
+                "log": self.logs_path / f"{data_type}_{datetime.now().strftime('%Y%m%d')}.log",
+                "type": "production"
+            }
     
-    elif args.mode == "schedule":
-        print("Starting automatic scheduled data pulls...")
-        print("Press Ctrl+C to stop")
+    def save_sensor_data(self, sensor_id: str, data_type: str, df: pd.DataFrame, 
+                        start_date: str, end_date: str, file_format: str = "csv") -> Optional[Path]:
+        """Save sensor data to appropriate location based on test vs production status."""
+        if df is None or df.empty:
+            self.logger.warning(f"No data to save for sensor {sensor_id}")
+            return None
+        
         try:
-            dm.schedule_automatic_pulls()
-        except KeyboardInterrupt:
-            print("\nStopping scheduled pulls...")
-    
-    elif args.mode == "sync":
-        print("Starting Google Drive sync...")
-        dm.sync_to_google_drive()
-        print("Sync completed")
+            # Get sensor-specific file paths
+            paths = self.get_sensor_file_paths(sensor_id, data_type, start_date, end_date, file_format)
+            
+            # Log the routing decision
+            sensor_type = "TEST" if paths["type"] == "test" else "PRODUCTION"
+            self.logger.info(f"Routing {sensor_id} ({sensor_type}) data to: {paths['raw']}")
+            
+            # Ensure backup and temp directories exist for test sensors
+            if paths["type"] == "test":
+                paths["backup"].parent.mkdir(parents=True, exist_ok=True)
+                paths["temp"].parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save data based on format
+            if file_format == "excel":
+                df.to_excel(paths["raw"], index=False)
+                df.to_excel(paths["backup"], index=False)
+            else:
+                df.to_csv(paths["raw"], index=False)
+                df.to_csv(paths["backup"], index=False)
+            
+            # Log the save operation
+            with open(paths["log"], 'a', encoding='utf-8') as log_file:
+                log_file.write(f"{datetime.now().isoformat()} - Saved {len(df)} records for sensor {sensor_id} to {paths['raw']}\n")
+            
+            self.logger.info(f"Sensor data saved successfully: {paths['raw']}")
+            
+            # Upload to appropriate Google Drive folder
+            if self.drive_service:
+                if paths["type"] == "test":
+                    # Use new organized test sensor folder structure
+                    drive_folder = self.test_config.get_drive_folder_path_with_date(
+                        sensor_id, 
+                        start_date.replace('-', ''), 
+                        "sensors"
+                    )
+                else:
+                    # Use existing production folder structure
+                    drive_folder = f"HotDurham/RawData/{data_type.upper()}"
+                
+                self.logger.info(f"Uploading {sensor_id} data to Google Drive: {drive_folder}")
+                self.upload_to_drive(paths["raw"], drive_folder)
+            
+            return paths["raw"]
+            
+        except Exception as e:
+            self.logger.error(f"Error saving sensor data for {sensor_id}: {e}")
+            return None
 
-if __name__ == "__main__":
-    main()
+    def get_test_sensor_summary(self) -> Dict[str, Any]:
+        """Get summary of test sensor configuration and data status."""
+        summary = {
+            "test_sensors_count": len(self.test_config.get_test_sensors()),
+            "test_sensors": self.test_config.get_test_sensors(),
+            "test_data_path": str(self.test_config.test_data_path),
+            "test_logs_path": str(self.test_config.test_logs_path),
+            "data_files": {},
+            "log_files": {}
+        }
+        
+        # Count data files in test directories
+        if self.test_config.test_sensors_path.exists():
+            for data_type in ['wu', 'tsi']:
+                type_path = self.test_config.test_sensors_path / data_type
+                if type_path.exists():
+                    summary["data_files"][data_type] = len(list(type_path.rglob("*.csv"))) + len(list(type_path.rglob("*.xlsx")))
+        
+        # Count log files
+        if self.test_config.test_logs_path.exists():
+            summary["log_files"]["count"] = len(list(self.test_config.test_logs_path.glob("*.log")))
+        
+        return summary
