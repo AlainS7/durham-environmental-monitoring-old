@@ -35,7 +35,7 @@ sys.path.append(str(project_root / "src" / "core"))
 sys.path.append(str(project_root / "src" / "data_collection"))
 
 try:
-    from src.core.data_manager import DataManager
+    from data_manager import DataManager
     from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
 except ImportError as e:
     print(f"Warning: Could not import required modules: {e}")

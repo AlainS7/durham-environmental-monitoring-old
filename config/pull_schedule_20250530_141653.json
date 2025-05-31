@@ -1,0 +1,133 @@
+{
+  "created_at": "2025-05-30T14:16:53.370841",
+  "next_update": "2025-05-30T15:16:53.370841",
+  "priority_queues": {
+    "critical": [
+      {
+        "sensor_type": "tsi",
+        "sensor_id": "bs-01",
+        "sensor_name": "BS-01",
+        "priority": "critical",
+        "pull_frequency_minutes": 15,
+        "next_pull": "2025-05-30T14:31:53.370850",
+        "metadata": {
+          "device_id": "bs-01",
+          "device_name": "BS-01",
+          "friendly_name": "Indoor Air Quality - Main Office",
+          "location": "indoor office building",
+          "recent_pm25": 15.2,
+          "last_seen": "2025-05-30T13:46:53.370823"
+        }
+      },
+      {
+        "sensor_type": "tsi",
+        "sensor_id": "bs-05",
+        "sensor_name": "BS-05",
+        "priority": "critical",
+        "pull_frequency_minutes": 15,
+        "next_pull": "2025-05-30T14:31:53.370856",
+        "metadata": {
+          "device_id": "bs-05",
+          "device_name": "BS-05",
+          "friendly_name": "Indoor Classroom Monitor",
+          "location": "indoor classroom",
+          "recent_pm25": 22.1,
+          "last_seen": "2025-05-30T13:31:53.370831"
+        }
+      }
+    ],
+    "high": [
+      {
+        "sensor_type": "tsi",
+        "sensor_id": "bs-11",
+        "sensor_name": "BS-11",
+        "priority": "high",
+        "pull_frequency_minutes": 60,
+        "next_pull": "2025-05-30T15:16:53.370864",
+        "metadata": {
+          "device_id": "bs-11",
+          "device_name": "BS-11",
+          "friendly_name": "Outdoor Ambient Monitor",
+          "location": "outdoor ambient",
+          "recent_pm25": 8.5,
+          "last_seen": "2025-05-30T13:16:53.370833"
+        }
+      },
+      {
+        "sensor_type": "tsi",
+        "sensor_id": "bs-13",
+        "sensor_name": "BS-13",
+        "priority": "high",
+        "pull_frequency_minutes": 60,
+        "next_pull": "2025-05-30T15:16:53.370870",
+        "metadata": {
+          "device_id": "bs-13",
+          "device_name": "BS-13",
+          "friendly_name": "Street Level Monitor",
+          "location": "outdoor street",
+          "recent_pm25": 18.3,
+          "last_seen": "2025-05-30T13:56:53.370834"
+        }
+      },
+      {
+        "sensor_type": "wu",
+        "sensor_id": "KNCDURHA548",
+        "sensor_name": "Duke-MS-01",
+        "priority": "high",
+        "pull_frequency_minutes": 60,
+        "next_pull": "2025-05-30T15:16:53.370874",
+        "metadata": {
+          "station_id": "KNCDURHA548",
+          "station_name": "Duke-MS-01",
+          "location": "Primary monitoring station",
+          "last_seen": "2025-05-30T14:01:53.370836"
+        }
+      },
+      {
+        "sensor_type": "wu",
+        "sensor_id": "KNCDURHA549",
+        "sensor_name": "Duke-MS-02",
+        "priority": "high",
+        "pull_frequency_minutes": 60,
+        "next_pull": "2025-05-30T15:16:53.370878",
+        "metadata": {
+          "station_id": "KNCDURHA549",
+          "station_name": "Duke-MS-02",
+          "location": "Secondary monitoring station",
+          "last_seen": "2025-05-30T13:56:53.370838"
+        }
+      }
+    ],
+    "standard": [
+      {
+        "sensor_type": "wu",
+        "sensor_id": "KNCDURHA209",
+        "sensor_name": "Duke-MS-03",
+        "priority": "standard",
+        "pull_frequency_minutes": 240,
+        "next_pull": "2025-05-30T18:16:53.370881",
+        "metadata": {
+          "station_id": "KNCDURHA209",
+          "station_name": "Duke-MS-03",
+          "location": "Tertiary monitoring station",
+          "last_seen": "2025-05-30T12:16:53.370839"
+        }
+      }
+    ]
+  },
+  "pull_intervals": {
+    "tsi_bs-01": 15,
+    "tsi_bs-05": 15,
+    "tsi_bs-11": 60,
+    "tsi_bs-13": 60,
+    "wu_KNCDURHA548": 60,
+    "wu_KNCDURHA549": 60,
+    "wu_KNCDURHA209": 240
+  },
+  "summary": {
+    "total_sensors": 7,
+    "critical_sensors": 2,
+    "high_priority_sensors": 4,
+    "standard_sensors": 1
+  }
+}

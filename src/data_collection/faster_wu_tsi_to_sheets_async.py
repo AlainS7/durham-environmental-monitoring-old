@@ -4,9 +4,10 @@ import os
 # Add project root to path FIRST, before importing from src
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, 'src', 'core'))
 
-# Now we can import from src.core
-from src.core.data_manager import DataManager
+# Now we can import the data manager
+from data_manager import DataManager
 import json
 import pandas as pd
 from datetime import datetime, timedelta
@@ -32,8 +33,7 @@ except ImportError:
     msal = None
 
 # Import data management system
-# from data_manager import DataManager
-from src.core.data_manager import DataManager
+# Already imported above
 
 nest_asyncio.apply()
 

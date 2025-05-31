@@ -24,7 +24,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(os.path.join(project_root, 'src', 'core'))
 sys.path.append(os.path.join(project_root, 'src', 'data_collection'))
 
-from src.core.data_manager import DataManager
+from data_manager import DataManager
 
 # Import the data fetching functions from the main script  
 from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
