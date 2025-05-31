@@ -41,7 +41,6 @@ hot_durham_wu_map/backend/wu_api_key.json
 *.pem
 *.key
 *.crt
-*.env
 .env
 
 # Raw data files (too large for Git)
@@ -69,6 +68,87 @@ data/temp/
 tmp/
 .tmp/
 *.tmp
+
+# Auto-generated config files with timestamps
+config/*_[0-9]*_[0-9]*.json
+config/pull_schedule_*.json
+
+# Development and test artifacts
+*.sqlite
+*.sqlite3
+.pytest_cache/
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# macOS specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Icon
+*.app
+
+# Editor specific files
+*.swp
+*.swo
+*~
+.vscode/settings.json
+.idea/workspace.xml
+.idea/tasks.xml
+
+# Archive directories (may contain old/deprecated code)
+archive/deprecated_scripts/
+archive/*_partial_*.log
+
+# Backup verification logs (contains system info)
+backup/verification_logs/
+src/backup/verification_logs/
+
+# Any files containing sensitive API data
+*api_key*
+*creds*
+*credentials*
+*token*
+*secret*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Environment and configuration files that might contain secrets
+.env*
+config.ini
+settings.ini
+*.conf
+auth.json
+oauth*.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and editor files that might contain sensitive info
+.vscode/settings.json
+.idea/workspace.xml
+.idea/dataSources.xml
+.idea/httpRequests/
+
+# Large data files that shouldn't be in Git
+*.csv
+*.xlsx
+*.xls
+*.parquet
+reports/*.html
+reports/*.pdf
+
+# Runtime and process files
+*.pid
+*.seed
+*.pid.lock
 
 # Output files
 *.zip
