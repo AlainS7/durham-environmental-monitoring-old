@@ -14,6 +14,7 @@ Features:
 - Historical data gap detection and filling
 - Backup and versioning of master files
 - Integration with existing data management infrastructure
+- Automatic Google Drive synchronization for master files
 """
 
 import os
@@ -28,6 +29,16 @@ from typing import Optional, Dict, List, Tuple, Any
 import sqlite3
 import shutil
 import hashlib
+
+# Google Drive integration
+try:
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    from google.oauth2.service_account import Credentials
+    GOOGLE_DRIVE_AVAILABLE = True
+except ImportError:
+    GOOGLE_DRIVE_AVAILABLE = False
+    print("Warning: Google Drive integration not available. Install google-api-python-client")
 
 # Add project paths
 project_root = Path(__file__).parent.parent.parent
@@ -50,7 +61,7 @@ class MasterDataFileSystem:
         # Initialize paths
         self.master_data_path = self.base_dir / "master_data"
         self.backup_path = self.base_dir / "backup" / "master_data_backup"
-        self.raw_pulls_path = self.base_dir / "raw_pulls"
+        self.raw_pulls_path = project_root / "raw_pulls"  # Fixed: Point to actual raw_pulls location
         self.metadata_path = self.base_dir / "master_data_metadata"
         
         # Setup system
@@ -58,6 +69,9 @@ class MasterDataFileSystem:
         self.setup_logging()
         self.config = self.load_configuration()
         self.data_manager = DataManager(str(self.base_dir))
+        
+        # Google Drive integration
+        self.drive_service = self.setup_google_drive()
         
         # Master file paths
         self.wu_master_file = self.master_data_path / "wu_master_historical_data.csv"
@@ -95,6 +109,93 @@ class MasterDataFileSystem:
         )
         self.logger = logging.getLogger(__name__)
         
+    def setup_google_drive(self) -> Optional[Any]:
+        """Initialize Google Drive service for master data uploads."""
+        if not GOOGLE_DRIVE_AVAILABLE:
+            self.logger.warning("Google Drive integration not available")
+            return None
+            
+        creds_path = project_root / "creds" / "google_creds.json"
+        if not creds_path.exists():
+            self.logger.warning(f"Google credentials not found at {creds_path}")
+            return None
+            
+        try:
+            credentials = Credentials.from_service_account_file(
+                str(creds_path),
+                scopes=['https://www.googleapis.com/auth/drive']
+            )
+            service = build('drive', 'v3', credentials=credentials)
+            self.logger.info("Google Drive service initialized successfully for master data")
+            return service
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Google Drive service: {e}")
+            return None
+            
+    def upload_to_drive(self, local_path: Path, drive_folder: str) -> bool:
+        """Upload a master data file to Google Drive in the specified folder."""
+        if not self.drive_service:
+            self.logger.info(f"Google Drive not available, skipping upload of {local_path.name}")
+            return False
+            
+        try:
+            # Create folder structure if it doesn't exist
+            folder_id = self.get_or_create_drive_folder(drive_folder)
+            if not folder_id:
+                return False
+            
+            # Upload file
+            media = MediaFileUpload(str(local_path))
+            file_metadata = {
+                'name': local_path.name,
+                'parents': [folder_id]
+            }
+            
+            file = self.drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+            
+            self.logger.info(f"Master data file uploaded to Google Drive: {local_path.name} (ID: {file.get('id')})")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to upload {local_path.name} to Google Drive: {e}")
+            return False
+            
+    def get_or_create_drive_folder(self, folder_path: str) -> Optional[str]:
+        """Get or create a folder in Google Drive, handling nested paths."""
+        if not self.drive_service:
+            return None
+            
+        try:
+            folder_names = folder_path.strip('/').split('/')
+            parent_id = 'root'
+            
+            for folder_name in folder_names:
+                # Search for existing folder
+                query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder'"
+                results = self.drive_service.files().list(q=query, fields="files(id, name)").execute()
+                items = results.get('files', [])
+                
+                if items:
+                    parent_id = items[0]['id']
+                else:
+                    # Create new folder
+                    folder_metadata = {
+                        'name': folder_name,
+                        'parents': [parent_id],
+                        'mimeType': 'application/vnd.google-apps.folder'
+                    }
+                    folder = self.drive_service.files().create(body=folder_metadata, fields='id').execute()
+                    parent_id = folder.get('id')
+            
+            return parent_id
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create/access folder {folder_path}: {e}")
+            return None
     def load_configuration(self) -> Dict[str, Any]:
         """Load or create master data system configuration."""
         if self.config_path.exists():
@@ -145,6 +246,15 @@ class MasterDataFileSystem:
                 "enable_monthly_exports": True,
                 "enable_annual_exports": True,
                 "export_formats": ["csv", "excel", "json"]
+            },
+            "google_drive": {
+                "enabled": True,
+                "upload_master_files": True,
+                "upload_backups": True,
+                "upload_exports": True,
+                "master_folder": "HotDurham/Processed/MasterData",
+                "backup_folder": "HotDurham/Backups/MasterData",
+                "export_folder": "HotDurham/Processed/MasterData/Exports"
             }
         }
         
@@ -393,6 +503,11 @@ class MasterDataFileSystem:
             shutil.copy2(master_file, backup_path)
             self.logger.info(f"Created backup: {backup_path}")
             
+            # Upload backup to Google Drive if enabled
+            if self.config.get("google_drive", {}).get("upload_backups", True):
+                backup_folder = self.config.get("google_drive", {}).get("backup_folder", "HotDurham/Backups/MasterData")
+                self.upload_to_drive(backup_path, backup_folder)
+            
         # Load and combine all historical data
         combined_df = self.load_and_combine_historical_data(data_type)
         
@@ -414,6 +529,11 @@ class MasterDataFileSystem:
             # Create version if enabled
             if self.config.get("master_file_settings", {}).get("enable_versioning", True):
                 self.create_version(data_type, combined_df)
+                
+            # Upload to Google Drive if enabled
+            if self.config.get("google_drive", {}).get("upload_master_files", True):
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                self.upload_to_drive(master_file, master_folder)
                 
             self.logger.info(f"Successfully created master {data_type.upper()} file with {len(combined_df)} records")
             self.logger.info(f"Date range: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}")
@@ -566,6 +686,11 @@ class MasterDataFileSystem:
             backup_path = self.backup_path / backup_name
             shutil.copy2(master_file, backup_path)
             
+            # Upload backup to Google Drive if enabled
+            if self.config.get("google_drive", {}).get("upload_backups", True):
+                backup_folder = self.config.get("google_drive", {}).get("backup_folder", "HotDurham/Backups/MasterData")
+                self.upload_to_drive(backup_path, backup_folder)
+            
             # Save updated master file
             combined_df.to_csv(master_file, index=False)
             
@@ -575,6 +700,11 @@ class MasterDataFileSystem:
                 
             # Update metadata
             self.update_metadata(data_type, combined_df)
+            
+            # Upload updated file to Google Drive if enabled
+            if self.config.get("google_drive", {}).get("upload_master_files", True):
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                self.upload_to_drive(master_file, master_folder)
             
             new_records = len(combined_df) - len(existing_df)
             self.logger.info(f"Successfully appended {new_records} new {data_type.upper()} records to master file")
@@ -660,6 +790,11 @@ class MasterDataFileSystem:
             # Update metadata for combined file
             self.update_metadata("combined", combined_df)
             
+            # Upload combined file to Google Drive if enabled
+            if self.config.get("google_drive", {}).get("upload_master_files", True):
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                self.upload_to_drive(self.combined_master_file, master_folder)
+            
             self.logger.info(f"Successfully created combined master file with {len(combined_df)} total records")
             return True
             
@@ -741,6 +876,11 @@ class MasterDataFileSystem:
                 exported_files.append(export_path)
                 self.logger.info(f"Exported {len(df)} records to {export_path}")
                 
+                # Upload export to Google Drive if enabled
+                if self.config.get("google_drive", {}).get("upload_exports", True):
+                    export_folder = self.config.get("google_drive", {}).get("export_folder", "HotDurham/Processed/MasterData/Exports")
+                    self.upload_to_drive(export_path, export_folder)
+                
             except Exception as e:
                 self.logger.error(f"Error exporting {export_type} data: {e}")
                 
@@ -779,7 +919,7 @@ class MasterDataFileSystem:
         if self.tsi_master_file.exists():
             try:
                 tsi_df = pd.read_csv(self.tsi_master_file)
-                tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce')
+                tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce');
                 
                 summary["tsi_data"] = {
                     "file_exists": True,
@@ -798,7 +938,7 @@ class MasterDataFileSystem:
         if self.combined_master_file.exists():
             try:
                 combined_df = pd.read_csv(self.combined_master_file)
-                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
+                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce');
                 
                 summary["combined_data"] = {
                     "file_exists": True,
@@ -835,7 +975,107 @@ class MasterDataFileSystem:
                     
         if cleaned_count > 0:
             self.logger.info(f"Cleaned up {cleaned_count} old backup files")
-
+            
+    def test_google_drive_integration(self) -> Dict[str, bool]:
+        """Test Google Drive integration for master data files."""
+        self.logger.info("🔍 Testing Google Drive integration for master data files...")
+        
+        results = {
+            "google_drive_available": False,
+            "credentials_valid": False,
+            "folder_creation": False,
+            "file_upload": False
+        }
+        
+        # Check Google Drive availability
+        results["google_drive_available"] = GOOGLE_DRIVE_AVAILABLE and self.drive_service is not None
+        
+        if not results["google_drive_available"]:
+            self.logger.warning("❌ Google Drive service not available")
+            return results
+            
+        # Test credentials
+        try:
+            # Try to access drive
+            self.drive_service.files().list(pageSize=1).execute()
+            results["credentials_valid"] = True
+            self.logger.info("✅ Google Drive credentials valid")
+        except Exception as e:
+            self.logger.error(f"❌ Google Drive credentials invalid: {e}")
+            return results
+            
+        # Test folder creation
+        try:
+            test_folder = "HotDurham/Processed/MasterData/Test"
+            folder_id = self.get_or_create_drive_folder(test_folder)
+            if folder_id:
+                results["folder_creation"] = True
+                self.logger.info("✅ Google Drive folder creation successful")
+                
+                # Clean up test folder
+                self.drive_service.files().delete(fileId=folder_id).execute()
+            else:
+                self.logger.error("❌ Google Drive folder creation failed")
+                return results
+        except Exception as e:
+            self.logger.error(f"❌ Google Drive folder creation error: {e}")
+            return results
+            
+        # Test file upload with a small test file
+        try:
+            test_file_path = self.master_data_path / "test_upload.txt"
+            test_file_path.write_text("Test file for Google Drive integration")
+            
+            upload_success = self.upload_to_drive(test_file_path, "HotDurham/Processed/MasterData")
+            if upload_success:
+                results["file_upload"] = True
+                self.logger.info("✅ Google Drive file upload successful")
+            else:
+                self.logger.error("❌ Google Drive file upload failed")
+                
+            # Clean up test file
+            test_file_path.unlink()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Google Drive file upload error: {e}")
+            
+        return results
+        
+    def sync_existing_master_files_to_drive(self) -> Dict[str, bool]:
+        """Sync existing master data files to Google Drive."""
+        self.logger.info("📤 Syncing existing master data files to Google Drive...")
+        
+        results = {}
+        master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+        
+        # Sync master files
+        master_files = [
+            ("wu", self.wu_master_file),
+            ("tsi", self.tsi_master_file), 
+            ("combined", self.combined_master_file),
+            ("database", self.master_db_file)
+        ]
+        
+        for file_type, file_path in master_files:
+            if file_path.exists():
+                success = self.upload_to_drive(file_path, master_folder)
+                results[f"{file_type}_master"] = success
+                if success:
+                    self.logger.info(f"✅ Uploaded {file_type} master file to Google Drive")
+                else:
+                    self.logger.error(f"❌ Failed to upload {file_type} master file")
+            else:
+                results[f"{file_type}_master"] = False
+                self.logger.warning(f"⚠️ {file_type} master file does not exist: {file_path}")
+                
+        # Sync metadata files
+        if self.metadata_path.exists():
+            for metadata_file in self.metadata_path.glob("*.json"):
+                success = self.upload_to_drive(metadata_file, f"{master_folder}/Metadata")
+                metadata_name = metadata_file.stem
+                results[f"metadata_{metadata_name}"] = success
+                
+        return results
 def main():
     """Main entry point for master data file system operations."""
     import argparse
@@ -848,6 +1088,8 @@ def main():
     parser.add_argument('--format', choices=['csv', 'excel', 'json'], default='csv', help='Export format')
     parser.add_argument('--summary', action='store_true', help='Show master data summary')
     parser.add_argument('--cleanup', action='store_true', help='Clean up old backups')
+    parser.add_argument('--test-drive', action='store_true', help='Test Google Drive integration')
+    parser.add_argument('--sync-to-drive', action='store_true', help='Sync existing master files to Google Drive')
     
     args = parser.parse_args()
     
@@ -878,6 +1120,22 @@ def main():
     elif args.cleanup:
         print("🧹 Cleaning up old backups...")
         master_system.cleanup_old_backups()
+        
+    elif args.test_drive:
+        print("🔧 Testing Google Drive integration...")
+        results = master_system.test_google_drive_integration()
+        print("Test Results:")
+        for test, passed in results.items():
+            status = "✅ PASS" if passed else "❌ FAIL"
+            print(f"  {test}: {status}")
+            
+    elif args.sync_to_drive:
+        print("☁️ Syncing existing master files to Google Drive...")
+        results = master_system.sync_existing_master_files_to_drive()
+        print("Sync Results:")
+        for file_type, success in results.items():
+            status = "✅ SUCCESS" if success else "❌ FAILED"
+            print(f"  {file_type}: {status}")
         
     else:
         print("ℹ️  No action specified. Use --help for options.")

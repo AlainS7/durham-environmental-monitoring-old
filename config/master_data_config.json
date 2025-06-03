@@ -64,5 +64,14 @@
       "excel",
       "json"
     ]
+  },
+  "google_drive": {
+    "enabled": true,
+    "upload_master_files": true,
+    "upload_backups": true,
+    "upload_exports": true,
+    "master_folder": "HotDurham/Processed/MasterData",
+    "backup_folder": "HotDurham/Backups/MasterData",
+    "export_folder": "HotDurham/Processed/MasterData/Exports"
   }
 }
