@@ -1,0 +1,76 @@
+PRODUCTION SENSOR ANALYSIS REPORT
+==================================================
+Generated: 2025-06-03 01:05:53
+Analysis ID: 20250603_010550
+
+SENSOR INVENTORY:
+--------------------
+Weather Underground Sensors:
+  • KNCDURHA209: Duke-MS-03
+    - Total readings: 4,265
+    - Date range: 2025-03-01 06:00:00+00:00 to 2025-05-27 14:00:00+00:00
+    - Avg temperature: 17.3°C
+    - Avg humidity: 74.2%
+  • KNCDURHA590: Duke-Kestrel-01
+    - Total readings: 3,265
+    - Date range: 2025-03-01 06:00:00+00:00 to 2025-05-27 14:00:00+00:00
+    - Avg temperature: 18.3°C
+    - Avg humidity: 62.7%
+
+TSI Air Quality Sensors:
+  • curp44dveott0jmp5aig: BS-05 (El Futuro Greenspace)
+    - Total readings: 1,067
+    - Date range: 2025-03-01 00:00:02+00:00 to 2025-05-26 23:00:34+00:00
+    - Avg temperature: 20.5°C
+    - Avg humidity: 46.9%
+    - Avg PM 2.5 AQI: 14.7
+  • curp5a72jtt5l9q4rkd0: BS-7
+    - Total readings: 477
+    - Date range: 2025-03-01 00:02:19+00:00 to 2025-03-20 20:02:19+00:00
+    - Avg temperature: 16.5°C
+    - Avg humidity: 45.6%
+    - Avg PM 2.5 AQI: 20.8
+  • curp4k5veott0jmp5aj0: BS-01 (Eno)
+    - Total readings: 1,327
+    - Date range: 2025-03-01 00:05:29+00:00 to 2025-05-26 23:00:24+00:00
+    - Avg temperature: 17.5°C
+    - Avg humidity: 54.2%
+    - Avg PM 2.5 AQI: 16.8
+  • cv884m3ne4ath43m7hu0: BS-11
+    - Total readings: 1,418
+    - Date range: 2025-03-11 20:19:46+00:00 to 2025-05-26 23:00:28+00:00
+    - Avg temperature: 22.4°C
+    - Avg humidity: 51.1%
+    - Avg PM 2.5 AQI: 14.9
+  • d0930cvoovhpfm35n49g: BS-13
+    - Total readings: 294
+    - Date range: 2025-05-12 19:31:56+00:00 to 2025-05-26 23:00:04+00:00
+    - Avg temperature: 21.5°C
+    - Avg humidity: 67.0%
+    - Avg PM 2.5 AQI: 17.6
+  • curp515veott0jmp5ajg: BS-3 (Golden Belt)
+    - Total readings: 168
+    - Date range: 2025-05-19 00:00:51+00:00 to 2025-05-26 23:00:34+00:00
+    - Avg temperature: 21.7°C
+    - Avg humidity: 67.2%
+    - Avg PM 2.5 AQI: 23.0
+
+SUMMARY STATISTICS:
+--------------------
+Total production sensors: 8
+Total Weather Underground sensors: 2
+Total TSI Air Quality sensors: 6
+Total readings across all sensors: 12,281
+
+GENERATED VISUALIZATIONS:
+-------------------------
+1. Multi-sensor temperature overlay
+2. Multi-sensor humidity overlay
+3. Air quality analysis (TSI sensors)
+4. Weather parameters grid (WU sensors)
+5. Cross-sensor correlation matrix
+6. Interactive dashboard (HTML)
+
+All visualizations saved to: sensor_visualizations/production_sensors/
+
+END OF REPORT

@@ -1,0 +1,111 @@
+PRODUCTION SENSOR VISUALIZATION UPLOAD SUMMARY
+=======================================================
+Upload Date: 2025-06-03 01:23:23
+Session ID: 20250603_012307
+Total Files Uploaded: 7
+
+PRODUCTION SENSOR INVENTORY:
+------------------------------
+Weather Underground Sensors:
+  • KNCDURHA209: Duke-MS-03
+  • KNCDURHA590: Duke-Kestrel-01
+
+TSI Air Quality Sensors:
+  • curp44dveott0jmp5aig: BS-05 (El Futuro Greenspace)
+  • curp5a72jtt5l9q4rkd0: BS-7
+  • curp4k5veott0jmp5aj0: BS-01 (Eno)
+  • cv884m3ne4ath43m7hu0: BS-11
+  • d0930cvoovhpfm35n49g: BS-13
+  • curp515veott0jmp5ajg: BS-3 (Golden Belt)
+
+UPLOADED VISUALIZATIONS:
+-------------------------
+1. production_air_quality_analysis_20250603_010550.png
+   Description: Comprehensive air quality analysis for TSI sensors (PM 2.5, PM 10, AQI)
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+2. production_correlation_matrix_20250603_010550.png
+   Description: Cross-sensor correlation analysis between all production sensors
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+3. production_humidity_overlay_20250603_010550.png
+   Description: Multi-sensor humidity comparison overlay showing all production sensors (WU + TSI)
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+4. production_interactive_dashboard_20250603_010550.html
+   Description: Interactive multi-parameter dashboard (HTML) for all production sensors
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+5. production_sensor_report_20250603_010550.txt
+   Description: Comprehensive analysis summary report for all production sensors
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+6. production_temperature_overlay_20250603_010550.png
+   Description: Multi-sensor temperature comparison overlay showing all production sensors (WU + TSI)
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+7. production_weather_parameters_20250603_010550.png
+   Description: Weather parameters grid analysis for Weather Underground sensors
+   Google Drive Link: https://drive.google.com/drive/folders/1i0yxwe__oQPGkDXHukAzVnuIr8bxw5TJ
+
+VISUALIZATION TYPES GENERATED:
+------------------------------
+1. Multi-Sensor Temperature Overlay
+   - Shows temperature trends from all WU and TSI sensors
+   - Compares sensor readings over time
+
+2. Multi-Sensor Humidity Overlay
+   - Shows humidity trends from all WU and TSI sensors
+   - Identifies patterns and correlations
+
+3. Air Quality Analysis (TSI Sensors)
+   - PM 2.5 AQI trends over time
+   - PM 10 concentration analysis
+   - Average AQI by sensor location
+   - PM 2.5 vs PM 10 correlation plots
+
+4. Weather Parameters Grid (WU Sensors)
+   - Temperature, humidity, solar radiation
+   - Wind speed, pressure, precipitation
+   - Comprehensive weather monitoring
+
+5. Cross-Sensor Correlation Matrix
+   - Temperature correlations between all sensors
+   - Humidity correlations between all sensors
+   - Statistical relationship analysis
+
+6. Interactive Dashboard (HTML)
+   - Multi-parameter interactive plots
+   - Zoom, pan, and filter capabilities
+   - Real-time data exploration
+
+7. Analysis Summary Report
+   - Comprehensive sensor inventory
+   - Statistical summaries
+   - Data quality metrics
+
+FOLDER STRUCTURE:
+-----------------
+HotDurham/
+  └── ProductionData_SensorAnalysis/
+      └── Visualizations/
+          └── MultiSensorAnalysis/
+              └── Analysis_20250603_012307/
+                  ├── Temperature & Humidity Overlays
+                  ├── Air Quality Analysis
+                  ├── Weather Parameters Grid
+                  ├── Correlation Matrix
+                  ├── Interactive Dashboard
+                  └── Summary Report
+
+ANALYSIS NOTES:
+---------------
+• Production sensors are distinct from test sensors
+• Test sensors (KNCDURHA634-648) are used for validation
+• Production sensors provide operational monitoring data
+• Weather Underground sensors provide meteorological data
+• TSI sensors provide air quality measurements
+• All visualizations use consistent color coding
+• Interactive dashboard allows detailed exploration
+
+END OF SUMMARY

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Complete Historical class CompleteHistoricalTestSensorCollector:
+Complete collector for historical test sensor data with Google Drive upload.
+"""
+
+class CompleteHistoricalTestSensorCollector:
     """Complete collector for historical test sensor data with Google Drive upload."""
     
     def __init__(self):
