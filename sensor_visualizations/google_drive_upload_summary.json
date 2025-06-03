@@ -1,0 +1,42 @@
+{
+  "upload_info": {
+    "upload_timestamp": "2025-06-03T00:56:12.218607",
+    "upload_folder": "HotDurham/TestData_ValidationCluster/Visualizations/MultiSensorAnalysis/Analysis_20250603_005542",
+    "total_files_uploaded": 8,
+    "project": "Hot Durham Multi-Sensor Visualization Analysis"
+  },
+  "visualization_files": {
+    "graphs": [
+      "humidity_analysis.png",
+      "data_quality_dashboard.png",
+      "temperature_analysis.png",
+      "environmental_dashboard.png",
+      "pressure_wind_analysis.png",
+      "sensor_correlations.png"
+    ],
+    "reports": [
+      "analysis_report.json",
+      "README.md"
+    ],
+    "other": []
+  },
+  "analysis_details": {
+    "sensors_analyzed": 14,
+    "data_points": 8113,
+    "analysis_period": "2025-06-01 to 2025-06-03",
+    "visualization_types": [
+      "Temperature Analysis",
+      "Humidity Analysis",
+      "Pressure & Wind Analysis",
+      "Sensor Correlations",
+      "Data Quality Dashboard",
+      "Environmental Dashboard"
+    ]
+  },
+  "access_info": {
+    "google_drive_folder": "HotDurham/TestData_ValidationCluster/Visualizations/MultiSensorAnalysis/Analysis_20250603_005542",
+    "recommended_viewing": "Download PNG files for best quality",
+    "report_file": "analysis_report.json",
+    "documentation": "README.md"
+  }
+}

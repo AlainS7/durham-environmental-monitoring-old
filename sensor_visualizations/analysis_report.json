@@ -1,0 +1,375 @@
+{
+  "analysis_timestamp": "2025-06-03T00:52:56.802229",
+  "total_sensors": 14,
+  "total_records": 8113,
+  "data_period": {
+    "start": "2025-06-01T04:03:00+00:00",
+    "end": "2025-06-03T04:29:00+00:00"
+  },
+  "sensor_summary": {
+    "KNCDURHA639": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 519,
+        "0": 63
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 29.0,
+        "mean": 19.919243986254294,
+        "std": 4.406067727369287
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 96.0,
+        "mean": 57.455326460481096,
+        "std": 20.571120009971956
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 12.0,
+        "mean": 2.829896907216495,
+        "std": 2.242662464374124
+      }
+    },
+    "KNCDURHA644": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 512,
+        "0": 70
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.919243986254294,
+        "std": 4.314089407243446
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 95.0,
+        "mean": 56.53780068728523,
+        "std": 20.394165257888297
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 10.0,
+        "mean": 2.4536082474226806,
+        "std": 1.993210257413624
+      }
+    },
+    "KNCDURHA634": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 518,
+        "0": 64
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 29.0,
+        "mean": 19.855670103092784,
+        "std": 4.505853200158277
+      },
+      "humidity_stats": {
+        "min": 25.0,
+        "max": 97.0,
+        "mean": 59.59621993127148,
+        "std": 19.90719049828538
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 13.0,
+        "mean": 2.79553264604811,
+        "std": 2.304925648675105
+      }
+    },
+    "KNCDURHA638": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 513,
+        "0": 69
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 29.0,
+        "mean": 19.93470790378007,
+        "std": 4.38419923436209
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 95.0,
+        "mean": 56.824742268041234,
+        "std": 20.377340682054918
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 15.0,
+        "mean": 2.9140893470790377,
+        "std": 2.2812958192805777
+      }
+    },
+    "KNCDURHA645": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 512,
+        "0": 70
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.90893470790378,
+        "std": 4.357155971217879
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 96.0,
+        "mean": 56.9639175257732,
+        "std": 20.601465544013426
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 9.0,
+        "mean": 2.4003436426116838,
+        "std": 1.921756910623959
+      }
+    },
+    "KNCDURHA642": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 515,
+        "0": 67
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.859106529209622,
+        "std": 4.364708793174774
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 95.0,
+        "mean": 57.41237113402062,
+        "std": 20.348809880656326
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 10.0,
+        "mean": 2.52233676975945,
+        "std": 2.017654276975996
+      }
+    },
+    "KNCDURHA648": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 502,
+        "0": 80
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 29.0,
+        "mean": 20.04123711340206,
+        "std": 4.470020678886188
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 96.0,
+        "mean": 56.261168384879724,
+        "std": 20.532343085337516
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 9.0,
+        "mean": 1.802405498281787,
+        "std": 1.6282132971352359
+      }
+    },
+    "KNCDURHA635": {
+      "records_count": 548,
+      "data_completeness": 94.15807560137456,
+      "qc_status_distribution": {
+        "1": 480,
+        "0": 68
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.6478102189781,
+        "std": 4.37982481352733
+      },
+      "humidity_stats": {
+        "min": 25.0,
+        "max": 95.0,
+        "mean": 59.51642335766423,
+        "std": 19.493816213046788
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 14.0,
+        "mean": 2.7335766423357666,
+        "std": 2.319578142704306
+      }
+    },
+    "KNCDURHA643": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 513,
+        "0": 69
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.9020618556701,
+        "std": 4.361349868762052
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 95.0,
+        "mean": 57.149484536082475,
+        "std": 20.469279060973502
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 12.0,
+        "mean": 2.661512027491409,
+        "std": 2.1422388715583294
+      }
+    },
+    "KNCDURHA646": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 515,
+        "0": 67
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.891752577319586,
+        "std": 4.3389482954339815
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 94.0,
+        "mean": 56.30068728522337,
+        "std": 20.154667855359772
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 10.0,
+        "mean": 2.424398625429553,
+        "std": 1.9539331178728485
+      }
+    },
+    "KNCDURHA640": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 513,
+        "0": 69
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.9106529209622,
+        "std": 4.363704538693649
+      },
+      "humidity_stats": {
+        "min": 23.0,
+        "max": 95.0,
+        "mean": 57.16494845360825,
+        "std": 20.460707692835516
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 12.0,
+        "mean": 2.6597938144329896,
+        "std": 2.1351251339893405
+      }
+    },
+    "KNCDURHA641": {
+      "records_count": 581,
+      "data_completeness": 99.82817869415808,
+      "qc_status_distribution": {
+        "1": 514,
+        "0": 67
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.929432013769365,
+        "std": 4.386520636851612
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 96.0,
+        "mean": 57.230636833046475,
+        "std": 20.814165214085854
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 12.0,
+        "mean": 2.550774526678141,
+        "std": 2.1032618966668606
+      }
+    },
+    "KNCDURHA647": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 513,
+        "0": 69
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 28.0,
+        "mean": 19.946735395189002,
+        "std": 4.372765974439197
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 95.0,
+        "mean": 56.27319587628866,
+        "std": 20.412171196866158
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 9.0,
+        "mean": 2.1924398625429555,
+        "std": 1.767193256506967
+      }
+    },
+    "KNCDURHA636": {
+      "records_count": 582,
+      "data_completeness": 100.0,
+      "qc_status_distribution": {
+        "1": 514,
+        "0": 68
+      },
+      "temperature_stats": {
+        "min": 12.0,
+        "max": 29.0,
+        "mean": 19.97594501718213,
+        "std": 4.382656954378243
+      },
+      "humidity_stats": {
+        "min": 22.0,
+        "max": 95.0,
+        "mean": 57.11683848797251,
+        "std": 20.4595253427585
+      },
+      "wind_stats": {
+        "min": 0.0,
+        "max": 15.0,
+        "mean": 2.8831615120274914,
+        "std": 2.3955117897072187
+      }
+    }
+  }
+}
