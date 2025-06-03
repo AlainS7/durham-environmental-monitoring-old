@@ -1,0 +1,49 @@
+{
+  "sensor_id": "KNCDURHA634",
+  "ms_station": "MS-09",
+  "date": "20250603",
+  "date_readable": "2025-06-03",
+  "created": "2025-06-03T00:00:24.878141",
+  "last_updated": "2025-06-03T00:15:48.358742",
+  "reading_count": 2,
+  "readings": [
+    {
+      "sensor_id": "KNCDURHA634",
+      "ms_station": "MS-09",
+      "collection_time": "2025-06-03T00:00:19.854695",
+      "timestamp": "2025-06-03T03:59:00Z",
+      "temperature": 15.5,
+      "humidity": 77.0,
+      "pressure": 1013.72,
+      "wind_speed": 0.0,
+      "wind_gust": 0.0,
+      "wind_direction": 189,
+      "precip_rate": 0.0,
+      "precip_total": 0.0,
+      "solar_radiation": 0.0,
+      "uv": 0.0,
+      "dewpoint": 11.5,
+      "heat_index": 15.5,
+      "wind_chill": 15.5
+    },
+    {
+      "sensor_id": "KNCDURHA634",
+      "ms_station": "MS-09",
+      "collection_time": "2025-06-03T00:15:43.413719",
+      "timestamp": "2025-06-03T04:14:00Z",
+      "temperature": 15.0,
+      "humidity": 76.0,
+      "pressure": 1013.82,
+      "wind_speed": 0.0,
+      "wind_gust": 0.0,
+      "wind_direction": 189,
+      "precip_rate": 0.0,
+      "precip_total": 0.0,
+      "solar_radiation": 0.0,
+      "uv": 0.0,
+      "dewpoint": 10.8,
+      "heat_index": 15.0,
+      "wind_chill": 15.0
+    }
+  ]
+}

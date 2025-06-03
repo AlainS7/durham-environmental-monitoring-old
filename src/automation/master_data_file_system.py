@@ -521,6 +521,10 @@ class MasterDataFileSystem:
             
             # Save to database if enabled
             if self.config.get("master_file_settings", {}).get("enable_sqlite_db", True):
+                # Fix timestamp column mapping for existing database
+                if data_type == "wu" and 'timestamp' in combined_df.columns and 'obsTimeUtc' not in combined_df.columns:
+                    # Database expects obsTimeUtc for wu_data table
+                    combined_df['obsTimeUtc'] = combined_df['timestamp']
                 self.save_to_database(combined_df, data_type)
                 
             # Update metadata
@@ -694,8 +698,12 @@ class MasterDataFileSystem:
             # Save updated master file
             combined_df.to_csv(master_file, index=False)
             
-            # Update database
+            # Update database if enabled
             if self.config.get("master_file_settings", {}).get("enable_sqlite_db", True):
+                # Fix timestamp column mapping for existing database
+                if data_type == "wu" and 'timestamp' in combined_df.columns and 'obsTimeUtc' not in combined_df.columns:
+                    # Database expects obsTimeUtc for wu_data table
+                    combined_df['obsTimeUtc'] = combined_df['timestamp']
                 self.save_to_database(combined_df, data_type)
                 
             # Update metadata

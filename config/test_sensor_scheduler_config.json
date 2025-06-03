@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "created": "2025-06-02T23:45:21.714399",
+  "description": "15-minute test sensor data collection configuration",
+  "collection_settings": {
+    "interval_minutes": 15,
+    "max_retry_attempts": 3,
+    "retry_delay_seconds": 30,
+    "collection_timeout_seconds": 300,
+    "batch_size": 5
+  },
+  "test_sensors": {
+    "wu_sensors": [
+      "KNCDURHA634",
+      "KNCDURHA635",
+      "KNCDURHA636",
+      "KNCDURHA638",
+      "KNCDURHA639",
+      "KNCDURHA640",
+      "KNCDURHA641",
+      "KNCDURHA642",
+      "KNCDURHA643",
+      "KNCDURHA644",
+      "KNCDURHA645",
+      "KNCDURHA646",
+      "KNCDURHA647",
+      "KNCDURHA648"
+    ],
+    "ms_mapping": {
+      "KNCDURHA634": "MS-09",
+      "KNCDURHA635": "MS-10",
+      "KNCDURHA636": "MS-11",
+      "KNCDURHA638": "MS-12",
+      "KNCDURHA639": "MS-13",
+      "KNCDURHA640": "MS-14",
+      "KNCDURHA641": "MS-15",
+      "KNCDURHA642": "MS-16",
+      "KNCDURHA643": "MS-17",
+      "KNCDURHA644": "MS-18",
+      "KNCDURHA645": "MS-19",
+      "KNCDURHA646": "MS-20",
+      "KNCDURHA647": "MS-21",
+      "KNCDURHA648": "MS-22"
+    },
+    "data_types": [
+      "temperature",
+      "humidity",
+      "pressure",
+      "windSpeed",
+      "windGust",
+      "precipRate",
+      "solarRadiation",
+      "uv"
+    ]
+  },
+  "storage_settings": {
+    "local_storage": true,
+    "google_drive_upload": true,
+    "data_retention_days": 90,
+    "backup_retention_days": 30
+  },
+  "automation": {
+    "enabled": true,
+    "start_hour": 0,
+    "end_hour": 23,
+    "skip_weekends": false,
+    "pause_during_maintenance": true
+  },
+  "monitoring": {
+    "log_level": "INFO",
+    "health_check_interval_minutes": 60,
+    "alert_on_failures": true,
+    "max_consecutive_failures": 3
+  }
+}

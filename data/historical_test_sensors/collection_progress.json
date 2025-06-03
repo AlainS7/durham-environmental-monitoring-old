@@ -1,0 +1,21 @@
+{
+  "last_updated": "2025-06-03T00:34:20.779590",
+  "completed_sensors": {
+    "KNCDURHA643": true,
+    "KNCDURHA639": true,
+    "KNCDURHA641": true,
+    "KNCDURHA636": true,
+    "KNCDURHA634": true,
+    "KNCDURHA648": true,
+    "KNCDURHA646": true,
+    "KNCDURHA644": true,
+    "KNCDURHA642": true,
+    "KNCDURHA640": true,
+    "KNCDURHA638": true,
+    "KNCDURHA635": true,
+    "KNCDURHA647": true,
+    "KNCDURHA645": true
+  },
+  "total_sensors": 14,
+  "completed_count": 14
+}
