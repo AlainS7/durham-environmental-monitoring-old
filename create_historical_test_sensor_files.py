@@ -431,19 +431,18 @@ class CompleteHistoricalTestSensorCollector:
             
         except Exception as e:
             self.logger.error(f"Error creating summary report: {e}")
-            return NoneSensor Data Collection and Google Drive Upload
+            return None
+            
+# This script efficiently fetches all available historical 15-minute data for each test sensor from Weather 
+# Underground since they first came online and uploads comprehensive files to Google Drive.
 
-This script efficiently fetches all available historical 15-minute data for each test sensor from Weather 
-Underground since they first came online and uploads comprehensive files to Google Drive.
-
-Features:
-- Collects ALL historical 15-minute data from Weather Underground API
-- Creates one comprehensive file per sensor with all data since inception
-- Uploads organized files to Google Drive with proper folder structure
-- Progress tracking, resume capability, and error handling
-- Parallel processing for faster collection
-- Intelligent date range detection and optimization
-"""
+# Features:
+# - Collects ALL historical 15-minute data from Weather Underground API
+# - Creates one comprehensive file per sensor with all data since inception
+# - Uploads organized files to Google Drive with proper folder structure
+# - Progress tracking, resume capability, and error handling
+# - Parallel processing for faster collection
+# - Intelligent date range detection and optimization
 
 import os
 import sys
