@@ -638,8 +638,8 @@ if __name__ == "__main__":
                 weekly_summary.setdefault(name, []).append([
                     wrow['Week Start'],
                     round(wrow['Avg PM2.5'], 2) if not pd.isna(wrow['Avg PM2.5']) else '',
-                    round(wrow['Min Temp'], 2) if not pd.isna(wrow['Min Temp']) else '',
-                    round(wrow['Max Temp'], 2) if not pd.isna(wrow['Max Temp']) else '',
+                    round(wrow['Min Temp'], 1) if not pd.isna(wrow['Min Temp']) else '',
+                    round(wrow['Max Temp'], 1) if not pd.isna(wrow['Max Temp']) else '',
                     round(wrow['Avg RH'], 2) if not pd.isna(wrow['Avg RH']) else ''
                 ])
         

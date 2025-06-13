@@ -29,6 +29,15 @@ except ImportError as e:
     print(f"Warning: Some dependencies not available: {e}")
     DEPENDENCIES_AVAILABLE = False
 
+# Import predictive analytics (Feature 2)
+try:
+    from src.ml.predictive_api import PredictiveAnalyticsAPI
+    PREDICTIVE_ANALYTICS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Predictive analytics not available: {e}")
+    PredictiveAnalyticsAPI = None
+    PREDICTIVE_ANALYTICS_AVAILABLE = False
+
 class PublicDashboardServer:
     """Public-facing Flask server for Durham residents"""
     
@@ -36,6 +45,15 @@ class PublicDashboardServer:
         self.project_root = Path(project_root_path)
         self.app = Flask(__name__, template_folder=str(self.project_root / "templates"))
         self.setup_routes()
+        
+        # Initialize predictive analytics (Feature 2)
+        self.predictive_api = None
+        if PREDICTIVE_ANALYTICS_AVAILABLE:
+            try:
+                self.predictive_api = PredictiveAnalyticsAPI(self.project_root)
+                print("🤖 Predictive Analytics integrated with dashboard")
+            except Exception as e:
+                print(f"Warning: Could not initialize predictive analytics: {e}")
         
         # Load credentials (with error handling for public deployment)
         self.wu_creds = self.load_wu_credentials()
@@ -130,6 +148,17 @@ class PublicDashboardServer:
             """Main public dashboard page"""
             return render_template('public_dashboard.html')
         
+        @self.app.route('/mobile')
+        def mobile_dashboard():
+            """Mobile-optimized dashboard page"""
+            return render_template('mobile_dashboard.html')
+        
+        @self.app.route('/static/<path:filename>')
+        def static_files(filename):
+            """Serve static files for PWA"""
+            static_dir = self.project_root / 'static'
+            return self.app.send_static_file(filename) if static_dir.exists() else '', 404
+        
         @self.app.route('/api/public/sensors')
         def get_public_sensors():
             """Get all public sensor locations (no sensitive data)"""
@@ -216,6 +245,141 @@ class PublicDashboardServer:
                     'message': 'Trend data temporarily unavailable'
                 }), 503
         
+        # Predictive Analytics Routes (Feature 2)
+        @self.app.route('/api/public/forecast')
+        def get_air_quality_forecast():
+            """Get air quality forecast for public display"""
+            try:
+                if not self.predictive_api:
+                    return jsonify({
+                        'error': 'Forecast service not available',
+                        'status': 'unavailable'
+                    }), 503
+                
+                hours_ahead = request.args.get('hours', 24, type=int)
+                hours_ahead = min(max(hours_ahead, 1), 48)  # Limit to 1-48 hours
+                
+                forecast_data = self.predictive_api.get_air_quality_forecast(hours_ahead=hours_ahead)
+                return jsonify(forecast_data)
+                
+            except Exception as e:
+                print(f"Error getting forecast: {e}")
+                return jsonify({
+                    'error': 'Forecast temporarily unavailable',
+                    'status': 'error'
+                }), 503
+        
+        @self.app.route('/api/public/alerts')
+        def get_public_alerts():
+            """Get current public alerts"""
+            try:
+                if not self.predictive_api:
+                    return jsonify({
+                        'alerts': [],
+                        'status': 'unavailable'
+                    })
+                
+                alerts_data = self.predictive_api.get_current_alerts()
+                
+                # Filter for public alerts only
+                public_alerts = []
+                if 'alerts' in alerts_data:
+                    for alert in alerts_data['alerts']:
+                        if alert['level'] in ['high', 'critical', 'emergency']:
+                            public_alerts.append({
+                                'level': alert['level'],
+                                'message': alert['message'],
+                                'timestamp': alert['timestamp'],
+                                'recommendations': alert.get('recommendations', [])
+                            })
+                
+                return jsonify({
+                    'alerts': public_alerts,
+                    'total_active': len(public_alerts),
+                    'last_updated': datetime.now().isoformat(),
+                    'status': 'success'
+                })
+                
+            except Exception as e:
+                print(f"Error getting alerts: {e}")
+                return jsonify({
+                    'alerts': [],
+                    'error': 'Alerts temporarily unavailable'
+                }), 503
+        
+        @self.app.route('/api/public/health-impact')
+        def get_health_impact_summary():
+            """Get public health impact summary"""
+            try:
+                if not self.predictive_api:
+                    return jsonify({
+                        'health_impact': {},
+                        'status': 'unavailable'
+                    })
+                
+                health_data = self.predictive_api.get_health_impact_assessment()
+                
+                # Simplify for public consumption
+                if 'health_impact' in health_data:
+                    health_impact = health_data['health_impact']
+                    public_summary = {
+                        'overall_risk_level': self._get_public_risk_level(health_impact),
+                        'recommendations': health_impact.get('recommendations', [])[:5],  # Top 5
+                        'air_quality_summary': health_impact.get('air_quality_summary', {}),
+                        'last_updated': health_impact.get('generated_at', datetime.now().isoformat())
+                    }
+                    
+                    return jsonify({
+                        'health_summary': public_summary,
+                        'status': 'success'
+                    })
+                
+                return jsonify(health_data)
+                
+            except Exception as e:
+                print(f"Error getting health impact: {e}")
+                return jsonify({
+                    'health_summary': {},
+                    'error': 'Health impact data temporarily unavailable'
+                }), 503
+        
+        @self.app.route('/api/public/seasonal')
+        def get_seasonal_patterns():
+            """Get seasonal air quality patterns for public education"""
+            try:
+                if not self.predictive_api:
+                    return jsonify({
+                        'seasonal_data': {},
+                        'status': 'unavailable'
+                    })
+                
+                seasonal_data = self.predictive_api.get_seasonal_analysis()
+                
+                # Simplify for public consumption
+                if 'seasonal_analysis' in seasonal_data:
+                    analysis = seasonal_data['seasonal_analysis']
+                    public_patterns = {
+                        'monthly_averages': analysis.get('monthly_patterns', {}).get('mean', {}),
+                        'seasonal_trends': analysis.get('seasonal_patterns', {}).get('mean', {}),
+                        'best_months': self._get_best_air_quality_months(analysis),
+                        'worst_months': self._get_worst_air_quality_months(analysis),
+                        'analysis_period': analysis.get('analysis_period', {})
+                    }
+                    
+                    return jsonify({
+                        'seasonal_patterns': public_patterns,
+                        'status': 'success'
+                    })
+                
+                return jsonify(seasonal_data)
+                
+            except Exception as e:
+                print(f"Error getting seasonal patterns: {e}")
+                return jsonify({
+                    'seasonal_patterns': {},
+                    'error': 'Seasonal data temporarily unavailable'
+                }), 503
+
         @self.app.route('/health')
         def health_check():
             """Health check endpoint for monitoring"""
@@ -414,6 +578,64 @@ class PublicDashboardServer:
         print(f"🔍 Health Check: http://{host}:{port}/health")
         print(f"📊 Dashboard: http://{host}:{port}")
         self.app.run(host=host, port=port, debug=debug)
+
+    def _get_public_risk_level(self, health_impact: dict) -> str:
+        """Get simplified public risk level from health impact data"""
+        try:
+            advisory_level = health_impact.get('estimated_health_impacts', {}).get('health_advisory_level', 'NORMAL')
+            
+            if advisory_level == 'HEALTH_EMERGENCY':
+                return 'HIGH_RISK'
+            elif advisory_level == 'HEALTH_WARNING':
+                return 'MODERATE_RISK'
+            elif advisory_level == 'HEALTH_ADVISORY':
+                return 'LOW_RISK'
+            else:
+                return 'MINIMAL_RISK'
+        except:
+            return 'UNKNOWN'
+    
+    def _get_best_air_quality_months(self, analysis: dict) -> list:
+        """Get months with best air quality from seasonal analysis"""
+        try:
+            monthly_means = analysis.get('monthly_patterns', {}).get('mean', {})
+            if not monthly_means:
+                return []
+            
+            # Sort months by PM2.5 levels (lower is better)
+            sorted_months = sorted(monthly_means.items(), key=lambda x: x[1])
+            
+            # Return top 3 best months
+            month_names = {
+                1: 'January', 2: 'February', 3: 'March', 4: 'April',
+                5: 'May', 6: 'June', 7: 'July', 8: 'August', 
+                9: 'September', 10: 'October', 11: 'November', 12: 'December'
+            }
+            
+            return [month_names.get(int(month), f'Month {month}') for month, _ in sorted_months[:3]]
+        except:
+            return ['Spring', 'Fall', 'Winter']  # Default fallback
+    
+    def _get_worst_air_quality_months(self, analysis: dict) -> list:
+        """Get months with worst air quality from seasonal analysis"""
+        try:
+            monthly_means = analysis.get('monthly_patterns', {}).get('mean', {})
+            if not monthly_means:
+                return []
+            
+            # Sort months by PM2.5 levels (higher is worse)
+            sorted_months = sorted(monthly_means.items(), key=lambda x: x[1], reverse=True)
+            
+            # Return top 3 worst months
+            month_names = {
+                1: 'January', 2: 'February', 3: 'March', 4: 'April',
+                5: 'May', 6: 'June', 7: 'July', 8: 'August', 
+                9: 'September', 10: 'October', 11: 'November', 12: 'December'
+            }
+            
+            return [month_names.get(int(month), f'Month {month}') for month, _ in sorted_months[:3]]
+        except:
+            return ['Summer', 'Late Fall']  # Default fallback
 
 def main():
     """Main function to run the public dashboard"""

@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Hot Durham - Mobile Air Quality</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#2E7D32">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Hot Durham">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <link rel="manifest" href="/static/manifest.json">
+    
+    <!-- Modern CSS Framework -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Chart.js for mobile-optimized charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Leaflet for touch-friendly maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #2E7D32;
+            --secondary-color: #1976D2;
+            --accent-color: #FF6F00;
+            --good-color: #4CAF50;
+            --moderate-color: #FFC107;
+            --unhealthy-color: #FF5722;
+            --danger-color: #D32F2F;
+            --bg-light: #F8F9FA;
+            --text-dark: #212529;
+            --card-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Mobile-First Header */
+        .mobile-header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 1rem 0 1.5rem 0;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: var(--card-shadow);
+        }
+
+        .mobile-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .mobile-header .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-top: 0.25rem;
+        }
+
+        /* Location Banner */
+        .location-banner {
+            background: rgba(255,255,255,0.1);
+            padding: 0.75rem;
+            margin: 1rem 1rem 0 1rem;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .location-banner.loading {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Main AQI Display - Hero Card */
+        .aqi-hero {
+            background: white;
+            border-radius: 20px;
+            margin: 1rem;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .aqi-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--good-color), var(--moderate-color), var(--unhealthy-color));
+        }
+
+        .aqi-number {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .aqi-status {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 0.5rem 0;
+        }
+
+        .aqi-message {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Temperature Display */
+        .temp-display {
+            background: white;
+            border-radius: 16px;
+            margin: 1rem;
+            padding: 1.5rem;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .temp-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--secondary-color);
+        }
+
+        .temp-info {
+            text-align: right;
+        }
+
+        .temp-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .temp-conditions {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        /* Quick Stats Grid */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 1rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.25rem;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s ease;
+        }
+
+        .stat-card:active {
+            transform: scale(0.98);
+        }
+
+        .stat-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.8;
+        }
+
+        .stat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+
+        /* Bottom Navigation Tabs */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #eee;
+            padding: 0.5rem 0;
+            display: flex;
+            justify-content: space-around;
+            z-index: 1000;
+            box-shadow: 0 -2px 12px rgba(0,0,0,0.1);
+        }
+
+        .nav-item {
+            flex: 1;
+            text-align: center;
+            padding: 0.5rem;
+            color: #666;
+            text-decoration: none;
+            transition: color 0.2s ease;
+            cursor: pointer;
+        }
+
+        .nav-item.active {
+            color: var(--primary-color);
+        }
+
+        .nav-item i {
+            font-size: 1.2rem;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .nav-item span {
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        /* Content Sections */
+        .content-section {
+            display: none;
+            padding-bottom: 80px; /* Space for bottom nav */
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        /* Map Section */
+        .mobile-map {
+            height: 50vh;
+            margin: 1rem;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--card-shadow);
+        }
+
+        /* Sensor List */
+        .sensor-list {
+            margin: 1rem;
+        }
+
+        .sensor-item {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sensor-info h6 {
+            margin: 0;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .sensor-info small {
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        .sensor-value {
+            text-align: right;
+        }
+
+        .sensor-reading {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .sensor-unit {
+            font-size: 0.7rem;
+            color: #666;
+        }
+
+        /* Chart Section */
+        .chart-container {
+            background: white;
+            border-radius: 16px;
+            margin: 1rem;
+            padding: 1rem;
+            box-shadow: var(--card-shadow);
+        }
+
+        .chart-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        /* Health Recommendations */
+        .recommendations {
+            background: white;
+            border-radius: 16px;
+            margin: 1rem;
+            padding: 1.5rem;
+            box-shadow: var(--card-shadow);
+        }
+
+        .recommendation-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-light);
+            border-radius: 8px;
+        }
+
+        .recommendation-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .recommendation-item i {
+            color: var(--primary-color);
+            margin-right: 0.75rem;
+            margin-top: 0.1rem;
+            font-size: 0.9rem;
+        }
+
+        .recommendation-text {
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        /* Loading States */
+        .loading-card {
+            background: white;
+            border-radius: 16px;
+            margin: 1rem;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+        }
+
+        .loading-spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Pull-to-Refresh */
+        .pull-refresh {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0 0 12px 12px;
+            font-size: 0.8rem;
+            z-index: 1001;
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .pull-refresh.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Offline Banner */
+        .offline-banner {
+            background: #FF5722;
+            color: white;
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.8rem;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1002;
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .offline-banner.show {
+            transform: translateY(0);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 375px) {
+            .aqi-number {
+                font-size: 3rem;
+            }
+            
+            .temp-value {
+                font-size: 2rem;
+            }
+            
+            .quick-stats {
+                gap: 0.75rem;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .mobile-header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .aqi-hero {
+                margin: 2rem;
+            }
+            
+            .quick-stats {
+                grid-template-columns: repeat(4, 1fr);
+                margin: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Offline Banner -->
+    <div class="offline-banner" id="offline-banner">
+        <i class="fas fa-wifi"></i> You're offline. Data may not be current.
+    </div>
+
+    <!-- Pull to Refresh Indicator -->
+    <div class="pull-refresh" id="pull-refresh">
+        <i class="fas fa-sync-alt"></i> Release to refresh
+    </div>
+
+    <!-- Mobile Header -->
+    <div class="mobile-header">
+        <h1><i class="fas fa-leaf"></i> Hot Durham</h1>
+        <div class="subtitle">Real-Time Air Quality</div>
+        
+        <!-- Location Banner -->
+        <div class="location-banner loading" id="location-banner">
+            <i class="fas fa-map-marker-alt"></i>
+            <span id="location-text">Getting your location...</span>
+            <button class="btn btn-sm btn-outline-light ms-2" id="location-btn" onclick="updateLocation()">
+                <i class="fas fa-crosshairs"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Home Section -->
+    <div class="content-section active" id="home-section">
+        <!-- Main AQI Display -->
+        <div class="aqi-hero" id="aqi-hero">
+            <div class="loading-spinner"></div>
+            <p>Loading air quality data...</p>
+        </div>
+
+        <!-- Temperature Display -->
+        <div class="temp-display" id="temp-display">
+            <div>
+                <div class="temp-value" id="temp-value">--°</div>
+                <div class="temp-label">Nearest Sensor</div>
+            </div>
+            <div class="temp-info">
+                <div class="temp-conditions" id="temp-conditions">Loading...</div>
+                <div class="temp-label">Current Conditions</div>
+            </div>
+        </div>
+
+        <!-- Quick Stats Grid -->
+        <div class="quick-stats" id="quick-stats">
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-microscope" style="color: var(--accent-color);"></i></div>
+                <div class="stat-value" id="pm25-value">--</div>
+                <div class="stat-label">PM2.5 μg/m³</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-tint" style="color: var(--secondary-color);"></i></div>
+                <div class="stat-value" id="humidity-value">--</div>
+                <div class="stat-label">Humidity %</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-wind" style="color: var(--primary-color);"></i></div>
+                <div class="stat-value" id="wind-value">--</div>
+                <div class="stat-label">Wind km/h</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-thermometer" style="color: var(--danger-color);"></i></div>
+                <div class="stat-value" id="pressure-value">--</div>
+                <div class="stat-label">Pressure hPa</div>
+            </div>
+        </div>
+
+        <!-- Health Recommendations -->
+        <div class="recommendations" id="recommendations">
+            <h6 style="margin-bottom: 1rem;"><i class="fas fa-lightbulb"></i> Health Recommendations</h6>
+            <div id="recommendation-list">
+                <div class="loading-spinner"></div>
+                <p style="text-align: center; color: #666;">Loading recommendations...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Section -->
+    <div class="content-section" id="map-section">
+        <div class="mobile-map" id="mobile-map"></div>
+        
+        <div class="sensor-list" id="map-sensor-list">
+            <!-- Sensor items will be populated here -->
+        </div>
+    </div>
+
+    <!-- Sensors Section -->
+    <div class="content-section" id="sensors-section">
+        <div class="sensor-list" id="sensor-list">
+            <div class="loading-card">
+                <div class="loading-spinner"></div>
+                <p>Loading all sensors...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trends Section -->
+    <div class="content-section" id="trends-section">
+        <div class="chart-container">
+            <div class="chart-title">24-Hour Air Quality Trends</div>
+            <canvas id="trends-chart" height="200"></canvas>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">Temperature & Humidity</div>
+            <canvas id="weather-chart" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <a class="nav-item active" onclick="switchTab('home')">
+            <i class="fas fa-home"></i>
+            <span>Home</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('map')">
+            <i class="fas fa-map"></i>
+            <span>Map</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('sensors')">
+            <i class="fas fa-list"></i>
+            <span>Sensors</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('trends')">
+            <i class="fas fa-chart-line"></i>
+            <span>Trends</span>
+        </a>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Global variables
+        let map;
+        let trendsChart;
+        let weatherChart;
+        let userLocation = null;
+        let nearestSensor = null;
+        let allSensors = [];
+        let isOnline = navigator.onLine;
+        let lastDataUpdate = null;
+
+        // PWA Installation
+        let deferredPrompt;
+
+        // Initialize the mobile dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeMobileDashboard();
+            registerServiceWorker();
+            setupPullToRefresh();
+            setupOfflineDetection();
+            
+            // Request location permission
+            getUserLocation();
+            
+            // Load initial data
+            loadAllData();
+            
+            // Auto-refresh every 5 minutes
+            setInterval(loadAllData, 5 * 60 * 1000);
+        });
+
+        function initializeMobileDashboard() {
+            // Set up viewport for proper mobile rendering
+            if ('ontouchstart' in window) {
+                document.body.classList.add('touch-device');
+            }
+            
+            // Prevent zoom on input focus (iOS)
+            document.addEventListener('touchstart', function() {}, true);
+            
+            // Handle orientation changes
+            window.addEventListener('orientationchange', function() {
+                setTimeout(() => {
+                    if (map) map.invalidateSize();
+                }, 100);
+            });
+        }
+
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(registration => {
+                        console.log('SW registered:', registration);
+                    })
+                    .catch(error => {
+                        console.log('SW registration failed:', error);
+                    });
+            }
+        }
+
+        function setupPullToRefresh() {
+            let startY = 0;
+            let currentY = 0;
+            let pullThreshold = 60;
+            let pullIndicator = document.getElementById('pull-refresh');
+            
+            document.addEventListener('touchstart', (e) => {
+                startY = e.touches[0].pageY;
+            }, { passive: true });
+            
+            document.addEventListener('touchmove', (e) => {
+                currentY = e.touches[0].pageY;
+                let pullDistance = currentY - startY;
+                
+                if (pullDistance > 0 && window.scrollY === 0) {
+                    if (pullDistance > pullThreshold) {
+                        pullIndicator.classList.add('show');
+                        pullIndicator.innerHTML = '<i class="fas fa-sync-alt"></i> Release to refresh';
+                    } else {
+                        pullIndicator.innerHTML = '<i class="fas fa-arrow-down"></i> Pull to refresh';
+                    }
+                }
+            }, { passive: true });
+            
+            document.addEventListener('touchend', (e) => {
+                let pullDistance = currentY - startY;
+                
+                if (pullDistance > pullThreshold && window.scrollY === 0) {
+                    pullIndicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+                    loadAllData().finally(() => {
+                        setTimeout(() => {
+                            pullIndicator.classList.remove('show');
+                        }, 1000);
+                    });
+                } else {
+                    pullIndicator.classList.remove('show');
+                }
+                
+                startY = 0;
+                currentY = 0;
+            }, { passive: true });
+        }
+
+        function setupOfflineDetection() {
+            const offlineBanner = document.getElementById('offline-banner');
+            
+            window.addEventListener('online', () => {
+                isOnline = true;
+                offlineBanner.classList.remove('show');
+                loadAllData();
+            });
+            
+            window.addEventListener('offline', () => {
+                isOnline = false;
+                offlineBanner.classList.add('show');
+            });
+            
+            if (!isOnline) {
+                offlineBanner.classList.add('show');
+            }
+        }
+
+        function getUserLocation() {
+            const locationBanner = document.getElementById('location-banner');
+            const locationText = document.getElementById('location-text');
+            
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        userLocation = {
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude
+                        };
+                        
+                        locationBanner.classList.remove('loading');
+                        locationText.textContent = `${userLocation.lat.toFixed(3)}, ${userLocation.lon.toFixed(3)}`;
+                        
+                        // Find nearest sensor
+                        findNearestSensor();
+                    },
+                    (error) => {
+                        locationBanner.classList.remove('loading');
+                        locationText.textContent = 'Durham, NC (Default)';
+                        userLocation = { lat: 35.9940, lon: -78.8986 }; // Default to Durham
+                        findNearestSensor();
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 300000 // 5 minutes
+                    }
+                );
+            } else {
+                locationBanner.classList.remove('loading');
+                locationText.textContent = 'Durham, NC (Default)';
+                userLocation = { lat: 35.9940, lon: -78.8986 };
+            }
+        }
+
+        function updateLocation() {
+            const locationBtn = document.getElementById('location-btn');
+            const locationBanner = document.getElementById('location-banner');
+            
+            locationBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            locationBanner.classList.add('loading');
+            
+            getUserLocation();
+            
+            setTimeout(() => {
+                locationBtn.innerHTML = '<i class="fas fa-crosshairs"></i>';
+            }, 2000);
+        }
+
+        function findNearestSensor() {
+            if (!userLocation || allSensors.length === 0) return;
+            
+            let minDistance = Infinity;
+            let nearest = null;
+            
+            allSensors.forEach(sensor => {
+                const distance = calculateDistance(
+                    userLocation.lat, userLocation.lon,
+                    sensor.lat, sensor.lon
+                );
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearest = sensor;
+                }
+            });
+            
+            if (nearest) {
+                nearestSensor = nearest;
+                updateNearestSensorDisplay();
+            }
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function updateNearestSensorTemp(userLat, userLon) {
+            const nearestSensor = findNearestSensor(userLat, userLon);
+            const temp = nearestSensor.temperature.toFixed(1);
+            document.getElementById('mobile-temp').textContent = `${temp}°C`;
+        }
+
+        async function loadAllData() {
+            try {
+                // Show loading states
+                showLoadingStates();
+                
+                // Load all data in parallel
+                const [aqiData, airQualityData, weatherData, trendsData] = await Promise.all([
+                    fetchHealthIndex(),
+                    fetchAirQualityData(),
+                    fetchWeatherData(),
+                    fetchTrendsData()
+                ]);
+
+                // Store all sensors for location calculations
+                allSensors = [
+                    ...(airQualityData.sensors || []),
+                    ...(weatherData.sensors || [])
+                ];
+
+                // Update UI components
+                updateAQIHero(aqiData);
+                updateNearestSensorDisplay();
+                updateQuickStats(airQualityData, weatherData);
+                updateRecommendations(aqiData);
+                updateSensorLists(airQualityData, weatherData);
+                updateChartsForMobile(trendsData);
+                
+                // Find nearest sensor if we have location
+                if (userLocation) {
+                    findNearestSensor();
+                }
+                
+                lastDataUpdate = new Date();
+                
+            } catch (error) {
+                console.error('Error loading mobile dashboard data:', error);
+                showErrorStates();
+            }
+        }
+
+        function showLoadingStates() {
+            // Implement loading states for mobile components
+        }
+
+        function showErrorStates() {
+            // Implement error states for mobile components
+        }
+
+        function updateAQIHero(data) {
+            const hero = document.getElementById('aqi-hero');
+            
+            if (data.error) {
+                hero.innerHTML = `
+                    <div style="color: #FF5722;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                        <p>Data temporarily unavailable</p>
+                        <small>Please check your connection and try again</small>
+                    </div>
+                `;
+                return;
+            }
+
+            const aqiColor = getAQIColor(data.overall_aqi);
+            
+            hero.innerHTML = `
+                <div class="aqi-number" style="color: ${aqiColor}">${data.overall_aqi || 'N/A'}</div>
+                <div class="aqi-status" style="color: ${aqiColor}">${data.status}</div>
+                <div class="aqi-message">${data.message}</div>
+                <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem;">
+                    <span style="background: ${aqiColor}20; color: ${aqiColor}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem;">
+                        Air Quality ${data.status}
+                    </span>
+                </div>
+            `;
+        }
+
+        function updateNearestSensorDisplay() {
+            if (!nearestSensor) return;
+            
+            const tempValue = document.getElementById('temp-value');
+            const tempConditions = document.getElementById('temp-conditions');
+            
+            if (nearestSensor.temperature !== undefined) {
+                tempValue.textContent = `${nearestSensor.temperature.toFixed(1)}°C`;
+                tempConditions.textContent = nearestSensor.conditions || nearestSensor.name;
+            }
+        }
+
+        function updateQuickStats(airQualityData, weatherData) {
+            // Update PM2.5 from nearest air quality sensor
+            if (airQualityData.sensors && airQualityData.sensors.length > 0) {
+                document.getElementById('pm25-value').textContent = airQualityData.sensors[0].pm25.toFixed(1);
+            }
+            
+            // Update weather stats from nearest weather sensor
+            if (weatherData.sensors && weatherData.sensors.length > 0) {
+                const weather = weatherData.sensors[0];
+                document.getElementById('humidity-value').textContent = weather.humidity;
+                document.getElementById('wind-value').textContent = weather.wind_speed.toFixed(1);
+                document.getElementById('pressure-value').textContent = Math.round(weather.pressure);
+            }
+        }
+
+        function updateRecommendations(data) {
+            const recommendationList = document.getElementById('recommendation-list');
+            
+            if (data.recommendations && data.recommendations.length > 0) {
+                const html = data.recommendations.map(rec => `
+                    <div class="recommendation-item">
+                        <i class="fas fa-check"></i>
+                        <div class="recommendation-text">${rec}</div>
+                    </div>
+                `).join('');
+                
+                recommendationList.innerHTML = html;
+            } else {
+                recommendationList.innerHTML = `
+                    <div class="recommendation-item">
+                        <i class="fas fa-info-circle"></i>
+                        <div class="recommendation-text">No specific recommendations at this time. Continue normal activities.</div>
+                    </div>
+                `;
+            }
+        }
+
+        function updateSensorLists(airQualityData, weatherData) {
+            const sensorList = document.getElementById('sensor-list');
+            const mapSensorList = document.getElementById('map-sensor-list');
+            
+            let html = '';
+            
+            // Add air quality sensors
+            if (airQualityData.sensors) {
+                airQualityData.sensors.forEach(sensor => {
+                    const statusColor = getAQIColor(sensor.aqi);
+                    html += `
+                        <div class="sensor-item" onclick="selectSensor('${sensor.id}')">
+                            <div class="sensor-info">
+                                <h6>${sensor.name}</h6>
+                                <small><i class="fas fa-map-marker-alt"></i> ${sensor.location}</small>
+                            </div>
+                            <div class="sensor-value">
+                                <div class="sensor-reading" style="color: ${statusColor}">AQI ${sensor.aqi}</div>
+                                <div class="sensor-unit">PM2.5: ${sensor.pm25} μg/m³</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            // Add weather sensors
+            if (weatherData.sensors) {
+                weatherData.sensors.forEach(sensor => {
+                    html += `
+                        <div class="sensor-item" onclick="selectSensor('${sensor.id}')">
+                            <div class="sensor-info">
+                                <h6>${sensor.name}</h6>
+                                <small><i class="fas fa-thermometer-half"></i> ${sensor.location}</small>
+                            </div>
+                            <div class="sensor-value">
+                                <div class="sensor-reading" style="color: var(--secondary-color)">${sensor.temperature.toFixed(1)}°C</div>
+                                <div class="sensor-unit">${sensor.humidity}% humidity</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            sensorList.innerHTML = html;
+            mapSensorList.innerHTML = html;
+        }
+
+        function updateChartsForMobile(data) {
+            // Update trends chart with mobile-optimized settings
+            updateMobileTrendsChart(data);
+            updateMobileWeatherChart(data);
+        }
+
+        function updateMobileTrendsChart(data) {
+            const ctx = document.getElementById('trends-chart').getContext('2d');
+            
+            if (trendsChart) {
+                trendsChart.destroy();
+            }
+
+            if (!data.trends || !data.trends.hourly) {
+                return;
+            }
+
+            const hours = data.trends.hourly.slice(-12); // Show last 12 hours on mobile
+            
+            trendsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: hours.map(h => {
+                        const date = new Date(h.time);
+                        return date.getHours() + ':00';
+                    }),
+                    datasets: [
+                        {
+                            label: 'AQI',
+                            data: hours.map(h => h.aqi),
+                            borderColor: '#2E7D32',
+                            backgroundColor: 'rgba(46, 125, 50, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 6
+                            }
+                        },
+                        y: {
+                            display: true,
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            },
+                            ticks: {
+                                maxTicksLimit: 5
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+        }
+
+        function updateMobileWeatherChart(data) {
+            const ctx = document.getElementById('weather-chart').getContext('2d');
+            
+            if (weatherChart) {
+                weatherChart.destroy();
+            }
+
+            if (!data.trends || !data.trends.hourly) {
+                return;
+            }
+
+            const hours = data.trends.hourly.slice(-12);
+            
+            weatherChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: hours.map(h => {
+                        const date = new Date(h.time);
+                        return date.getHours() + ':00';
+                    }),
+                    datasets: [
+                        {
+                            label: 'Temperature (°C)',
+                            data: hours.map(h => h.temperature),
+                            borderColor: '#1976D2',
+                            backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Humidity (%)',
+                            data: hours.map(h => h.humidity),
+                            borderColor: '#FF6F00',
+                            backgroundColor: 'rgba(255, 111, 0, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                fontSize: 12,
+                                boxWidth: 10
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 6
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            },
+                            ticks: {
+                                maxTicksLimit: 4
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                            ticks: {
+                                maxTicksLimit: 4
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function switchTab(tabName) {
+            // Update navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.nav-item').classList.add('active');
+            
+            // Update content sections
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            document.getElementById(`${tabName}-section`).classList.add('active');
+            
+            // Initialize map if switching to map tab
+            if (tabName === 'map' && !map) {
+                initializeMobileMap();
+            }
+            
+            // Update charts if switching to trends
+            if (tabName === 'trends') {
+                setTimeout(() => {
+                    if (trendsChart) trendsChart.resize();
+                    if (weatherChart) weatherChart.resize();
+                }, 100);
+            }
+        }
+
+        function initializeMobileMap() {
+            map = L.map('mobile-map').setView([userLocation?.lat || 35.9940, userLocation?.lon || -78.8986], 12);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(map);
+            
+            // Add user location if available
+            if (userLocation) {
+                const userIcon = L.divIcon({
+                    html: '<i class="fas fa-user" style="color: #1976D2;"></i>',
+                    iconSize: [20, 20],
+                    className: 'user-location-icon'
+                });
+                
+                L.marker([userLocation.lat, userLocation.lon], {icon: userIcon})
+                    .addTo(map)
+                    .bindPopup('Your Location');
+            }
+            
+            // Add sensors to map
+            loadSensorsOnMap();
+        }
+
+        function loadSensorsOnMap() {
+            // Add sensor markers to mobile map
+            allSensors.forEach(sensor => {
+                if (sensor.lat && sensor.lon) {
+                    const icon = L.divIcon({
+                        html: sensor.type === 'weather' ? 
+                            '<i class="fas fa-thermometer-half" style="color: #1976D2;"></i>' :
+                            '<i class="fas fa-microscope" style="color: #FF6F00;"></i>',
+                        iconSize: [20, 20],
+                        className: 'sensor-icon'
+                    });
+                    
+                    L.marker([sensor.lat, sensor.lon], {icon: icon})
+                        .addTo(map)
+                        .bindPopup(`
+                            <strong>${sensor.name}</strong><br>
+                            ${sensor.type === 'weather' ? 
+                                `Temperature: ${sensor.temperature?.toFixed(1)}°C<br>Humidity: ${sensor.humidity}%` :
+                                `AQI: ${sensor.aqi}<br>PM2.5: ${sensor.pm25} μg/m³`
+                            }
+                        `);
+                }
+            });
+        }
+
+        function selectSensor(sensorId) {
+            // Handle sensor selection (could open detailed view)
+            console.log('Selected sensor:', sensorId);
+            // Implement detailed sensor view or actions
+        }
+
+        // API Functions (same as desktop version)
+        async function fetchHealthIndex() {
+            const response = await fetch('/api/public/health-index');
+            return await response.json();
+        }
+
+        async function fetchAirQualityData() {
+            const response = await fetch('/api/public/air-quality');
+            return await response.json();
+        }
+
+        async function fetchWeatherData() {
+            const response = await fetch('/api/public/weather');
+            return await response.json();
+        }
+
+        async function fetchTrendsData() {
+            const response = await fetch('/api/public/trends');
+            return await response.json();
+        }
+
+        function getAQIColor(aqi) {
+            if (aqi <= 50) return '#4CAF50';
+            if (aqi <= 100) return '#FFC107';
+            if (aqi <= 150) return '#FF5722';
+            return '#D32F2F';
+        }
+
+        // PWA Installation prompt
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // Show install button or banner
+            showInstallPrompt();
+        });
+
+        function showInstallPrompt() {
+            // Could show a custom install banner
+            console.log('PWA can be installed');
+        }
+
+        // Handle app installation
+        function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                    }
+                    deferredPrompt = null;
+                });
+            }
+        }
+    </script>
+</body>
+</html>

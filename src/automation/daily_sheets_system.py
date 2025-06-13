@@ -9,7 +9,7 @@ import os
 import sys
 import json
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -285,9 +285,9 @@ class DailySheetsSystem:
                         'station_id': station_id,
                         'station_name': station_name,
                         'records_count': len(station_data),
-                        'temp_avg_c': round(temp_avg, 2) if temp_avg is not None else 'N/A',
-                        'humidity_avg': round(humidity_avg, 2) if humidity_avg is not None else 'N/A',
-                        'wind_avg_kmh': round(wind_avg, 2) if wind_avg is not None else 'N/A'
+                        'temp_avg_c': round(temp_avg, 1) if temp_avg is not None else 'N/A',
+                        'humidity_avg': round(humidity_avg, 1) if humidity_avg is not None else 'N/A',
+                        'wind_avg_kmh': round(wind_avg, 1) if wind_avg is not None else 'N/A'
                     })
                 
                 summary['wu_summary'] = wu_summary

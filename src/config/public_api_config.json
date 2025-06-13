@@ -1,0 +1,20 @@
+{
+  "api_version": "v1",
+  "rate_limits": {
+    "public": "1000 per hour",
+    "premium": "10000 per hour",
+    "developer": "5000 per hour"
+  },
+  "endpoints": {
+    "sensors": "/api/v1/sensors",
+    "current": "/api/v1/sensors/{sensor_id}/current",
+    "historical": "/api/v1/sensors/{sensor_id}/historical",
+    "forecasts": "/api/v1/forecasts",
+    "alerts": "/api/v1/alerts"
+  },
+  "data_retention": {
+    "current": "7 days",
+    "historical": "1 year",
+    "forecasts": "7 days"
+  }
+}

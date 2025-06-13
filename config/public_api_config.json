@@ -1,0 +1,83 @@
+{
+  "api_version": "v1",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5001,
+    "debug": false
+  },
+  "rate_limits": {
+    "public": "1000 per hour",
+    "developer": "5000 per hour", 
+    "premium": "10000 per hour"
+  },
+  "endpoints": {
+    "status": "/api/v1/status",
+    "sensors": "/api/v1/sensors",
+    "current": "/api/v1/sensors/{sensor_id}/current",
+    "historical": "/api/v1/sensors/{sensor_id}/historical",
+    "forecasts": "/api/v1/forecasts",
+    "alerts": "/api/v1/alerts",
+    "register": "/api/v1/register",
+    "usage": "/api/v1/usage"
+  },
+  "data_sources": {
+    "tsi_sensor": {
+      "id": "tsi_001",
+      "name": "TSI AirAssure",
+      "type": "PM2.5/PM10",
+      "location": "Durham, NC",
+      "data_file": "data/master_data/tsi_master_historical_data.csv"
+    },
+    "wu_sensor": {
+      "id": "wu_001", 
+      "name": "Weather Underground",
+      "type": "Weather",
+      "location": "Durham, NC",
+      "data_file": "data/master_data/wu_master_historical_data.csv"
+    }
+  },
+  "data_retention": {
+    "current": "7 days",
+    "historical": "1 year",
+    "forecasts": "7 days",
+    "alerts": "30 days"
+  },
+  "authentication": {
+    "api_key_length": 32,
+    "key_prefix": "hd_",
+    "require_email": true,
+    "auto_approve": true
+  },
+  "integration": {
+    "ml_predictions": {
+      "enabled": true,
+      "module": "src.ml.predictive_analytics",
+      "class": "PredictiveAnalytics"
+    },
+    "alert_system": {
+      "enabled": true,
+      "module": "src.ml.enhanced_anomaly_detection", 
+      "class": "EnhancedAnomalyDetection"
+    }
+  },
+  "cors": {
+    "enabled": true,
+    "origins": ["*"],
+    "methods": ["GET", "POST"],
+    "headers": ["Content-Type", "X-API-Key"]
+  },
+  "documentation": {
+    "title": "Hot Durham Public API",
+    "description": "RESTful API for Durham air quality data",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Hot Durham Project Team",
+      "email": "admin@hotdurham.com"
+    }
+  },
+  "monitoring": {
+    "enable_usage_tracking": true,
+    "log_requests": true,
+    "performance_metrics": true
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "anomaly_thresholds": {
+    "temperature": {
+      "z_score_threshold": 3.0,
+      "min_temp": -20.0,
+      "max_temp": 50.0
+    },
+    "humidity": {
+      "z_score_threshold": 3.0,
+      "min_humidity": 0.0,
+      "max_humidity": 100.0
+    },
+    "pm25": {
+      "z_score_threshold": 2.5,
+      "max_safe_level": 35.0,
+      "unhealthy_level": 55.0
+    }
+  },
+  "trend_analysis": {
+    "window_size_days": 7,
+    "trend_threshold": 0.05,
+    "seasonal_analysis": true
+  }
+}

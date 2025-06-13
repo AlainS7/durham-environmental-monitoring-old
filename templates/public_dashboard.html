@@ -488,7 +488,7 @@
                         <div class="sensor-card">
                             <div class="sensor-location">${sensor.name}</div>
                             <div class="sensor-label">Temperature</div>
-                            <div class="sensor-value">${sensor.temperature}°C</div>
+                            <div class="sensor-value">${sensor.temperature.toFixed(1)}°C</div>
                             <div class="row">
                                 <div class="col-6">
                                     <small>Humidity: ${sensor.humidity}%</small>
@@ -544,7 +544,7 @@
                         .addTo(map)
                         .bindPopup(`
                             <strong>${sensor.name}</strong><br>
-                            Temperature: ${sensor.temperature}°C<br>
+                            Temperature: ${sensor.temperature.toFixed(1)}°C<br>
                             Humidity: ${sensor.humidity}%<br>
                             Wind: ${sensor.wind_speed} km/h<br>
                             <small>${sensor.conditions}</small>

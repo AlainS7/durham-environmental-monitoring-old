@@ -513,7 +513,7 @@
                         ${data.temperature !== undefined ? `
                             <div class="data-item">
                                 <div class="label">Temperature</div>
-                                <div class="value">${data.temperature}°C</div>
+                                <div class="value">${data.temperature.toFixed(1)}°C</div>
                             </div>
                         ` : ''}
                         ${data.humidity !== undefined ? `
@@ -554,7 +554,7 @@
                         ${data.temperature !== undefined ? `
                             <div class="data-item">
                                 <div class="label">Temperature</div>
-                                <div class="value">${data.temperature}°C</div>
+                                <div class="value">${data.temperature.toFixed(1)}°C</div>
                             </div>
                         ` : ''}
                         ${data.humidity !== undefined ? `

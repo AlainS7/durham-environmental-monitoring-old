@@ -1,36 +1,57 @@
-# Hot Durham Air Quality Monitoring 🌍
+# Hot Durham Environmental Monitoring 🌍
 
-**Comprehensive air quality monitoring and analysis system for Durham, NC**
+**Comprehensive air quality and weather monitoring system for Durham, NC**
 
-[![Tests](https://img.shields.io/badge/tests-8%2F8%20passing-brightgreen)](tests/)
-[![Status](https://img.shields.io/badge/status-production%20ready-brightgreen)](#deployment)
+[![Status](https://img.shields.io/badge/status-fully%20operational-brightgreen)](#system-status)
+[![PDF Reports](https://img.shields.io/badge/PDF%20reports-automated-blue)](PRODUCTION_PDF_SYSTEM_README.md)
+[![Temperature Format](https://img.shields.io/badge/temperature-1%20decimal-green)](#features)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](requirements.txt)
-[![Cleanup](https://img.shields.io/badge/cleanup-May%202025-blue)](docs/CLEANUP_SUMMARY.md)
-[![Status: Cleaned & Organized](https://img.shields.io/badge/Status-Cleaned%20%26%20Organized-brightgreen)](docs/CLEANUP_SUMMARY.md)' README.md
+[![Web Apps](https://img.shields.io/badge/web%20apps-3%20running-success)](#web-applications)
+[![Last Updated](https://img.shields.io/badge/updated-June%202025-blue)](docs/MISSION_COMPLETE.md)
 
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Start all applications
+./quick_start.sh start
 
-# Run integration tests
-python tests/integration_test.py
+# Generate test PDF report  
+./quick_start.sh test-pdf
 
-# Start the GUI
-python src/gui/enhanced_streamlit_gui.py
+# Check system status
+./quick_start.sh status
 
 # Run automated data collection
 python src/data_collection/production_data_pull_executor.py
 ```
 
+## 🌟 System Status (June 2025)
+
+### ✅ **Fully Operational**
+- **Production PDF Reports**: 16MB automated weekly generation
+- **Temperature Formatting**: Consistent 1 decimal precision across all interfaces  
+- **Data Collection**: 8 production sensors (WU + TSI) actively monitored
+- **Project Structure**: Clean, organized codebase with archived legacy files
+- **Testing Framework**: Comprehensive validation and monitoring
+
+### 🌐 **Web Applications**
+- **📊 Public Dashboard**: http://localhost:5001 - Durham resident interface
+- **🗺️ Live Sensor Map**: http://localhost:5003 - Interactive real-time sensor map  
+- **📈 Streamlit GUI**: http://localhost:8502 - Enhanced monitoring dashboard
+
+### 🚀 **Ready for Next Phase**
+- Mobile-responsive public interface
+- RESTful API for developer access
+- Predictive analytics & AI forecasting
+- IoT sensor network expansion
+
 ## 📚 Documentation
 
-- [📖 Quick Start Guide](docs/QUICK_START.md)
-- [🎯 Implementation Report](docs/IMPLEMENTATION_COMPLETE.md)
-- [✨ New Features Documentation](docs/NEW_FEATURES_DOCUMENTATION.md)
-- [💾 Data Management Guide](docs/DATA_MANAGEMENT_README.md)
-- [📊 Implementation Report](docs/IMPLEMENTATION_REPORT.md)
+- [🎉 Mission Complete](docs/MISSION_COMPLETE.md) - Current system status
+- [🚀 New Features Roadmap](docs/NEW_FEATURES_ROADMAP.md) - Planned enhancements
+- [🧪 System Testing Report](docs/SYSTEM_TESTING_REPORT.md) - Verification results
+- [📊 Production PDF System](PRODUCTION_PDF_SYSTEM_README.md) - Automated reporting
+- [🧹 Cleanup Summary](CLEANUP_SUMMARY.md) - Project organization details
 
 ## 🏗️ Project Structure
 

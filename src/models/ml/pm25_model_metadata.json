@@ -1,0 +1,36 @@
+{
+  "best_model": "random_forest",
+  "training_date": "2025-06-13T18:18:09.677918",
+  "feature_columns": [
+    "hour",
+    "day_of_week",
+    "month",
+    "temperature",
+    "humidity",
+    "pm25_lag_1h",
+    "pm25_lag_6h",
+    "pm25_lag_12h",
+    "pm25_lag_24h",
+    "pm25_ma_3h",
+    "pm25_ma_6h",
+    "pm25_ma_24h"
+  ],
+  "training_samples": 6922,
+  "model_performance": {
+    "random_forest": {
+      "mae": 0.5390638087931787,
+      "rmse": 0.8306788358818491,
+      "r2": 0.8930536179953154
+    },
+    "gradient_boosting": {
+      "mae": 0.5565179793425286,
+      "rmse": 0.835316316234814,
+      "r2": 0.8918561728660698
+    },
+    "linear_regression": {
+      "mae": 0.5564054409844471,
+      "rmse": 0.8012411292428939,
+      "r2": 0.9004992682887047
+    }
+  }
+}

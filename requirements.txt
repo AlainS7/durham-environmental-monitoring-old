@@ -29,6 +29,11 @@ smmap~=5.0.2
 charset-normalizer~=3.4.2
 setuptools~=78.1.0
 cffi~=1.17.1
+# Feature 3 - Public API & Developer Portal
+flask~=3.1.0
+flask-limiter~=3.8.0
+flask-cors~=5.0.0
+sqlite3
 proto-plus~=1.26.1
 altair~=5.5.0
 jsonschema~=4.23.0

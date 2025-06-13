@@ -231,7 +231,8 @@ class ProductionSensorPDFReporter:
             use_log_scale = self._should_use_log_scale(df_resampled[metric])
             
             plt.plot(df_resampled[timestamp_col], df_resampled[metric], linewidth=2, 
-                    color='steelblue', marker='.', markersize=4, alpha=0.8, linestyle=':')
+                    color='steelblue', marker='.', markersize=4, alpha=0.8, linestyle=':', 
+                    label=f'{sensor_name or sensor_id}')
             
             # Apply logarithmic scaling if beneficial
             if use_log_scale:
@@ -245,8 +246,23 @@ class ProductionSensorPDFReporter:
             plt.title(title, fontsize=20, fontweight='bold')
             plt.grid(True, axis='both', linestyle='--', linewidth=0.5, alpha=0.7)
             
+            # Add legend with sensor information
+            sensor_type = self.sensor_metadata.get(sensor_id, {}).get('type', 'Unknown Type')
+            location = self.sensor_metadata.get(sensor_id, {}).get('location', 'Unknown Location')
+            
+            # Create informative legend
+            legend_text = f'{sensor_name or sensor_id}\n{sensor_type}\n{location}'
+            plt.legend([legend_text], loc='upper right', fontsize=10, 
+                      frameon=True, fancybox=True, shadow=True, framealpha=0.9)
+            
             # Enhanced x-axis formatting
             ax = plt.gca()
+            
+            # Add temperature-specific y-axis formatting for decimal precision
+            if any(temp_keyword in metric.lower() for temp_keyword in ['temp', 'temperature']):
+                def temperature_formatter(y, pos):
+                    return f'{y:.1f}'
+                ax.yaxis.set_major_formatter(FuncFormatter(temperature_formatter))
             
             # Set major locators and formatters based on data span
             data_span = (df_resampled[timestamp_col].max() - df_resampled[timestamp_col].min()).days
@@ -395,8 +411,20 @@ class ProductionSensorPDFReporter:
                 ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
             
+            # Add temperature-specific y-axis formatting for decimal precision
+            if any(temp_keyword in metric.lower() for temp_keyword in ['temp', 'temperature']):
+                def temperature_formatter(y, pos):
+                    return f'{y:.1f}'
+                ax.yaxis.set_major_formatter(FuncFormatter(temperature_formatter))
+            
             if chart_type == "multi":
-                plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.5))
+                plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.5),
+                          frameon=True, fancybox=True, shadow=True, framealpha=0.9,
+                          title='Production Sensors', title_fontsize=14)
+            else:
+                # Add legend for aggregate chart
+                plt.legend(['Network Average ± Std Dev'], loc='upper right', fontsize=12,
+                          frameon=True, fancybox=True, shadow=True, framealpha=0.9)
             
             # Rotate labels and improve spacing
             plt.xticks(rotation=45, fontsize=14, ha='right')
@@ -459,6 +487,17 @@ class ProductionSensorPDFReporter:
             plt.yticks(fontsize=16)
             plt.ylim(0, 105)
             plt.grid(True, axis='y', alpha=0.3)
+            
+            # Add legend for uptime color coding
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor='#2E8B57', label='Excellent (≥90%)'),
+                Patch(facecolor='#FFD700', label='Good (70-89%)'),
+                Patch(facecolor='#DC143C', label='Needs Attention (<70%)')
+            ]
+            plt.legend(handles=legend_elements, loc='upper right', fontsize=12,
+                      frameon=True, fancybox=True, shadow=True, framealpha=0.9)
+            
             plt.tight_layout()
             
             # Convert to base64

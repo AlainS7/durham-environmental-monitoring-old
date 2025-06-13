@@ -49,6 +49,70 @@ data/test_sensors
 
 # Raw data files (too large for Git)
 raw_pulls/
+
+# Large data files and databases
+*.db
+*.sqlite
+*.sqlite3
+data/master_data/*.db
+data/master_data/*.csv
+data/historical_test_sensors/
+data/historical_test_sensors_expanded/
+data/daily_sheets_metadata/
+data/master_data_metadata/
+
+# ML Models and pickled files
+*.pkl
+*.joblib
+*.model
+src/models/ml/*.pkl
+models/ml/*.pkl
+
+# Log files
+*.log
+logs/*.log
+data/*.log
+
+# Temporary and cache files
+temp/
+*.tmp
+*.cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# API keys and usage databases
+src/data/api_keys.db
+src/data/api_usage.db
+data/api_keys.db
+data/api_usage.db
+
+# Large processed files
+processed/
+reports/output/
+sensor_visualizations/*.png
+sensor_visualizations/*.jpg
+
+# Backup files
+backup/feature2_deployment/
+backup/configurations/
+
+# IDE and system files
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Archive and removed files (already processed)
+archive/removed_files/
+
+# Large test data
+test_data/large_datasets/
+
+# Production reports (can be large)
+reports/*.pdf
+reports/*.html
 data/raw_pulls/
 *.csv
 *.xlsx
