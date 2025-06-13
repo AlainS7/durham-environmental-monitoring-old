@@ -39,7 +39,7 @@
         const data = await res.json();
         marker.bindTooltip(
           `<strong>${sensor.name} (WU)</strong><br>
-          Temp: ${data.temp}°C<br>
+          Temp: ${data.temp.toFixed(1)}°C<br>
           Humidity: ${data.humidity}%<br>
           Wind: ${data.wind} km/h`
         ).openTooltip();
@@ -72,7 +72,7 @@
               marker.bindTooltip(
                 `<strong>${device.metadata.friendlyName || device.device_id} (TSI)</strong><br>
                 PM2.5: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'mcpm2x5')?.data?.value ?? 'N/A'}<br>
-                Temp: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'temp_c')?.data?.value ?? 'N/A'}°C<br>
+                Temp: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'temp_c')?.data?.value ? data.sensors[0].measurements.find(m => m.type === 'temp_c').data.value.toFixed(1) : 'N/A'}°C<br>
                 RH: ${data.sensors?.[0]?.measurements?.find(m => m.type === 'rh_percent')?.data?.value ?? 'N/A'}%`
               ).openTooltip();
             } catch (err) {

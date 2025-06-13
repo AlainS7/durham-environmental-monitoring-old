@@ -33,11 +33,16 @@ TEST_SENSOR_IDS = [
     'KNCDURHA648',  # MS-22
     
     # TSI test sensors (device names or IDs) - add your TSI test sensor IDs here
+    # Uncomment and replace with your actual TSI test sensor IDs:
     # 'test_sensor_1',
     # 'test_sensor_2', 
     # 'test_sensor_3',
     # 'BS-TEST-01',
     # 'BS-TEST-02',
+    
+    # Example: If you have TSI sensors for testing, add their device IDs here:
+    # 'your_tsi_test_device_id_1',
+    # 'your_tsi_test_device_id_2',
     
     # Add additional test sensor IDs here as you deploy them
 ]
