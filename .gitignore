@@ -43,6 +43,10 @@ hot_durham_wu_map/backend/wu_api_key.json
 *.crt
 .env
 
+
+data/historical_test_sensors
+data/test_sensors
+
 # Raw data files (too large for Git)
 raw_pulls/
 data/raw_pulls/

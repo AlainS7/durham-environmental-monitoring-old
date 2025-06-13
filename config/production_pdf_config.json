@@ -1,0 +1,41 @@
+{
+  "schedule": {
+    "type": "weekly",
+    "time": "06:00",
+    "day": "monday"
+  },
+  "report_settings": {
+    "days_back": 16,
+    "upload_to_drive": true,
+    "retention_days": 30,
+    "output_directory": "sensor_visualizations/production_pdf_reports"
+  },
+  "automation": {
+    "enabled": true,
+    "max_retries": 3,
+    "retry_delay_minutes": 15,
+    "error_threshold": 5
+  },
+  "notifications": {
+    "log_level": "INFO",
+    "alert_on_failure": true,
+    "email_notifications": false
+  },
+  "google_drive": {
+    "upload_enabled": true,
+    "folder_path": "HotDurham/ProductionSensorReports",
+    "organize_by_date": true
+  },
+  "report_content": {
+    "include_uptime_analysis": true,
+    "include_individual_sensors": true,
+    "include_summary_charts": true,
+    "include_performance_metrics": true,
+    "chart_resolution_dpi": 300
+  },
+  "data_quality": {
+    "min_uptime_threshold": 70,
+    "outlier_detection": true,
+    "quality_filtering": true
+  }
+}

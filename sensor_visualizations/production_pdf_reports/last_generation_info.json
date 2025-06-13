@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-06-13T12:42:36.782761",
+  "pdf_path": "/Users/alainsoto/IdeaProjects/Hot Durham/sensor_visualizations/production_pdf_reports/production_sensors_report_20250613_124027.pdf",
+  "total_sensors": 8,
+  "average_uptime": 58.325549634874605,
+  "high_uptime_sensors": 1,
+  "uploaded_to_drive": true,
+  "report_period_days": 16
+}

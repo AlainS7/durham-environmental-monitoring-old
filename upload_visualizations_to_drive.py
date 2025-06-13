@@ -175,7 +175,7 @@ class VisualizationUploader:
                 "analysis_details": {
                     "sensors_analyzed": 14,
                     "data_points": 8113,
-                    "analysis_period": "2025-06-01 to 2025-06-03",
+                    "analysis_period": "2025-06-01 to 2025-06-10",
                     "visualization_types": [
                         "Temperature Analysis",
                         "Humidity Analysis", 

@@ -58,7 +58,7 @@ class CompleteHistoricalTestSensorCollector:
         )
         self.logger = logging.getLogger(__name__)
     
-    def load_progress(self) -> Dict[str, bool]:
+    def load_progress(self) -> dict[str, bool]:
         """Load progress from previous runs."""
         if self.progress_file.exists():
             try:
