@@ -70,9 +70,9 @@
     "upload_master_files": true,
     "upload_backups": true,
     "upload_exports": true,
-    "master_folder": "HotDurham/Processed/MasterData",
-    "backup_folder": "HotDurham/Backups/MasterData",
-    "export_folder": "HotDurham/Processed/MasterData/Exports"
+    "master_folder": "HotDurham/Production/Processed",
+    "backup_folder": "HotDurham/System/Backups",
+    "export_folder": "HotDurham/Production/Processed/Exports"
   },
   "paths": {
     "raw_data": "data/raw",

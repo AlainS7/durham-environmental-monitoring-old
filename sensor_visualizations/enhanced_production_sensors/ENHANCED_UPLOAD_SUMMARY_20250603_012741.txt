@@ -19,32 +19,32 @@ UPLOADED FILES:
 ---------------
  1. enhanced_daily_uptime_heatmap_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
  2. enhanced_uptime_analysis_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
  3. enhanced_pm25_logarithmic_analysis_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
  4. enhanced_correlation_heatmap_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
  5. enhanced_production_report_20250603_012116.html
     Type: Report
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
  6. enhanced_visualization_summary_20250603_012116.txt
     Type: Summary
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
 
 GOOGLE DRIVE LOCATION:
 ----------------------
-Folder: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
+Folder: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250603_012741
 
 TECHNIQUES FROM CENTRAL ASIAN DATA CENTER:
 ------------------------------------------

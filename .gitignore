@@ -19,6 +19,16 @@ lib/
 lib64/
 parts/
 sdist/
+
+# Cleanup and temporary files
+cleanup_summary.json
+*_cleanup_*/
+temp_cleanup/
+*.log
+
+# Migration verification files (keep archived versions)
+automation_verification_results.json
+final_migration_verification.json
 var/
 wheels/
 *.egg-info/

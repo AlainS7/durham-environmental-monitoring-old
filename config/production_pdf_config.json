@@ -23,7 +23,7 @@
   },
   "google_drive": {
     "upload_enabled": true,
-    "folder_path": "HotDurham/ProductionSensorReports",
+    "folder_path": "HotDurham/Production/Reports",
     "organize_by_date": true
   },
   "report_content": {

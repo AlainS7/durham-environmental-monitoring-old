@@ -77,7 +77,7 @@ def upload_to_google_drive(pdf_path: str, logger) -> bool:
         data_manager = DataManager(project_root)
         
         # Upload to production sensor reports folder
-        drive_folder = "HotDurham/ProductionSensorReports"
+        drive_folder = "HotDurham/Production/Reports"
         
         logger.info(f"Uploading PDF report to Google Drive: {drive_folder}")
         

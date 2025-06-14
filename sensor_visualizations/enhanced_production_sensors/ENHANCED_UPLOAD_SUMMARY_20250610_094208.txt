@@ -19,36 +19,36 @@ UPLOADED FILES:
 ---------------
  1. enhanced_daily_uptime_heatmap_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  2. enhanced_uptime_analysis_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  3. enhanced_pm25_logarithmic_analysis_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  4. enhanced_correlation_heatmap_20250603_012116.png
     Type: Visualization
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  5. enhanced_production_report_20250603_012116.html
     Type: Report
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  6. enhanced_visualization_summary_20250603_012116.txt
     Type: Summary
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
  7. ENHANCED_UPLOAD_SUMMARY_20250603_012741.txt
     Type: Summary
-    Location:  Google Drive: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+    Location:  Google Drive: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
 
 GOOGLE DRIVE LOCATION:
 ----------------------
-Folder: HotDurham/ProductionData_SensorAnalysis/Visualizations/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
+Folder: HotDurham/Production/Reports/EnhancedAnalysis/Analysis_Enhanced_20250610_094208
 
 TECHNIQUES FROM CENTRAL ASIAN DATA CENTER:
 ------------------------------------------

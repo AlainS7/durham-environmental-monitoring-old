@@ -55,6 +55,7 @@ class MasterDataFileSystem:
     """Manages master historical data files with automated weekly updates."""
     
     def __init__(self, base_dir: str = None, config_path: str = None):
+        self.project_root = project_root  # Add project_root as instance attribute
         self.base_dir = Path(base_dir) if base_dir else project_root / "data"
         self.config_path = Path(config_path) if config_path else project_root / "config" / "master_data_config.json"
         
@@ -133,7 +134,19 @@ class MasterDataFileSystem:
             return None
             
     def upload_to_drive(self, local_path: Path, drive_folder: str) -> bool:
-        """Upload a master data file to Google Drive in the specified folder."""
+        """Upload a master data file to Google Drive using enhanced manager."""
+        # Try to use enhanced manager first
+        try:
+            from src.utils.enhanced_google_drive_manager import get_enhanced_drive_manager
+            enhanced_manager = get_enhanced_drive_manager(str(self.project_root))
+            
+            if enhanced_manager and enhanced_manager.drive_service:
+                # Use enhanced manager with high priority for master data
+                return enhanced_manager.upload_file_sync(local_path, drive_folder)
+        except ImportError:
+            self.logger.warning("Enhanced Google Drive manager not available, using legacy upload")
+        
+        # Fallback to legacy upload
         if not self.drive_service:
             self.logger.info(f"Google Drive not available, skipping upload of {local_path.name}")
             return False
@@ -252,9 +265,9 @@ class MasterDataFileSystem:
                 "upload_master_files": True,
                 "upload_backups": True,
                 "upload_exports": True,
-                "master_folder": "HotDurham/Processed/MasterData",
+                "master_folder": "HotDurham/Production/Processed/MasterData",
                 "backup_folder": "HotDurham/Backups/MasterData",
-                "export_folder": "HotDurham/Processed/MasterData/Exports"
+                "export_folder": "HotDurham/Production/Processed/MasterData/Exports"
             }
         }
         
@@ -536,7 +549,7 @@ class MasterDataFileSystem:
                 
             # Upload to Google Drive if enabled
             if self.config.get("google_drive", {}).get("upload_master_files", True):
-                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Production/Processed/MasterData")
                 self.upload_to_drive(master_file, master_folder)
                 
             self.logger.info(f"Successfully created master {data_type.upper()} file with {len(combined_df)} records")
@@ -711,7 +724,7 @@ class MasterDataFileSystem:
             
             # Upload updated file to Google Drive if enabled
             if self.config.get("google_drive", {}).get("upload_master_files", True):
-                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Production/Processed/MasterData")
                 self.upload_to_drive(master_file, master_folder)
             
             new_records = len(combined_df) - len(existing_df)
@@ -800,7 +813,7 @@ class MasterDataFileSystem:
             
             # Upload combined file to Google Drive if enabled
             if self.config.get("google_drive", {}).get("upload_master_files", True):
-                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+                master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Production/Processed/MasterData")
                 self.upload_to_drive(self.combined_master_file, master_folder)
             
             self.logger.info(f"Successfully created combined master file with {len(combined_df)} total records")
@@ -886,7 +899,7 @@ class MasterDataFileSystem:
                 
                 # Upload export to Google Drive if enabled
                 if self.config.get("google_drive", {}).get("upload_exports", True):
-                    export_folder = self.config.get("google_drive", {}).get("export_folder", "HotDurham/Processed/MasterData/Exports")
+                    export_folder = self.config.get("google_drive", {}).get("export_folder", "HotDurham/Production/Processed/MasterData/Exports")
                     self.upload_to_drive(export_path, export_folder)
                 
             except Exception as e:
@@ -1014,7 +1027,7 @@ class MasterDataFileSystem:
             
         # Test folder creation
         try:
-            test_folder = "HotDurham/Processed/MasterData/Test"
+            test_folder = "HotDurham/Production/Processed/MasterData/Test"
             folder_id = self.get_or_create_drive_folder(test_folder)
             if folder_id:
                 results["folder_creation"] = True
@@ -1034,7 +1047,7 @@ class MasterDataFileSystem:
             test_file_path = self.master_data_path / "test_upload.txt"
             test_file_path.write_text("Test file for Google Drive integration")
             
-            upload_success = self.upload_to_drive(test_file_path, "HotDurham/Processed/MasterData")
+            upload_success = self.upload_to_drive(test_file_path, "HotDurham/Production/Processed/MasterData")
             if upload_success:
                 results["file_upload"] = True
                 self.logger.info("✅ Google Drive file upload successful")
@@ -1054,7 +1067,7 @@ class MasterDataFileSystem:
         self.logger.info("📤 Syncing existing master data files to Google Drive...")
         
         results = {}
-        master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Processed/MasterData")
+        master_folder = self.config.get("google_drive", {}).get("master_folder", "HotDurham/Production/Processed/MasterData")
         
         # Sync master files
         master_files = [

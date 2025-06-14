@@ -1,241 +1,101 @@
-# Hot Durham Environmental Monitoring 🌍
+# Hot Durham Environmental Monitoring System
 
-**Comprehensive air quality and weather monitoring system for Durham, NC**
+A comprehensive environmental monitoring system for Durham, NC, featuring real-time data collection from Weather Underground and TSI air quality sensors.
 
-[![Status](https://img.shields.io/badge/status-fully%20operational-brightgreen)](#system-status)
-[![PDF Reports](https://img.shields.io/badge/PDF%20reports-automated-blue)](PRODUCTION_PDF_SYSTEM_README.md)
-[![Temperature Format](https://img.shields.io/badge/temperature-1%20decimal-green)](#features)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](requirements.txt)
-[![Web Apps](https://img.shields.io/badge/web%20apps-3%20running-success)](#web-applications)
-[![Last Updated](https://img.shields.io/badge/updated-June%202025-blue)](docs/MISSION_COMPLETE.md)
+## 🌟 Features
+
+- **Real-time Data Collection**: Weather Underground and TSI sensor integration
+- **Automated Reporting**: Daily, weekly, and monthly automated reports
+- **Google Drive Integration**: Seamless cloud storage and sharing
+- **Data Visualization**: Interactive charts and analysis tools
+- **Master Data Management**: Historical data aggregation and management
+- **Test Sensor Management**: Dedicated testing infrastructure
 
 ## 🚀 Quick Start
 
-```bash
-# Start all applications
-./quick_start.sh start
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-# Generate test PDF report  
-./quick_start.sh test-pdf
+2. **Configure Credentials**:
+   - Add Google API credentials to `creds/google_creds.json`
+   - Add Weather Underground API key to `creds/wu_api_key.json`
+   - Add TSI credentials to `creds/tsi_creds.json`
 
-# Check system status
-./quick_start.sh status
+3. **Run Data Collection**:
+   ```bash
+   python src/data_collection/faster_wu_tsi_to_sheets_async.py
+   ```
 
-# Run automated data collection
-python src/data_collection/production_data_pull_executor.py
-```
-
-## 🌟 System Status (June 2025)
-
-### ✅ **Fully Operational**
-- **Production PDF Reports**: 16MB automated weekly generation
-- **Temperature Formatting**: Consistent 1 decimal precision across all interfaces  
-- **Data Collection**: 8 production sensors (WU + TSI) actively monitored
-- **Project Structure**: Clean, organized codebase with archived legacy files
-- **Testing Framework**: Comprehensive validation and monitoring
-
-### 🌐 **Web Applications**
-- **📊 Public Dashboard**: http://localhost:5001 - Durham resident interface
-- **🗺️ Live Sensor Map**: http://localhost:5003 - Interactive real-time sensor map  
-- **📈 Streamlit GUI**: http://localhost:8502 - Enhanced monitoring dashboard
-
-### 🚀 **Ready for Next Phase**
-- Mobile-responsive public interface
-- RESTful API for developer access
-- Predictive analytics & AI forecasting
-- IoT sensor network expansion
-
-## 📚 Documentation
-
-- [🎉 Mission Complete](docs/MISSION_COMPLETE.md) - Current system status
-- [🚀 New Features Roadmap](docs/NEW_FEATURES_ROADMAP.md) - Planned enhancements
-- [🧪 System Testing Report](docs/SYSTEM_TESTING_REPORT.md) - Verification results
-- [📊 Production PDF System](PRODUCTION_PDF_SYSTEM_README.md) - Automated reporting
-- [🧹 Cleanup Summary](CLEANUP_SUMMARY.md) - Project organization details
-
-## 🏗️ Project Structure
+## 📁 Project Structure
 
 ```
-Hot Durham/
-├── src/                    # 🐍 Source code
-│   ├── core/              # Core system components
-│   │   ├── data_manager.py         # Data management system
-│   │   └── backup_system.py        # Backup and recovery
-│   ├── analysis/          # 📊 Data analysis modules
-│   │   ├── anomaly_detection_and_trend_analysis.py
-│   │   ├── complete_analysis_suite.py
-│   │   ├── enhanced_data_analysis.py
-│   │   ├── multi_category_visualization.py
-│   │   └── generate_summary_reports.py
-│   ├── data_collection/   # 📡 Data collection systems
-│   │   ├── prioritized_data_pull_manager.py
-│   │   ├── production_data_pull_executor.py
-│   │   ├── automated_data_pull.py
-│   │   └── faster_wu_tsi_to_sheets_async.py
-│   ├── gui/               # 🖥️ User interfaces
-│   │   └── enhanced_streamlit_gui.py
-│   ├── automation/        # 🤖 Automation scripts
-│   │   ├── automated_reporting.py
-│   │   └── status_check.py
-│   └── utils/             # 🛠️ Utility functions
-│       └── google_drive_sync.py
-├── tests/                  # 🧪 Test suites
-│   ├── integration_test.py
-│   └── test_data_manager.py
-├── docs/                   # 📚 Documentation
-├── config/                 # ⚙️ Configuration files
-├── data/                   # 💾 Data storage
-├── backup/                 # 🔐 Backup storage
-├── logs/                   # 📝 Log files
-├── reports/                # 📈 Generated reports
-└── archive/                # 📦 Archived files
+├── config/                 # Configuration files
+├── src/                   # Source code
+│   ├── core/              # Core functionality
+│   ├── data_collection/   # Data collection scripts
+│   └── automation/        # Automation systems
+├── data/                  # Data storage
+├── docs/                  # Documentation
+├── tests/                 # Test files
+└── scripts/               # Utility scripts
 ```
 
-## 💡 Features
-
-### 🔍 **Advanced Monitoring**
-- ✅ Real-time air quality monitoring (TSI devices)
-- ✅ Weather data integration (Weather Underground)
-- ✅ Automated anomaly detection
-- ✅ Trend analysis and forecasting
-
-### 🎯 **Intelligent Data Collection**
-- ✅ Prioritized sensor scheduling (Critical/High/Standard)
-- ✅ Time-based frequency adjustments
-- ✅ Gap detection and recovery
-- ✅ Production-ready execution framework
-
-### 📊 **Comprehensive Analysis**
-- ✅ Statistical outlier detection
-- ✅ Multi-sensor correlation analysis
-- ✅ Interactive visualization dashboard
-- ✅ Automated report generation
-
-### 🔐 **Robust Data Protection**
-- ✅ Multi-layer backup system
-- ✅ Google Drive cloud sync
-- ✅ Credential encryption
-- ✅ Disaster recovery capabilities
-
-## 🔧 Installation
-
-### Prerequisites
-- Python 3.8+
-- Google Drive API credentials
-- TSI and Weather Underground API keys
-
-### Setup
-```bash
-# Clone and navigate to project
-cd "Hot Durham"
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up credentials (see docs/DATA_MANAGEMENT_README.md)
-cp creds/example_config.json creds/your_config.json
-
-# Run tests to verify installation
-python tests/integration_test.py
-```
-
-## 🚀 Usage
+## 🛠️ System Components
 
 ### Data Collection
-```bash
-# Start prioritized data collection
-python src/data_collection/production_data_pull_executor.py
+- **Weather Underground**: Meteorological data collection
+- **TSI Sensors**: Air quality monitoring
+- **Automated Scheduling**: Configurable data collection intervals
 
-# Manual data pull
-python src/data_collection/automated_data_pull.py
-```
+### Data Management
+- **Master Data System**: Historical data aggregation
+- **Google Drive Sync**: Cloud backup and sharing
+- **Test Data Isolation**: Separate handling of test vs production data
 
-### Analysis & Visualization
-```bash
-# Launch interactive dashboard
-streamlit run src/gui/enhanced_streamlit_gui.py
+### Automation
+- **Daily Sheets**: Automated daily reports
+- **Master Data Updates**: Weekly data consolidation
+- **Alert System**: Anomaly detection and notifications
 
-# Generate analysis reports
-python src/analysis/complete_analysis_suite.py
+## 📊 Data Flow
 
-# Run anomaly detection
-python src/analysis/anomaly_detection_and_trend_analysis.py
-```
+1. **Collection**: Sensors → Raw Data
+2. **Processing**: Raw Data → Processed Data
+3. **Storage**: Processed Data → Master Files
+4. **Reporting**: Master Files → Visualizations & Reports
+5. **Distribution**: Reports → Google Drive & Dashboard
 
-### System Management
-```bash
-# Create backup
-python src/core/backup_system.py --full
+## 🔧 Configuration
 
-# Check system status
-python src/automation/status_check.py
+Main configuration files:
+- `config/improved_google_drive_config.py` - Google Drive paths
+- `config/test_sensors_config.py` - Test sensor management
+- `config/master_data_config.json` - Master data system settings
 
-# Generate automated reports
-python src/automation/automated_reporting.py
-```
+## 📋 Maintenance
 
-## 📈 Monitoring Capabilities
-
-### Air Quality Metrics
-- **PM2.5 Levels**: Real-time particulate matter monitoring
-- **Temperature**: Ambient temperature tracking
-- **Humidity**: Relative humidity measurements
-- **Air Pressure**: Barometric pressure data
-
-### Data Sources
-- **TSI Devices**: Indoor/outdoor air quality sensors
-- **Weather Underground**: Meteorological data
-- **Historical Data**: Up to 90-day rolling archive
-
-## 🎯 Production Status
-
-| Component | Status | Tests | Documentation |
-|-----------|--------|-------|---------------|
-| Data Collection | ✅ Ready | 8/8 Passing | ✅ Complete |
-| Analysis Suite | ✅ Ready | 8/8 Passing | ✅ Complete |
-| Backup System | ✅ Ready | 8/8 Passing | ✅ Complete |
-| GUI Dashboard | ✅ Ready | 8/8 Passing | ✅ Complete |
-| Automation | ✅ Ready | 8/8 Passing | ✅ Complete |
-| **Project Structure** | ✅ **Reorganized** | ✅ **Complete** | ✅ **Updated** |
-
-## 🌟 Recent Updates
-
-**v2.1 (May 2025)**
-- ✨ **Complete project reorganization completed**
-- ✨ Professional Python package structure implemented
-- ✨ All import paths updated and tested
-- ✨ Package installation with setup.py ready
-- ✨ 8/8 integration tests passing
-- ✨ Production deployment ready
-
-**v2.0 (May 2025)**
-- ✨ Added intelligent anomaly detection
-- ✨ Implemented prioritized data collection
-- ✨ Enhanced backup and recovery system
-- ✨ Complete project reorganization
-- ✨ Production-ready deployment
+- **Daily**: Automated data collection and basic reporting
+- **Weekly**: Master data updates and system health checks
+- **Monthly**: Comprehensive system verification and cleanup
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests (`python tests/integration_test.py`)
-4. Commit changes (`git commit -m 'Add amazing feature'`)
-5. Push to branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Submit a pull request
 
 ## 📄 License
 
-This project is for environmental monitoring and research purposes.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 📞 Support
 
-- 📧 Documentation: [docs/](docs/)
-- 🐛 Issues: Create an issue in the repository
-- 💬 Questions: Check existing documentation first
+For questions or support, please check the documentation in the `docs/` directory or create an issue in the repository.
 
 ---
 
-**Ready for production deployment** 🎉
-
-*Monitoring Durham's air quality with advanced analytics and intelligent automation.*
+*Last updated: June 2025*

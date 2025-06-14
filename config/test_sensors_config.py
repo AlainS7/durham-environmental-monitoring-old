@@ -65,10 +65,10 @@ WU_TO_MS_MAPPING = {
     'KNCDURHA648': 'MS-22',
 }
 
-# Google Drive folder configuration for test sensors
+# Google Drive folder configuration for test sensors (improved structure)
 GOOGLE_DRIVE_CONFIG = {
     "main_folder": "HotDurham",
-    "test_data_folder": "TestData_ValidationCluster",
+    "test_data_folder": "Testing",  # Renamed from Testing
     "structure": {
         "sensors": "SensorData",
         "reports": "ValidationReports", 
@@ -205,7 +205,7 @@ class TestSensorConfig:
     
     def get_drive_folder_path(self, sensor_id: str, data_type: str = "sensors") -> str:
         """
-        Get the Google Drive folder path for a sensor based on its type.
+        Get the Google Drive folder path for a sensor using improved structure.
         
         Args:
             sensor_id: The sensor identifier
@@ -214,27 +214,42 @@ class TestSensorConfig:
         Returns:
             Google Drive folder path
         """
-        config = GOOGLE_DRIVE_CONFIG
-        
-        if self.is_test_sensor(sensor_id):
-            # Test sensor path: HotDurham/TestData_ValidationCluster/SensorData/WU or TSI
-            base_path = f"{config['main_folder']}/{config['test_data_folder']}/{config['structure'][data_type]}"
+        # Try to use improved configuration first
+        try:
+            from config.improved_google_drive_config import get_testing_path, get_production_path
             
-            # Determine sensor type (WU vs TSI)
-            if sensor_id.startswith('KNCDURHA'):
-                sensor_type = "WU"
+            if self.is_test_sensor(sensor_id):
+                # Determine sensor type (WU vs TSI)
+                sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI"
+                return get_testing_path(data_type, sensor_type)
             else:
-                sensor_type = "TSI"
+                # Production sensor path
+                sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI"
+                return get_production_path('raw', sensor_type)
                 
-            return f"{base_path}/{sensor_type}"
-        else:
-            # Production path (existing structure)
-            sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI" 
-            return f"{config['main_folder']}/RawData/{sensor_type}"
+        except ImportError:
+            # Fallback to legacy structure
+            config = GOOGLE_DRIVE_CONFIG
+            
+            if self.is_test_sensor(sensor_id):
+                # Test sensor path: HotDurham/Testing/SensorData/WU or TSI
+                base_path = f"{config['main_folder']}/{config['test_data_folder']}/{config['structure'][data_type]}"
+                
+                # Determine sensor type (WU vs TSI)
+                if sensor_id.startswith('KNCDURHA'):
+                    sensor_type = "WU"
+                else:
+                    sensor_type = "TSI"
+                    
+                return f"{base_path}/{sensor_type}"
+            else:
+                # Production path (existing structure)
+                sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI" 
+                return f"{config['main_folder']}/RawData/{sensor_type}"
     
     def get_drive_folder_path_with_date(self, sensor_id: str, date_str: str, data_type: str = "sensors") -> str:
         """
-        Get Google Drive folder path with date organization for test sensors.
+        Get Google Drive folder path with date organization using improved structure.
         
         Args:
             sensor_id: The sensor identifier
@@ -244,18 +259,42 @@ class TestSensorConfig:
         Returns:
             Google Drive folder path with date organization
         """
-        base_path = self.get_drive_folder_path(sensor_id, data_type)
+        # Try to use improved configuration first
+        try:
+            from config.improved_google_drive_config import get_testing_path, get_production_path
+            
+            if self.is_test_sensor(sensor_id):
+                # Determine sensor type (WU vs TSI)
+                sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI"
+                return get_testing_path(data_type, sensor_type, date_str)
+            else:
+                # Production sensors use base path without date organization
+                sensor_type = "WU" if sensor_id.startswith('KNCDURHA') else "TSI"
+                return get_production_path('raw', sensor_type)
+                
+        except ImportError:
+            # Fallback to legacy method
+            base_path = self.get_drive_folder_path(sensor_id, data_type)
+            
+            if self.is_test_sensor(sensor_id):
+                # Add date organization for test sensors: .../2025/06-June/
+                from datetime import datetime
+                date_obj = datetime.strptime(date_str, "%Y%m%d")
+                year = date_obj.strftime("%Y")
+                month = date_obj.strftime("%m-%B")
+                return f"{base_path}/{year}/{month}"
+            else:
+                # Use existing production structure
+                return base_path
+    
+    def get_drive_config(self) -> Dict[str, any]:
+        """
+        Get the Google Drive configuration for this sensor configuration.
         
-        if self.is_test_sensor(sensor_id):
-            # Add date organization for test sensors: .../2025/05-May/
-            from datetime import datetime
-            date_obj = datetime.strptime(date_str, "%Y%m%d")
-            year = date_obj.strftime("%Y")
-            month = date_obj.strftime("%m-%B")
-            return f"{base_path}/{year}/{month}"
-        else:
-            # Use existing production structure
-            return base_path
+        Returns:
+            Dictionary with Google Drive configuration
+        """
+        return GOOGLE_DRIVE_CONFIG.copy()
     
     def get_sensor_status(self, sensor_id: str) -> Dict[str, any]:
         """

@@ -1,0 +1,108 @@
+{
+  "migration_plan": {
+    "timestamp": "2025-06-14T01:15:25.885752",
+    "phase1_structure_creation": {
+      "description": "Create new folder structure",
+      "folders_to_create": [
+        "HotDurham/Testing/SensorData/WU",
+        "HotDurham/Testing/SensorData/TSI",
+        "HotDurham/Testing/ValidationReports",
+        "HotDurham/Testing/Logs",
+        "HotDurham/Production/RawData/WU",
+        "HotDurham/Production/RawData/TSI",
+        "HotDurham/Production/Processed",
+        "HotDurham/Production/Reports",
+        "HotDurham/Archives/Daily",
+        "HotDurham/Archives/Weekly",
+        "HotDurham/Archives/Monthly",
+        "HotDurham/System/Configs",
+        "HotDurham/System/Backups",
+        "HotDurham/System/Metadata"
+      ]
+    },
+    "phase2_data_migration": {
+      "description": "Migrate existing data to new structure",
+      "migrations": [
+        {
+          "from": "HotDurham/TestData_ValidationCluster/SensorData",
+          "to": "HotDurham/Testing/SensorData",
+          "type": "test_sensor_data"
+        },
+        {
+          "from": "HotDurham/TestData_ValidationCluster/Visualizations",
+          "to": "HotDurham/Testing/ValidationReports",
+          "type": "test_visualizations"
+        },
+        {
+          "from": "HotDurham/ProductionData_SensorAnalysis/Visualizations",
+          "to": "HotDurham/Production/Reports",
+          "type": "production_reports"
+        },
+        {
+          "from": "HotDurham/RawData/WU",
+          "to": "HotDurham/Production/RawData/WU",
+          "type": "production_wu_data"
+        },
+        {
+          "from": "HotDurham/RawData/TSI",
+          "to": "HotDurham/Production/RawData/TSI",
+          "type": "production_tsi_data"
+        }
+      ]
+    },
+    "phase3_validation": {
+      "description": "Validate migration and update configurations",
+      "tasks": [
+        "Verify all files copied successfully",
+        "Update application configurations",
+        "Test upload functionality",
+        "Create backup of old structure"
+      ]
+    },
+    "phase4_cleanup": {
+      "description": "Clean up old structure (optional)",
+      "tasks": [
+        "Archive old folder structure",
+        "Update documentation",
+        "Notify team of new structure"
+      ]
+    }
+  },
+  "simulation_results": {
+    "timestamp": "2025-06-14T01:15:25.885866",
+    "simulation_mode": true,
+    "results": {
+      "folders_created": 14,
+      "files_migrated": 160,
+      "errors": [],
+      "warnings": [
+        "Review file permissions after migration",
+        "Update bookmark links to new folder structure",
+        "Verify automated upload scripts use new paths"
+      ]
+    }
+  },
+  "analysis": {
+    "old_structure_folders": [
+      "HotDurham/TestData_ValidationCluster/Visualizations",
+      "HotDurham/ProductionData_SensorAnalysis/Visualizations"
+    ],
+    "new_structure_folders": [
+      "HotDurham/Testing/SensorData/WU",
+      "HotDurham/Production/RawData/WU"
+    ],
+    "production_folders": [],
+    "needs_migration": [
+      {
+        "old_path": "HotDurham/TestData_ValidationCluster",
+        "new_path": "HotDurham/Testing",
+        "type": "testing_data"
+      },
+      {
+        "old_path": "HotDurham/ProductionData_SensorAnalysis",
+        "new_path": "HotDurham/Production",
+        "type": "production_data"
+      }
+    ]
+  }
+}

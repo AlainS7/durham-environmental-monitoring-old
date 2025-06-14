@@ -177,9 +177,16 @@ class DataManager:
             
             self.logger.info(f"Data saved to {paths['raw']}")
             
-            # Upload to Google Drive if available
+            # Upload to Google Drive if available using improved folder structure
             if self.drive_service:
-                self.upload_to_drive(paths["raw"], f"HotDurham/RawData/{data_type.upper()}")
+                try:
+                    from config.improved_google_drive_config import get_production_path
+                    # Use improved folder structure
+                    drive_folder = get_production_path('raw', data_type.upper())
+                    self.upload_to_drive(paths["raw"], drive_folder, priority=1)  # High priority for production data
+                except ImportError:
+                    # Fallback to legacy folder structure
+                    self.upload_to_drive(paths["raw"], f"HotDurham/Production/RawData/{data_type.upper()}")
             
             return paths["raw"]
             
@@ -187,8 +194,20 @@ class DataManager:
             self.logger.error(f"Error during {data_type} data pull: {e}")
             return None
     
-    def upload_to_drive(self, local_path: Path, drive_folder: str) -> bool:
-        """Upload a file to Google Drive in the specified folder."""
+    def upload_to_drive(self, local_path: Path, drive_folder: str, priority: int = 2) -> bool:
+        """Upload a file to Google Drive using enhanced manager with rate limiting."""
+        # Try to use enhanced manager first
+        try:
+            from src.utils.enhanced_google_drive_manager import get_enhanced_drive_manager
+            enhanced_manager = get_enhanced_drive_manager(str(self.base_dir.parent))
+            
+            if enhanced_manager and enhanced_manager.drive_service:
+                # Use enhanced manager with queue system
+                return enhanced_manager.queue_upload(local_path, drive_folder, priority)
+        except ImportError:
+            self.logger.warning("Enhanced Google Drive manager not available, using legacy upload")
+        
+        # Fallback to legacy upload method
         if not self.drive_service:
             return False
             
@@ -321,12 +340,19 @@ class DataManager:
                     self.logger.info(f"Cleaned up temp file: {file_path.name}")
     
     def sync_to_google_drive(self):
-        """Sync all important data to Google Drive."""
+        """Sync all important data to Google Drive using improved folder structure."""
         if not self.drive_service:
             self.logger.warning("Google Drive service not available for sync")
             return
         
-        self.logger.info("Starting Google Drive sync")
+        self.logger.info("Starting Google Drive sync with improved folder structure")
+        
+        try:
+            from config.improved_google_drive_config import get_production_path, get_archive_path
+            use_improved_structure = True
+        except ImportError:
+            self.logger.warning("Improved folder structure not available, using legacy structure")
+            use_improved_structure = False
         
         # Sync recent raw data
         for data_type in ["wu", "tsi"]:
@@ -337,13 +363,21 @@ class DataManager:
                             # Only sync files from last month
                             file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
                             if (datetime.now() - file_time).days <= 30:
-                                self.upload_to_drive(file_path, f"HotDurham/RawData/{data_type.upper()}/{year_folder.name}")
+                                if use_improved_structure:
+                                    drive_folder = get_production_path('raw', data_type.upper())
+                                else:
+                                    drive_folder = f"HotDurham/Production/RawData/{data_type.upper()}/{year_folder.name}"
+                                self.upload_to_drive(file_path, drive_folder, priority=2)
         
         # Sync processed data
         for summary_type in ["weekly_summaries", "monthly_summaries", "annual_summaries"]:
             summary_dir = self.base_dir / "processed" / summary_type
             for file_path in summary_dir.glob("*.csv"):
-                self.upload_to_drive(file_path, f"HotDurham/Processed/{summary_type}")
+                if use_improved_structure:
+                    drive_folder = get_production_path('processed')
+                else:
+                    drive_folder = f"HotDurham/Production/Processed/{summary_type}"
+                self.upload_to_drive(file_path, drive_folder, priority=3)
         
         self.logger.info("Google Drive sync completed")
     
@@ -836,7 +870,7 @@ class DataManager:
                     )
                 else:
                     # Use existing production folder structure
-                    drive_folder = f"HotDurham/RawData/{data_type.upper()}"
+                    drive_folder = f"HotDurham/Production/RawData/{data_type.upper()}"
                 
                 self.logger.info(f"Uploading {sensor_id} data to Google Drive: {drive_folder}")
                 self.upload_to_drive(paths["raw"], drive_folder)
