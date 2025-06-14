@@ -1,0 +1,17 @@
+# Ignore all processed data files
+*.csv
+*.xlsx
+*.xls
+*.json
+*.html
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Ignore all subdirectories
+*/
+
+# Allow README documentation
+!README.md
+!.gitignore

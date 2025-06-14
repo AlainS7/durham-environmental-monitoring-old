@@ -150,7 +150,7 @@ test_automation() {
     print_info "Testing automation script..."
     
     cd "$PROJECT_ROOT"
-    ./automated_maintenance.sh --force-weekly
+    scripts/automation/automated_maintenance.sh --force-weekly
     
     if [ $? -eq 0 ]; then
         print_status "Automation test completed successfully"
@@ -209,14 +209,14 @@ case "$1" in
         echo "🚀 Quick Setup Options:"
         echo ""
         echo "1️⃣  Install automated maintenance (recommended):"
-        echo "   ./setup_maintenance_automation.sh install-launchd"
+        echo "   scripts/automation/setup_maintenance_automation.sh install-launchd"
         echo ""
         echo "2️⃣  Test the automation:"
-        echo "   ./setup_maintenance_automation.sh test"
+        echo "   scripts/automation/setup_maintenance_automation.sh test"
         echo ""
         echo "3️⃣  Check status:"
-        echo "   ./setup_maintenance_automation.sh status"
+        echo "   scripts/automation/setup_maintenance_automation.sh status"
         echo ""
-        echo "For more options, run: ./setup_maintenance_automation.sh help"
+        echo "For more options, run: scripts/automation/setup_maintenance_automation.sh help"
         ;;
 esac

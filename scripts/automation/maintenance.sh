@@ -6,11 +6,11 @@ echo "================================="
 
 # Run cleanup
 echo "📋 Step 1: Running project cleanup..."
-./cleanup_project.sh
+scripts/maintenance/cleanup_project.sh
 
 echo ""
 echo "📋 Step 2: Running security check..."
-./security_check.sh
+scripts/maintenance/security_check.sh
 
 echo ""
 echo "📋 Step 3: Checking Git repository health..."

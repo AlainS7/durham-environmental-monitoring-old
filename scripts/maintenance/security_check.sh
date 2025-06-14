@@ -104,7 +104,7 @@ fi
 echo ""
 echo "🔒 Security Best Practices:"
 echo "• Always use 'git safe-commit' instead of 'git commit'"
-echo "• Run './security_check.sh' before pushing to remote"
+echo "• Run 'scripts/maintenance/security_check.sh' before pushing to remote"
 echo "• Keep credentials in the creds/ directory (already gitignored)"
 echo "• Use environment variables for secrets in production"
 echo "• Regularly audit your .gitignore file"

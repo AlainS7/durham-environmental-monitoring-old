@@ -667,3 +667,7 @@ print(f"PM2.5: {data['pm25']} μg/m³")
 if __name__ == "__main__":
     api = PublicAPI()
     api.run_server(debug=True)
+
+# Export app for import compatibility
+api_instance = PublicAPI()
+app = api_instance.app

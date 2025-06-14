@@ -4,7 +4,7 @@
       "enabled": true,
       "stations": [
         "KNCDURHA209",
-        "KNCDURHA284", 
+        "KNCDURHA284",
         "KNCDURHA590",
         "KNCDURHA548",
         "KNCDURHA549"
@@ -12,7 +12,7 @@
       "metrics": [
         "timestamp",
         "tempf",
-        "humidity", 
+        "humidity",
         "precipRate",
         "windspeedAvg",
         "winddir",
@@ -27,7 +27,7 @@
       "metrics": [
         "timestamp",
         "PM 2.5",
-        "T (C)", 
+        "T (C)",
         "RH (%)",
         "PM 1",
         "PM 4",
@@ -73,5 +73,12 @@
     "master_folder": "HotDurham/Processed/MasterData",
     "backup_folder": "HotDurham/Backups/MasterData",
     "export_folder": "HotDurham/Processed/MasterData/Exports"
+  },
+  "paths": {
+    "raw_data": "data/raw",
+    "master_data": "data/master/historical",
+    "processed_data": "data/processed",
+    "temp_data": "data/temp",
+    "logs": "logs/application/data_collection"
   }
 }
