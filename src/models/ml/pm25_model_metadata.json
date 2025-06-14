@@ -1,6 +1,6 @@
 {
   "best_model": "random_forest",
-  "training_date": "2025-06-13T18:18:09.677918",
+  "training_date": "2025-06-13T22:09:14.751187",
   "feature_columns": [
     "hour",
     "day_of_week",
@@ -18,8 +18,8 @@
   "training_samples": 6922,
   "model_performance": {
     "random_forest": {
-      "mae": 0.5390638087931787,
-      "rmse": 0.8306788358818491,
+      "mae": 0.5390638087931786,
+      "rmse": 0.830678835881849,
       "r2": 0.8930536179953154
     },
     "gradient_boosting": {

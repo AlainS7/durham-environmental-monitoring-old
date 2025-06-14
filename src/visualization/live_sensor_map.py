@@ -412,9 +412,18 @@ class LiveSensorMapServer:
 
 def main():
     """Main function"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Hot Durham Live Sensor Map')
+    parser.add_argument('--host', default='localhost', help='Host to bind to (default: localhost)')
+    parser.add_argument('--port', type=int, default=5003, help='Port to bind to (default: 5003)')
+    parser.add_argument('--debug', action='store_true', help='Run in debug mode')
+    
+    args = parser.parse_args()
+    
     project_root = Path(__file__).parent.parent.parent
     server = LiveSensorMapServer(str(project_root))
-    server.run(port=5003)  # Use port 5003 to avoid macOS AirPlay conflict
+    server.run(host=args.host, port=args.port, debug=args.debug)
 
 if __name__ == "__main__":
     main()

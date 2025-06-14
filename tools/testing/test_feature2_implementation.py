@@ -23,7 +23,7 @@ import pandas as pd
 import numpy as np
 
 # Add project paths
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent.parent  # Go up to Hot Durham root
 sys.path.append(str(project_root / "src" / "ml"))
 sys.path.append(str(project_root / "src" / "visualization"))
 sys.path.append(str(project_root / "src" / "analysis"))
