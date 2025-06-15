@@ -79,22 +79,3 @@ app.get('/api/tsi/:deviceId', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`API proxy running at http://localhost:${PORT}`);
 });
-
-// Do the same with one drive (teams folder)
-// (manual is easy, but try automatic)
-// weekly file of data
-// (check data weekly to see if it is working well)
-//dont need to download daily but would be good to check daily
-// maybe cn
-// can make map to make sure its not weird
-// can join TSI with hotdurham gmail
-// dashboard with sensors
-
-//in future: maps available for the public (run online)
-
-
-
-
-
-// maybe also add 45 days
-

@@ -1,9 +1,9 @@
 {
-  "timestamp": "2025-06-13T14:39:16.653164",
-  "pdf_path": "/Users/alainsoto/IdeaProjects/Hot Durham/sensor_visualizations/production_pdf_reports/production_sensors_report_20250613_143859.pdf",
-  "total_sensors": 8,
-  "average_uptime": 58.325549634874605,
-  "high_uptime_sensors": 1,
-  "uploaded_to_drive": false,
-  "report_period_days": 7
+  "timestamp": "2025-06-15T19:50:52.187652",
+  "pdf_path": "/workspaces/tsi-data-uploader/sensor_visualizations/production_pdf_reports/production_sensors_report_20250615_194935.pdf",
+  "total_sensors": 35,
+  "average_uptime": 94.22461691615756,
+  "high_uptime_sensors": 32,
+  "uploaded_to_drive": true,
+  "report_period_days": 16
 }

@@ -36,13 +36,17 @@ from pathlib import Path
 from datetime import datetime
 import logging
 
-# Add project root to path
-project_root = Path(__file__).parent
+# Add project root and src to path
+project_root = Path(__file__).resolve().parent.parent.parent
+src_path = project_root / 'src'
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'src'))
+sys.path.insert(0, str(src_path))
 
-# Import the PDF reporter
-from src.visualization.production_pdf_reports import ProductionSensorPDFReporter
+try:
+    from visualization.production_pdf_reports import ProductionSensorPDFReporter
+except ImportError:
+    # fallback for legacy structure
+    from src.visualization.production_pdf_reports import ProductionSensorPDFReporter
 
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""

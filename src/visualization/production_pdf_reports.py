@@ -301,6 +301,22 @@ class ProductionSensorPDFReporter:
             plt.close()
             return ""
     
+    def _find_metric_column(self, df: pd.DataFrame, metric_aliases: list) -> str:
+        """
+        Find the best matching column for a metric from a list of aliases (case-insensitive, ignore spaces/underscores).
+        """
+        norm = lambda s: s.lower().replace(' ', '').replace('_', '')
+        for alias in metric_aliases:
+            for col in df.columns:
+                if norm(col) == norm(alias):
+                    return col
+        # Fallback: partial match
+        for alias in metric_aliases:
+            for col in df.columns:
+                if norm(alias) in norm(col):
+                    return col
+        return None
+
     def create_summary_chart(self, data_dict: Dict[str, pd.DataFrame], metric: str, 
                            chart_type: str = "multi") -> str:
         """
@@ -316,23 +332,28 @@ class ProductionSensorPDFReporter:
         """
         try:
             plt.figure(figsize=(18, 6))
-            
+            metric_aliases = [metric, metric.replace(' ', ''), metric.replace(' ', '_'), metric.lower(), metric.upper()]
+            if metric.lower() in ['pm2.5', 'pm 2.5', 'pm25', 'mcpm2x5', 'ncpm2x5']:
+                metric_aliases += ['PM2.5', 'PM 2.5', 'pm25', 'mcpm2x5', 'ncpm2x5']
+            if metric.lower() in ['temperature', 'temp', 't (c)', 'temp_c']:
+                metric_aliases += ['T (C)', 'temp_c', 'temperature', 'temp']
             if chart_type == "aggregate":
                 # Aggregate all data with error bars
                 combined_data = []
                 
                 for sensor_id, df in data_dict.items():
-                    if df.empty or metric not in df.columns:
+                    col = self._find_metric_column(df, metric_aliases)
+                    if df.empty or not col:
                         continue
                     
                     timestamp_col = 'obsTimeUtc' if 'obsTimeUtc' in df.columns else 'timestamp'
                     df_clean = df.copy()
                     df_clean[timestamp_col] = pd.to_datetime(df_clean[timestamp_col])
-                    df_clean = df_clean.dropna(subset=[timestamp_col, metric])
+                    df_clean = df_clean.dropna(subset=[timestamp_col, col])
                     
                     if not df_clean.empty:
                         df_clean.set_index(timestamp_col, inplace=True)
-                        df_resampled = df_clean.resample("h")[metric].mean().reset_index()
+                        df_resampled = df_clean.resample("h")[col].mean().reset_index()
                         combined_data.append(df_resampled)
                 
                 if combined_data:
@@ -342,7 +363,7 @@ class ProductionSensorPDFReporter:
                     sns.lineplot(
                         data=all_data,
                         x=timestamp_col,
-                        y=metric,
+                        y=col,
                         errorbar='sd',
                         estimator='mean',
                         marker='.',
@@ -352,23 +373,24 @@ class ProductionSensorPDFReporter:
             else:
                 # Multi-line plot with individual sensors
                 for i, (sensor_id, df) in enumerate(data_dict.items()):
-                    if df.empty or metric not in df.columns:
+                    col = self._find_metric_column(df, metric_aliases)
+                    if df.empty or not col:
                         continue
                     
                     timestamp_col = 'obsTimeUtc' if 'obsTimeUtc' in df.columns else 'timestamp'
                     df_clean = df.copy()
                     df_clean[timestamp_col] = pd.to_datetime(df_clean[timestamp_col])
-                    df_clean = df_clean.dropna(subset=[timestamp_col, metric])
+                    df_clean = df_clean.dropna(subset=[timestamp_col, col])
                     
                     if df_clean.empty:
                         continue
                     
                     df_clean.set_index(timestamp_col, inplace=True)
-                    df_resampled = df_clean.resample("h")[metric].mean().reset_index()
+                    df_resampled = df_clean.resample("h")[col].mean().reset_index()
                     
                     color = colors[i % len(colors)]
                     sensor_name = self.sensor_metadata.get(sensor_id, {}).get('name', sensor_id)
-                    plt.plot(df_resampled[timestamp_col], df_resampled[metric], 
+                    plt.plot(df_resampled[timestamp_col], df_resampled[col], 
                            label=sensor_name, color=color, linewidth=2, linestyle=':')
             
             plt.xlabel('Date', fontsize=18)
@@ -415,7 +437,7 @@ class ProductionSensorPDFReporter:
             if any(temp_keyword in metric.lower() for temp_keyword in ['temp', 'temperature']):
                 def temperature_formatter(y, pos):
                     return f'{y:.1f}'
-                ax.yaxis.set_major_formatter(FuncFormatter(temperature_formatter))
+                ax.yaxis.set_major_formatter(temperature_formatter)
             
             if chart_type == "multi":
                 plt.legend(fontsize=12, loc='center left', bbox_to_anchor=(1, 0.5),
@@ -459,8 +481,8 @@ class ProductionSensorPDFReporter:
         """
         try:
             plt.figure(figsize=(18, 8))
-            
-            sensors = list(uptime_dict.keys())
+            # Use friendly names for x-axis labels
+            sensors = [self.sensor_metadata.get(sid, {}).get('name', sid) for sid in uptime_dict.keys()]
             uptimes = list(uptime_dict.values())
             
             # Create color mapping based on uptime levels
@@ -527,46 +549,76 @@ class ProductionSensorPDFReporter:
             if wu_file.exists():
                 self.wu_data = pd.read_csv(wu_file)
                 self.wu_data['obsTimeUtc'] = pd.to_datetime(self.wu_data['obsTimeUtc'])
-                
-                # Filter out test sensors
                 from config.test_sensors_config import is_test_sensor
                 if 'stationID' in self.wu_data.columns:
                     self.wu_data = self.wu_data[~self.wu_data['stationID'].apply(is_test_sensor)]
-                
-                # Extract sensor metadata
-                if 'Station Name' in self.wu_data.columns:
-                    wu_meta = self.wu_data[['stationID', 'Station Name']].drop_duplicates()
+                # Extract sensor metadata (robust to column name)
+                name_col = None
+                for col in self.wu_data.columns:
+                    if col.lower().replace('_', '').replace(' ', '') in ['stationname','name']:
+                        name_col = col
+                        break
+                if name_col:
+                    wu_meta = self.wu_data[['stationID', name_col]].drop_duplicates()
                     for _, row in wu_meta.iterrows():
                         self.sensor_metadata[row['stationID']] = {
-                            'name': row['Station Name'],
+                            'name': row[name_col],
                             'type': 'Weather Underground',
-                            'location': row['Station Name']
+                            'location': row[name_col]
                         }
-                
                 logger.info(f"Loaded {len(self.wu_data)} WU production sensor records")
-            
             # Load TSI data
             tsi_file = self.data_dir / "master_data" / "tsi_master_historical_data.csv"
             if tsi_file.exists():
                 self.tsi_data = pd.read_csv(tsi_file)
-                self.tsi_data['timestamp'] = pd.to_datetime(self.tsi_data['timestamp'])
-                
-                # Filter out test sensors
+                # Try to parse timestamp column robustly
+                ts_col = None
+                for col in self.tsi_data.columns:
+                    if col.lower().startswith('timestamp'):
+                        ts_col = col
+                        break
+                if ts_col:
+                    self.tsi_data[ts_col] = pd.to_datetime(self.tsi_data[ts_col])
                 if 'device_id' in self.tsi_data.columns:
                     self.tsi_data = self.tsi_data[~self.tsi_data['device_id'].apply(is_test_sensor)]
-                
-                # Extract sensor metadata
-                if 'Device Name' in self.tsi_data.columns:
-                    tsi_meta = self.tsi_data[['device_id', 'Device Name']].drop_duplicates()
+                # Extract sensor metadata (robust to column name, fallback to metadata JSON)
+                name_col = None
+                for col in self.tsi_data.columns:
+                    if col.lower().replace('_', '').replace(' ', '') in ['devicename','name']:
+                        name_col = col
+                        break
+                if name_col:
+                    tsi_meta = self.tsi_data[['device_id', name_col]].drop_duplicates()
                     for _, row in tsi_meta.iterrows():
+                        name_val = row[name_col]
+                        # If name is missing, try metadata
+                        if (not name_val or pd.isna(name_val)) and 'metadata' in self.tsi_data.columns:
+                            meta_row = self.tsi_data[self.tsi_data['device_id'] == row['device_id']]['metadata'].iloc[0]
+                            try:
+                                meta = eval(meta_row) if isinstance(meta_row, str) else {}
+                                friendly = meta.get('friendly_name', row['device_id'])
+                            except Exception:
+                                friendly = row['device_id']
+                            name_val = friendly
                         self.sensor_metadata[row['device_id']] = {
-                            'name': row['Device Name'],
+                            'name': name_val,
                             'type': 'TSI Air Quality',
-                            'location': row['Device Name']
+                            'location': name_val
                         }
-                
+                elif 'metadata' in self.tsi_data.columns:
+                    # Try to extract friendly_name from metadata JSON
+                    for _, row in self.tsi_data[['device_id', 'metadata']].drop_duplicates().iterrows():
+                        try:
+                            meta = eval(row['metadata']) if isinstance(row['metadata'], str) else {}
+                            friendly = meta.get('friendly_name', row['device_id'])
+                        except Exception:
+                            friendly = row['device_id']
+                        self.sensor_metadata[row['device_id']] = {
+                            'name': friendly,
+                            'type': 'TSI Air Quality',
+                            'location': friendly
+                        }
                 logger.info(f"Loaded {len(self.tsi_data)} TSI production sensor records")
-            
             return True
             
         except Exception as e:
@@ -923,14 +975,23 @@ class ProductionSensorPDFReporter:
             """
             
             # Add charts for this sensor
+            has_chart = False
             for chart_type, chart_data in charts.items():
                 if chart_data:
+                    has_chart = True
                     html_content += f"""
-                    <div class="chart-container">
-                        <img src="{chart_data}" style="width: 100%; max-width: 1000px;">
+                    <div class=\"chart-container\">
+                        <img src=\"{chart_data}\" style=\"width: 100%; max-width: 1000px;\">
                     </div>
                     """
-            
+            if not has_chart:
+                html_content += f"""
+                <div class=\"chart-container\">
+                    <div style=\"color: #b00; font-size: 1.2em; padding: 2em; text-align: center;\">
+                        No data available for this sensor in the selected period.
+                    </div>
+                </div>
+                """
             html_content += '<div class="page-break"></div>'
         
         # Footer
