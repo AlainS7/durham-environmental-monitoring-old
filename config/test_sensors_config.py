@@ -33,16 +33,15 @@ TEST_SENSOR_IDS = [
     'KNCDURHA648',  # MS-22
     
     # TSI test sensors (device names or IDs) - add your TSI test sensor IDs here
-    # Uncomment and replace with your actual TSI test sensor IDs:
-    # 'test_sensor_1',
-    # 'test_sensor_2', 
-    # 'test_sensor_3',
-    # 'BS-TEST-01',
-    # 'BS-TEST-02',
     
-    # Example: If you have TSI sensors for testing, add their device IDs here:
-    # 'your_tsi_test_device_id_1',
-    # 'your_tsi_test_device_id_2',
+    # AA-series sensors (identified as test sensors):
+    'AA-2 (Burch)', 'AA-3', 'AA-4', 'AA-5', 'AA-6', 'AA-7', 'AA-8', 'AA-9', 
+    'AA-10', 'AA-11', 'AA-12', 'AA-13', 'AA-14',
+    
+    # Note: TSI sensors may use different ID formats:
+    # - device_id: Long alphanumeric string (e.g., 'cv123abc456def789')
+    # - device_name: Short descriptive name (e.g., 'BS-01', 'BS-TEST-01')  
+    # - Device Name: Human-readable name (e.g., 'Test Sensor 1', 'BS-TEST-01')
     
     # Add additional test sensor IDs here as you deploy them
 ]
@@ -340,6 +339,110 @@ class TestSensorConfig:
             else:
                 print(f"  - {sensor_id}")
         print("=" * 40)
+    
+    def validate_configuration(self) -> Dict[str, any]:
+        """
+        Validate the test sensor configuration and return validation results.
+        
+        Returns:
+            Dictionary containing validation results and recommendations
+        """
+        validation = {
+            'is_valid': True,
+            'warnings': [],
+            'errors': [],
+            'recommendations': [],
+            'stats': {
+                'total_test_sensors': len(TEST_SENSOR_IDS),
+                'wu_test_sensors': 0,
+                'tsi_test_sensors': 0,
+                'unknown_type_sensors': 0
+            }
+        }
+        
+        print("🔍 Validating test sensor configuration...")
+        
+        # Check if any test sensors are configured
+        if not TEST_SENSOR_IDS:
+            validation['errors'].append("No test sensors configured in TEST_SENSOR_IDS")
+            validation['is_valid'] = False
+            return validation
+        
+        # Analyze sensor types and patterns
+        wu_sensors = []
+        tsi_sensors = []
+        unknown_sensors = []
+        
+        for sensor_id in TEST_SENSOR_IDS:
+            if sensor_id.startswith('KNCDURHA'):
+                wu_sensors.append(sensor_id)
+                validation['stats']['wu_test_sensors'] += 1
+            elif any(pattern in sensor_id.upper() for pattern in ['BS-', 'TEST', 'AIR', 'QUALITY']):
+                tsi_sensors.append(sensor_id)
+                validation['stats']['tsi_test_sensors'] += 1
+            else:
+                unknown_sensors.append(sensor_id)
+                validation['stats']['unknown_type_sensors'] += 1
+        
+        # Validate WU sensors
+        if wu_sensors:
+            print(f"   ✅ Found {len(wu_sensors)} Weather Underground test sensors")
+            # Check WU sensor ID patterns
+            for sensor_id in wu_sensors:
+                if len(sensor_id) != 11 or not sensor_id.startswith('KNCDURHA'):
+                    validation['warnings'].append(f"WU sensor ID '{sensor_id}' may have incorrect format (expected: KNCDURHA### pattern)")
+        
+        # Validate TSI sensors  
+        if tsi_sensors:
+            print(f"   ✅ Found {len(tsi_sensors)} TSI test sensors")
+        else:
+            validation['warnings'].append("No TSI test sensors configured - consider adding TSI test sensor IDs")
+            validation['recommendations'].append("Add TSI test sensor IDs to TEST_SENSOR_IDS list for comprehensive testing")
+        
+        # Check for unknown sensor types
+        if unknown_sensors:
+            validation['warnings'].append(f"Found {len(unknown_sensors)} sensors with unrecognized ID patterns: {unknown_sensors}")
+            validation['recommendations'].append("Review sensor IDs with unrecognized patterns and ensure they follow expected naming conventions")
+        
+        # Check directory structure
+        try:
+            if not self.test_sensors_path.exists():
+                validation['warnings'].append(f"Test sensor data directory does not exist: {self.test_sensors_path}")
+                validation['recommendations'].append("Test sensor data directory will be created automatically on first use")
+            
+            if not self.test_logs_path.exists():
+                validation['warnings'].append(f"Test sensor logs directory does not exist: {self.test_logs_path}")
+                validation['recommendations'].append("Test sensor logs directory will be created automatically on first use")
+        except Exception as e:
+            validation['errors'].append(f"Error checking directory structure: {e}")
+            validation['is_valid'] = False
+        
+        # Check WU to MS mapping consistency
+        unmapped_wu_sensors = []
+        for sensor_id in wu_sensors:
+            if sensor_id not in WU_TO_MS_MAPPING:
+                unmapped_wu_sensors.append(sensor_id)
+        
+        if unmapped_wu_sensors:
+            validation['warnings'].append(f"WU sensors missing MS station mapping: {unmapped_wu_sensors}")
+            validation['recommendations'].append("Add missing WU sensor IDs to WU_TO_MS_MAPPING dictionary")
+        
+        # Generate final recommendations
+        if validation['stats']['wu_test_sensors'] > 0 and validation['stats']['tsi_test_sensors'] == 0:
+            validation['recommendations'].append("Consider adding TSI test sensors for comprehensive air quality testing")
+        elif validation['stats']['tsi_test_sensors'] > 0 and validation['stats']['wu_test_sensors'] == 0:
+            validation['recommendations'].append("Consider adding Weather Underground test sensors for comprehensive weather monitoring")
+        
+        # Print validation summary
+        if validation['is_valid']:
+            if not validation['warnings']:
+                print("   ✅ Configuration validation passed with no issues")
+            else:
+                print(f"   ⚠️ Configuration validation passed with {len(validation['warnings'])} warnings")
+        else:
+            print(f"   ❌ Configuration validation failed with {len(validation['errors'])} errors")
+        
+        return validation
 
 
 # Global instance for easy importing

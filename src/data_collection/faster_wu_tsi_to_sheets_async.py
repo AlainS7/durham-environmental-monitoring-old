@@ -10,6 +10,20 @@ sys.path.insert(0, os.path.join(project_root, 'config'))
 # Now we can import the data manager and test sensor config
 from data_manager import DataManager
 from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+
+# Import enhanced utilities
+try:
+    from src.utils.enhanced_logging import HotDurhamLogger
+    from src.validation.data_validator import SensorDataValidator
+    from src.database.db_manager import HotDurhamDB
+    from src.utils.error_handler import ErrorHandler
+    from src.config.config_manager import ConfigManager
+    from src.monitoring.performance_monitor import PerformanceMonitor
+    ENHANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    ENHANCED_FEATURES_AVAILABLE = False
+    print("💡 Enhanced features not available - using basic functionality")
+
 import json
 import pandas as pd
 from datetime import datetime, timedelta
@@ -322,6 +336,40 @@ async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_
     return results
 
 def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
+    # Import TSI date range manager
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent / "utils"))
+    from tsi_date_manager import TSIDateRangeManager
+    
+    # Check and adjust date range for TSI API limitation
+    original_start, original_end = start_date, end_date
+    days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
+    days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
+    
+    if not TSIDateRangeManager.is_within_limit(start_date, end_date):
+        print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, exceeds TSI's 90-day historical limit")
+        print(f"   TSI API Error: 'start_date cannot be more than 90 days in the past'")
+        print("   Options:")
+        print("   1. Use most recent valid date range")
+        print("   2. Skip TSI data collection") 
+        print("   3. Split into multiple API calls (advanced)")
+        
+        # For automated systems, default to most recent data
+        adjusted_start, adjusted_end, was_adjusted = TSIDateRangeManager.adjust_date_range_for_tsi(
+            start_date, end_date, prefer_recent=True
+        )
+        
+        if was_adjusted:
+            start_date, end_date = adjusted_start, adjusted_end
+            new_days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
+            new_days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
+            print(f"   🔄 Automatically adjusted to: {start_date} to {end_date}")
+            print(f"   📊 New range: {new_days_span} days span, starting {new_days_back} days back")
+    else:
+        print(f"✅ TSI date range valid: {start_date} to {end_date}")
+        print(f"   📊 Range: {days_span} days span, starting {days_back} days back")
+    
     if not os.path.exists(ts_creds_abs):
         print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
         return pd.DataFrame(), {}
@@ -366,103 +414,330 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     return combined_df, per_device_dfs
 
 def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
-    """Separate sensor data into test and production based on sensor IDs."""
+    """
+    Enhanced sensor data separation with improved error handling and logging.
+    
+    Separates sensor data into test and production categories based on configured
+    test sensor IDs, with comprehensive validation and detailed reporting.
+    
+    Args:
+        wu_df: Weather Underground DataFrame
+        tsi_df: TSI sensor DataFrame  
+        test_config: TestSensorConfig instance
+        
+    Returns:
+        tuple: (test_data, prod_data) dictionaries with separated DataFrames
+    """
+    # Initialize return dictionaries
     test_data = {'wu': None, 'tsi': None}
     prod_data = {'wu': None, 'tsi': None}
     
+    # Statistics tracking
+    separation_stats = {
+        'wu_test_count': 0,
+        'wu_prod_count': 0,
+        'wu_unknown_count': 0,
+        'tsi_test_count': 0,
+        'tsi_prod_count': 0,
+        'tsi_unknown_count': 0,
+        'wu_test_sensors': set(),
+        'wu_prod_sensors': set(),
+        'tsi_test_sensors': set(),
+        'tsi_prod_sensors': set()
+    }
+    
     # Separate Weather Underground data
     if wu_df is not None and not wu_df.empty:
+        print(f"🔍 Processing {len(wu_df)} Weather Underground records...")
         test_wu_rows = []
         prod_wu_rows = []
         
-        for _, row in wu_df.iterrows():
-            station_id = row.get('stationID', '')
-            if test_config.is_test_sensor(station_id):
-                test_wu_rows.append(row)
-            else:
-                prod_wu_rows.append(row)
+        for idx, row in wu_df.iterrows():
+            try:
+                station_id = row.get('stationID', '').strip()
+                
+                # Skip rows with missing station IDs
+                if not station_id:
+                    separation_stats['wu_unknown_count'] += 1
+                    continue
+                
+                # Classify sensor
+                if test_config.is_test_sensor(station_id):
+                    test_wu_rows.append(row)
+                    separation_stats['wu_test_count'] += 1
+                    separation_stats['wu_test_sensors'].add(station_id)
+                else:
+                    prod_wu_rows.append(row)
+                    separation_stats['wu_prod_count'] += 1
+                    separation_stats['wu_prod_sensors'].add(station_id)
+                    
+            except Exception as e:
+                print(f"⚠️ Error processing WU row {idx}: {e}")
+                separation_stats['wu_unknown_count'] += 1
+                continue
         
+        # Create DataFrames if we have data
         if test_wu_rows:
             test_data['wu'] = pd.DataFrame(test_wu_rows)
-            print(f"🧪 Found {len(test_wu_rows)} WU test sensor records")
+            print(f"🧪 Separated {len(test_wu_rows)} WU test sensor records from {len(separation_stats['wu_test_sensors'])} sensors")
+            if len(separation_stats['wu_test_sensors']) <= 5:  # Show sensor IDs if not too many
+                print(f"   Test sensors: {', '.join(sorted(separation_stats['wu_test_sensors']))}")
+        
         if prod_wu_rows:
             prod_data['wu'] = pd.DataFrame(prod_wu_rows)
-            print(f"🏭 Found {len(prod_wu_rows)} WU production sensor records")
+            print(f"🏭 Separated {len(prod_wu_rows)} WU production sensor records from {len(separation_stats['wu_prod_sensors'])} sensors")
+            if len(separation_stats['wu_prod_sensors']) <= 5:  # Show sensor IDs if not too many
+                print(f"   Production sensors: {', '.join(sorted(separation_stats['wu_prod_sensors']))}")
+        
+        if separation_stats['wu_unknown_count'] > 0:
+            print(f"⚠️ Skipped {separation_stats['wu_unknown_count']} WU records with missing/invalid station IDs")
     
-    # Separate TSI data
+    # Separate TSI data with enhanced field detection
     if tsi_df is not None and not tsi_df.empty:
+        print(f"🔍 Processing {len(tsi_df)} TSI sensor records...")
         test_tsi_rows = []
         prod_tsi_rows = []
         
-        for _, row in tsi_df.iterrows():
-            # Check multiple possible ID fields
-            device_id = row.get('device_id', '')
-            device_name = row.get('device_name', '')
-            friendly_name = row.get('Device Name', device_name)
-            
-            # Check if any of the identifiers match test sensors
-            is_test = (test_config.is_test_sensor(device_id) or 
-                      test_config.is_test_sensor(device_name) or 
-                      test_config.is_test_sensor(friendly_name))
-            
-            if is_test:
-                test_tsi_rows.append(row)
-            else:
-                prod_tsi_rows.append(row)
+        # Identify available ID fields in the TSI data
+        available_id_fields = []
+        potential_id_fields = ['device_id', 'device_name', 'Device Name', 'deviceId', 'deviceName', 'sensor_id', 'id']
+        for field in potential_id_fields:
+            if field in tsi_df.columns:
+                available_id_fields.append(field)
         
+        if not available_id_fields:
+            print("⚠️ No recognizable TSI sensor ID fields found in data")
+            print(f"   Available columns: {', '.join(tsi_df.columns.tolist())}")
+        else:
+            print(f"🔍 Using TSI ID fields: {', '.join(available_id_fields)}")
+        
+        for idx, row in tsi_df.iterrows():
+            try:
+                # Extract all possible sensor identifiers
+                sensor_ids = set()
+                for field in available_id_fields:
+                    field_value = str(row.get(field, '')).strip()
+                    if field_value and field_value.lower() not in ['nan', 'none', '']:
+                        sensor_ids.add(field_value)
+                
+                # Skip if no valid sensor IDs found
+                if not sensor_ids:
+                    separation_stats['tsi_unknown_count'] += 1
+                    continue
+                
+                # Check if any of the identifiers match test sensors
+                is_test_sensor = any(test_config.is_test_sensor(sensor_id) for sensor_id in sensor_ids)
+                
+                # Get the primary sensor ID for tracking (prefer device_id, then device_name)
+                primary_id = None
+                for field in ['device_id', 'device_name', 'Device Name']:
+                    if field in row and str(row[field]).strip():
+                        primary_id = str(row[field]).strip()
+                        break
+                if not primary_id:
+                    primary_id = next(iter(sensor_ids)) if sensor_ids else 'unknown'
+                
+                # Classify sensor
+                if is_test_sensor:
+                    test_tsi_rows.append(row)
+                    separation_stats['tsi_test_count'] += 1
+                    separation_stats['tsi_test_sensors'].add(primary_id)
+                else:
+                    prod_tsi_rows.append(row)
+                    separation_stats['tsi_prod_count'] += 1
+                    separation_stats['tsi_prod_sensors'].add(primary_id)
+                    
+            except Exception as e:
+                print(f"⚠️ Error processing TSI row {idx}: {e}")
+                separation_stats['tsi_unknown_count'] += 1
+                continue
+        
+        # Create DataFrames if we have data
         if test_tsi_rows:
             test_data['tsi'] = pd.DataFrame(test_tsi_rows)
-            print(f"🧪 Found {len(test_tsi_rows)} TSI test sensor records")
+            print(f"🧪 Separated {len(test_tsi_rows)} TSI test sensor records from {len(separation_stats['tsi_test_sensors'])} sensors")
+            if len(separation_stats['tsi_test_sensors']) <= 5:  # Show sensor IDs if not too many
+                print(f"   Test sensors: {', '.join(sorted(separation_stats['tsi_test_sensors']))}")
+        
         if prod_tsi_rows:
             prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
-            print(f"🏭 Found {len(prod_tsi_rows)} TSI production sensor records")
+            print(f"🏭 Separated {len(prod_tsi_rows)} TSI production sensor records from {len(separation_stats['tsi_prod_sensors'])} sensors")
+            if len(separation_stats['tsi_prod_sensors']) <= 5:  # Show sensor IDs if not too many
+                print(f"   Production sensors: {', '.join(sorted(separation_stats['tsi_prod_sensors']))}")
+        
+        if separation_stats['tsi_unknown_count'] > 0:
+            print(f"⚠️ Skipped {separation_stats['tsi_unknown_count']} TSI records with missing/invalid sensor IDs")
+    
+    # Print separation summary
+    total_test_records = separation_stats['wu_test_count'] + separation_stats['tsi_test_count']
+    total_prod_records = separation_stats['wu_prod_count'] + separation_stats['tsi_prod_count']
+    total_unknown_records = separation_stats['wu_unknown_count'] + separation_stats['tsi_unknown_count']
+    
+    print(f"\n📊 Data Separation Summary:")
+    print(f"   🧪 Test sensors: {total_test_records} records from {len(separation_stats['wu_test_sensors']) + len(separation_stats['tsi_test_sensors'])} sensors")
+    print(f"   🏭 Production sensors: {total_prod_records} records from {len(separation_stats['wu_prod_sensors']) + len(separation_stats['tsi_prod_sensors'])} sensors")
+    if total_unknown_records > 0:
+        print(f"   ⚠️ Unknown/invalid: {total_unknown_records} records")
+    
+    # Validate separation results
+    if total_test_records == 0 and total_prod_records == 0:
+        print("⚠️ Warning: No valid sensor data was separated. Check sensor ID configurations.")
+    elif total_test_records == 0:
+        print("💡 Info: No test sensor data found. All data classified as production.")
+    elif total_prod_records == 0:
+        print("💡 Info: No production sensor data found. All data classified as test.")
     
     return test_data, prod_data
 
 def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, end_date, pull_type, file_format='csv'):
-    """Save separated sensor data to appropriate locations."""
-    saved_files = {'test': [], 'production': []}
+    """
+    Enhanced saving of separated sensor data with improved error handling and validation.
     
-    # Save test data
+    Args:
+        data_manager: DataManager instance for handling file operations
+        test_data: Dictionary containing test sensor DataFrames
+        prod_data: Dictionary containing production sensor DataFrames
+        start_date: Start date string
+        end_date: End date string
+        pull_type: Type of data pull (weekly, monthly, etc.)
+        file_format: File format for saving ('csv', 'json', etc.)
+        
+    Returns:
+        dict: Dictionary with lists of saved file paths for test and production data
+    """
+    saved_files = {'test': [], 'production': []}
+    save_stats = {'test_files': 0, 'production_files': 0, 'errors': 0}
+    
+    print(f"💾 Saving separated sensor data (format: {file_format})...")
+    
+    # Save test data with individual sensor files
+    print("🧪 Processing test sensor data...")
     for data_type, df in test_data.items():
         if df is not None and not df.empty:
-            # Get unique sensor IDs from test data
-            if data_type == 'wu':
-                sensor_ids = df['stationID'].unique()
-            else:  # tsi
-                sensor_ids = df['device_id'].unique() if 'device_id' in df.columns else df['device_name'].unique()
-            
-            for sensor_id in sensor_ids:
-                if data_type == 'wu':
-                    sensor_df = df[df['stationID'] == sensor_id]
-                else:
-                    if 'device_id' in df.columns:
-                        sensor_df = df[df['device_id'] == sensor_id]
-                    else:
-                        sensor_df = df[df['device_name'] == sensor_id]
+            try:
+                # Get unique sensor IDs from test data
+                sensor_id_field = 'stationID' if data_type == 'wu' else None
                 
-                saved_path = data_manager.save_sensor_data(
-                    sensor_id=sensor_id,
-                    data_type=data_type,
-                    df=sensor_df,
-                    start_date=start_date,
-                    end_date=end_date,
-                    file_format=file_format
-                )
-                if saved_path:
-                    saved_files['test'].append(saved_path)
+                # For TSI data, determine the appropriate ID field
+                if data_type == 'tsi':
+                    for field in ['device_id', 'device_name', 'Device Name']:
+                        if field in df.columns:
+                            sensor_id_field = field
+                            break
+                    
+                    if not sensor_id_field:
+                        print(f"⚠️ Warning: No recognizable sensor ID field found in TSI test data")
+                        print(f"   Available columns: {', '.join(df.columns.tolist())}")
+                        continue
+                
+                sensor_ids = df[sensor_id_field].unique()
+                print(f"🔍 Processing {len(sensor_ids)} test {data_type.upper()} sensors...")
+                
+                for sensor_id in sensor_ids:
+                    try:
+                        # Filter data for this specific sensor
+                        sensor_df = df[df[sensor_id_field] == sensor_id].copy()
+                        
+                        if sensor_df.empty:
+                            print(f"⚠️ Warning: No data found for test sensor {sensor_id}")
+                            continue
+                        
+                        # Validate sensor data before saving
+                        if data_type == 'wu':
+                            # Basic validation for WU data
+                            required_cols = ['stationID', 'obsTimeUtc']
+                            missing_cols = [col for col in required_cols if col not in sensor_df.columns]
+                            if missing_cols:
+                                print(f"⚠️ Warning: Test sensor {sensor_id} missing required columns: {missing_cols}")
+                        
+                        elif data_type == 'tsi':
+                            # Basic validation for TSI data
+                            required_cols = ['timestamp']
+                            missing_cols = [col for col in required_cols if col not in sensor_df.columns]
+                            if missing_cols:
+                                print(f"⚠️ Warning: Test sensor {sensor_id} missing required columns: {missing_cols}")
+                        
+                        # Save individual sensor data
+                        saved_path = data_manager.save_sensor_data(
+                            sensor_id=sensor_id,
+                            data_type=data_type,
+                            df=sensor_df,
+                            start_date=start_date,
+                            end_date=end_date,
+                            file_format=file_format
+                        )
+                        
+                        if saved_path:
+                            saved_files['test'].append(saved_path)
+                            save_stats['test_files'] += 1
+                            print(f"   ✅ Saved test {data_type.upper()} sensor {sensor_id}: {sensor_df.shape[0]} records → {saved_path}")
+                        else:
+                            print(f"   ❌ Failed to save test sensor {sensor_id}")
+                            save_stats['errors'] += 1
+                            
+                    except Exception as e:
+                        print(f"   ❌ Error saving test sensor {sensor_id}: {e}")
+                        save_stats['errors'] += 1
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ Error processing test {data_type.upper()} data: {e}")
+                save_stats['errors'] += 1
+                continue
     
-    # Save production data using existing method
+    # Save production data using existing batch method
+    print("🏭 Processing production sensor data...")
     for data_type, df in prod_data.items():
         if df is not None and not df.empty:
-            saved_path = data_manager.pull_and_store_data(
-                data_type=data_type,
-                start_date=start_date.replace('-', ''),
-                end_date=end_date.replace('-', ''),
-                file_format=file_format
-            )
-            if saved_path:
-                saved_files['production'].append(saved_path)
+            try:
+                print(f"🔍 Saving production {data_type.upper()} data: {df.shape[0]} records...")
+                
+                # Validate production data before saving
+                if data_type == 'wu' and 'stationID' in df.columns:
+                    unique_sensors = df['stationID'].nunique()
+                    print(f"   📊 Production data contains {unique_sensors} unique WU sensors")
+                elif data_type == 'tsi':
+                    # Try to identify unique TSI sensors
+                    sensor_count = 0
+                    for field in ['device_id', 'device_name', 'Device Name']:
+                        if field in df.columns:
+                            sensor_count = df[field].nunique()
+                            print(f"   📊 Production data contains {sensor_count} unique TSI sensors")
+                            break
+                
+                # Use existing data manager method for production data
+                saved_path = data_manager.pull_and_store_data(
+                    data_type=data_type,
+                    start_date=start_date.replace('-', ''),
+                    end_date=end_date.replace('-', ''),
+                    file_format=file_format
+                )
+                
+                if saved_path:
+                    saved_files['production'].append(saved_path)
+                    save_stats['production_files'] += 1
+                    print(f"   ✅ Saved production {data_type.upper()} data → {saved_path}")
+                else:
+                    print(f"   ❌ Failed to save production {data_type.upper()} data")
+                    save_stats['errors'] += 1
+                    
+            except Exception as e:
+                print(f"❌ Error saving production {data_type.upper()} data: {e}")
+                save_stats['errors'] += 1
+                continue
+    
+    # Print save summary
+    print(f"\n📊 Data Save Summary:")
+    print(f"   🧪 Test sensor files saved: {save_stats['test_files']}")
+    print(f"   🏭 Production data files saved: {save_stats['production_files']}")
+    if save_stats['errors'] > 0:
+        print(f"   ❌ Save errors encountered: {save_stats['errors']}")
+    
+    total_files = len(saved_files['test']) + len(saved_files['production'])
+    if total_files > 0:
+        print(f"   ✅ Total files successfully saved: {total_files}")
+    else:
+        print(f"   ⚠️ Warning: No files were saved")
     
     return saved_files
 
@@ -472,6 +747,23 @@ if __name__ == "__main__":
         local_download, file_format, download_dir, upload_onedrive, onedrive_folder
     ) = get_user_inputs()
     
+    # Initialize enhanced features if available
+    if ENHANCED_FEATURES_AVAILABLE:
+        enhanced_logger = HotDurhamLogger("data_collection")
+        data_validator = SensorDataValidator()
+        db_manager = HotDurhamDB()
+        error_handler = ErrorHandler()
+        config_manager = ConfigManager()
+        performance_monitor = PerformanceMonitor("data_collection")
+        print("✨ Enhanced features initialized: logging, validation, database, error handling, config management, performance monitoring")
+    else:
+        enhanced_logger = None
+        data_validator = None
+        db_manager = None
+        error_handler = None
+        config_manager = None
+        performance_monitor = None
+    
     # Initialize data manager for organized data storage and Google Drive sync
     print("🗂️ Initializing data management system...")
     data_manager = DataManager(project_root)
@@ -480,11 +772,33 @@ if __name__ == "__main__":
     print("🧪 Initializing test sensor configuration...")
     test_config = TestSensorConfig(project_root)
     
+    # Validate test sensor configuration
+    validation_result = test_config.validate_configuration()
+    
     # Display test sensor configuration status
     print(f"📋 Test sensor configuration loaded:")
-    print(f"   - Test sensors configured: {len(test_config.get_test_sensor_ids())}")
+    print(f"   - Total test sensors: {validation_result['stats']['total_test_sensors']}")
+    print(f"   - WU test sensors: {validation_result['stats']['wu_test_sensors']}")
+    print(f"   - TSI test sensors: {validation_result['stats']['tsi_test_sensors']}")
     print(f"   - Test data path: {test_config.test_data_path}")
     print(f"   - Production data path: {test_config.prod_data_path}")
+    
+    # Show validation warnings and recommendations
+    if validation_result['warnings']:
+        print(f"⚠️ Configuration warnings:")
+        for warning in validation_result['warnings']:
+            print(f"   - {warning}")
+    
+    if validation_result['recommendations']:
+        print(f"💡 Configuration recommendations:")
+        for rec in validation_result['recommendations']:
+            print(f"   - {rec}")
+    
+    if not validation_result['is_valid']:
+        print("❌ Critical configuration errors found. Please fix before proceeding:")
+        for error in validation_result['errors']:
+            print(f"   - {error}")
+        exit(1)  # Exit with error code instead of return
     
     # Determine pull type for naming (weekly, bi-weekly, etc.)
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -517,34 +831,82 @@ if __name__ == "__main__":
     print("💾 Saving sensor data...")
     saved_files = save_separated_sensor_data(data_manager, test_data, prod_data, start_date, end_date, pull_type, file_format or 'csv')
     
-    # Display save summary
+    # Calculate record counts for summary (define variables in scope)
+    test_wu_count = len(test_data.get('wu', pd.DataFrame())) if test_data.get('wu') is not None else 0
+    test_tsi_count = len(test_data.get('tsi', pd.DataFrame())) if test_data.get('tsi') is not None else 0
+    prod_wu_count = len(prod_data.get('wu', pd.DataFrame())) if prod_data.get('wu') is not None else 0
+    prod_tsi_count = len(prod_data.get('tsi', pd.DataFrame())) if prod_data.get('tsi') is not None else 0
+
+    # Display save summary with enhanced details
+    print("\n" + "="*60)
+    print("📊 DATA COLLECTION AND SEPARATION SUMMARY")
+    print("="*60)
+    
     if saved_files['test']:
-        print(f"🧪 Test sensor data saved to {len(saved_files['test'])} files:")
+        print(f"🧪 TEST SENSOR DATA ({len(saved_files['test'])} files saved):")
         for path in saved_files['test']:
-            print(f"   - {path}")
+            print(f"   ✅ {path}")
+        
+        # Display test sensor statistics
+        if test_wu_count > 0 or test_tsi_count > 0:
+            print(f"   📈 Records: {test_wu_count} WU + {test_tsi_count} TSI = {test_wu_count + test_tsi_count} total")
+    else:
+        print("🧪 TEST SENSOR DATA: No test sensor data found")
     
+    print()
     if saved_files['production']:
-        print(f"🏭 Production sensor data saved to {len(saved_files['production'])} files:")
+        print(f"🏭 PRODUCTION SENSOR DATA ({len(saved_files['production'])} files saved):")
         for path in saved_files['production']:
-            print(f"   - {path}")
+            print(f"   ✅ {path}")
+        
+        # Display production sensor statistics
+        if prod_wu_count > 0 or prod_tsi_count > 0:
+            print(f"   📈 Records: {prod_wu_count} WU + {prod_tsi_count} TSI = {prod_wu_count + prod_tsi_count} total")
+    else:
+        print("🏭 PRODUCTION SENSOR DATA: No production sensor data found")
     
-    # Display test sensor summary
-    print("📊 Test sensor configuration summary:")
+    # Display enhanced test sensor summary
+    print(f"\n🔧 TEST SENSOR CONFIGURATION STATUS:")
     summary = data_manager.get_test_sensor_summary()
     for key, value in summary.items():
         if key == 'test_sensors':
-            print(f"   - {key}: {', '.join(value) if value else 'None'}")
+            if value:
+                print(f"   - Configured test sensors ({len(value)}): {', '.join(value)}")
+            else:
+                print(f"   - Configured test sensors: None")
         else:
             print(f"   - {key}: {value}")
+    
+    # Show separation effectiveness
+    total_records = (test_wu_count + test_tsi_count + prod_wu_count + prod_tsi_count)
+    if total_records > 0:
+        test_percentage = ((test_wu_count + test_tsi_count) / total_records) * 100
+        print(f"\n📊 DATA SEPARATION EFFECTIVENESS:")
+        print(f"   - Total records processed: {total_records:,}")
+        print(f"   - Test sensor data: {test_percentage:.1f}% ({test_wu_count + test_tsi_count:,} records)")
+        print(f"   - Production sensor data: {100-test_percentage:.1f}% ({prod_wu_count + prod_tsi_count:,} records)")
+    
+    print("="*60)
 
     spreadsheet = None
     sheet_id = None
 
-    if (fetch_wu and wu_df is not None and not wu_df.empty) or \
-       (fetch_tsi and tsi_df is not None and not tsi_df.empty):
+    # Use production data for Google Sheets (exclude test sensors from charts/tables)
+    prod_wu_df = prod_data.get('wu')
+    prod_tsi_df = prod_data.get('tsi')
+    
+    print("📊 Preparing Google Sheets with production sensor data only...")
+    if prod_wu_df is not None and not prod_wu_df.empty:
+        print(f"   📈 Including {len(prod_wu_df)} WU production records")
+    if prod_tsi_df is not None and not prod_tsi_df.empty:
+        print(f"   📈 Including {len(prod_tsi_df)} TSI production records")
+
+    if (fetch_wu and prod_wu_df is not None and not prod_wu_df.empty) or \
+       (fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty):
         client = create_gspread_client()
-        spreadsheet = client.create(f"TSI_WU_Data - {datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        spreadsheet = client.create(f"Production_TSI_WU_Data - {datetime.now().strftime('%Y%m%d_%H%M%S')}")
         print("🔗 Google Sheet URL:", spreadsheet.url)
+        print("📋 Note: This sheet contains PRODUCTION sensors only (test sensors excluded)")
         sheet_id = spreadsheet.id
         if share_email:
             try:
@@ -552,7 +914,7 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"❌ Failed to share with {share_email}: {e}")
 
-    if fetch_tsi and tsi_df is not None and not tsi_df.empty:
+    if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
         col = ['timestamp', 'PM 2.5', 'T (C)', 'RH (%)', 'PM 1', 'PM 4', 'PM 10', 'NC (0.5)', 'NC (1)', 'NC (2.5)', 'NC (4)', 'NC (10)', 'PM 2.5 AQI']
         rename_map = {
             'mcpm2x5': 'PM 2.5',
@@ -570,15 +932,30 @@ if __name__ == "__main__":
             'timestamp': 'timestamp',
             'device_name': 'Device Name',
         }
+        # Rename columns in production TSI data for Google Sheets
         for k, v in rename_map.items():
-            if k in tsi_df.columns:
-                tsi_df.rename(columns={k: v}, inplace=True)
+            if k in prod_tsi_df.columns:
+                prod_tsi_df.rename(columns={k: v}, inplace=True)
         combined_data = []
         summary_data = []
         weekly_summary = {}
         seen = set()
-        for _, row in tsi_df.iterrows():
+        
+        print(f"📊 Processing {len(prod_tsi_df)} production TSI records for Google Sheets...")
+        
+        for _, row in prod_tsi_df.iterrows():
             name = row.get('Device Name', row.get('device_name', 'Unknown'))
+            
+            # Skip test sensors - double check using test_config
+            sensor_ids = []
+            for field in ['device_id', 'device_name', 'Device Name']:
+                if field in row and str(row[field]).strip():
+                    sensor_ids.append(str(row[field]).strip())
+            
+            # Skip if any of the sensor IDs match test sensors (safety check)
+            if any(test_config.is_test_sensor(sensor_id) for sensor_id in sensor_ids):
+                continue
+            
             ts = row.get('timestamp')
             try:
                 if pd.isna(ts) or ts is None:
@@ -647,10 +1024,10 @@ if __name__ == "__main__":
         if spreadsheet is not None:
             ws = spreadsheet.sheet1
             ws.update([['Device Name'] + col] + combined_data)
-            ws.update_title(f"Combined_TSI_{start_date}_to_{end_date}")
+            ws.update_title(f"Production_TSI_{start_date}_to_{end_date}")
             if summary_data:
                 summary_headers = ['Device Name', 'Avg PM2.5 (µg/m³)', 'Max Temp (°C)', 'Min Temp (°C)', 'Avg RH (%)']
-                ws_summary = spreadsheet.add_worksheet(title="TSI Summary", rows=len(summary_data)+1, cols=5)
+                ws_summary = spreadsheet.add_worksheet(title="Production TSI Summary", rows=len(summary_data)+1, cols=5)
                 ws_summary.update([summary_headers] + summary_data)
         weekly_headers = ['Device Name', 'Week Start', 'Avg PM2.5 (µg/m³)', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg RH (%)']
         weekly_rows = []
@@ -658,21 +1035,22 @@ if __name__ == "__main__":
             for row in rows:
                 weekly_rows.append([device] + row)
         if weekly_rows and spreadsheet is not None:
-            weekly_ws = spreadsheet.add_worksheet(title="TSI Weekly Summary", rows=len(weekly_rows)+1, cols=6)
+            weekly_ws = spreadsheet.add_worksheet(title="Production TSI Weekly Summary", rows=len(weekly_rows)+1, cols=6)
             weekly_ws.update([weekly_headers] + weekly_rows)
-        if fetch_wu and wu_df is not None and not wu_df.empty and spreadsheet is not None:
-            wu_headers = wu_df.columns.tolist()
-            wu_ws = spreadsheet.add_worksheet(title="WU Data", rows=len(wu_df)+1, cols=len(wu_headers))
-            wu_ws.update([wu_headers] + wu_df.values.tolist())
+        if fetch_wu and prod_wu_df is not None and not prod_wu_df.empty and spreadsheet is not None:
+            print(f"📊 Adding {len(prod_wu_df)} production WU records to Google Sheet...")
+            wu_headers = prod_wu_df.columns.tolist()
+            wu_ws = spreadsheet.add_worksheet(title="Production WU Data", rows=len(prod_wu_df)+1, cols=len(wu_headers))
+            wu_ws.update([wu_headers] + prod_wu_df.values.tolist())
         add_charts = read_or_fallback("Do you want to add charts to the Google Sheet? (y/n)", "y").lower() == 'y'
         if add_charts and spreadsheet is not None:
             creds = create_gspread_client_v2()
             sheets_api = build('sheets', 'v4', credentials=creds)
             sheet_id = spreadsheet.id
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'TSI Weekly Summary'), None)
+            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'Production TSI Weekly Summary'), None)
             if weekly_id:
-                charts_title = 'TSI and WU Weekly Charts'
+                charts_title = 'Production TSI and WU Weekly Charts'
                 charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
                 meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
                 charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
@@ -796,8 +1174,8 @@ if __name__ == "__main__":
                     sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
                     chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
-                # Add charts for WU data if available
-                if fetch_wu and wu_df is not None and not wu_df.empty:
+                # Add charts for WU data if available (PRODUCTION ONLY)
+                if fetch_wu and prod_wu_df is not None and not prod_wu_df.empty:
                     wu_metrics = [
                         ('tempAvg', 'Temperature (C)'),
                         ('humidityAvg', 'Humidity (%)'),
@@ -807,10 +1185,10 @@ if __name__ == "__main__":
                         ('windspeedAvg', 'Wind Speed (Avg)'),
                         ('dewptAvg', 'Dew Point (C)')  # Additional useful metric
                     ]
-                    # Parse obsTimeUtc back to datetime for proper time handling
-                    wu_df['obsTimeUtc'] = pd.to_datetime(wu_df['obsTimeUtc'], errors='coerce')
+                    # Parse obsTimeUtc back to datetime for proper time handling (PRODUCTION data)
+                    prod_wu_df['obsTimeUtc'] = pd.to_datetime(prod_wu_df['obsTimeUtc'], errors='coerce')
                     # Remove any rows where obsTimeUtc couldn't be parsed
-                    wu_df = wu_df.dropna(subset=['obsTimeUtc'])
+                    prod_wu_df = prod_wu_df.dropna(subset=['obsTimeUtc'])
                     
                     station_id_to_name = {
                         "KNCDURHA548": "Duke-MS-01",
@@ -821,24 +1199,24 @@ if __name__ == "__main__":
                         "KNCDURHA556": "Duke-MS-07",
                         "KNCDURHA590": "Duke-Kestrel-01"
                     }
-                    wu_df['Station Name'] = wu_df['stationID'].map(station_id_to_name).fillna(wu_df['stationID'])
-                    station_names = sorted(wu_df['Station Name'].unique())
+                    prod_wu_df['Station Name'] = prod_wu_df['stationID'].map(station_id_to_name).fillna(prod_wu_df['stationID'])
+                    station_names = sorted(prod_wu_df['Station Name'].unique())
                     
                     # Create a consistent time string column for lookup
-                    wu_df['obsTimeUtc_str'] = wu_df['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                    all_times = sorted(wu_df['obsTimeUtc'].unique())
+                    prod_wu_df['obsTimeUtc_str'] = prod_wu_df['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                    all_times = sorted(prod_wu_df['obsTimeUtc'].unique())
                     
                     # Ensure all metric columns are numeric for pivot_table, skip if column missing
                     for metric, _ in wu_metrics:
-                        if metric in wu_df.columns:
-                            wu_df[metric] = pd.to_numeric(wu_df[metric], errors='coerce')
+                        if metric in prod_wu_df.columns:
+                            prod_wu_df[metric] = pd.to_numeric(prod_wu_df[metric], errors='coerce')
                     for metric, y_label in wu_metrics:
                         # Skip if metric column doesn't exist
-                        if metric not in wu_df.columns:
+                        if metric not in prod_wu_df.columns:
                             continue
                             
-                        # Use pivot_table for cleaner data reshaping
-                        pivot = wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
+                        # Use pivot_table for cleaner data reshaping (PRODUCTION data only)
+                        pivot = prod_wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
                         
@@ -951,22 +1329,22 @@ if __name__ == "__main__":
                         sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
                         chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
-                # --- NEW: Add full time-series (hourly) sheets and charts for TSI ---
-                if fetch_tsi and tsi_df is not None and not tsi_df.empty:
-                    # Prepare TSI time-series pivot tables and charts
+                # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
+                if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
+                    # Prepare TSI time-series pivot tables and charts using PRODUCTION data only
                     tsi_metrics = [
                         ('PM 2.5', 'PM2.5 (µg/m³)'),
                         ('T (C)', 'Temperature (C)'),
                         ('RH (%)', 'Humidity (%)'),
                         ('PM 10', 'PM10 (µg/m³)')
                     ]
-                    # Get all unique device names and all unique timestamps
-                    tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce')
-                    device_names = sorted(tsi_df['Device Name'].unique())
-                    all_times = sorted(tsi_df['timestamp'].dropna().unique())
+                    # Get all unique device names and all unique timestamps from PRODUCTION data
+                    prod_tsi_df['timestamp'] = pd.to_datetime(prod_tsi_df['timestamp'], errors='coerce')
+                    device_names = sorted(prod_tsi_df['Device Name'].unique())
+                    all_times = sorted(prod_tsi_df['timestamp'].dropna().unique())
                     for metric, y_label in tsi_metrics:
-                        # Pivot: rows = timestamp, columns = device, values = metric
-                        pivot = tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
+                        # Pivot: rows = timestamp, columns = device, values = metric (PRODUCTION data only)
+                        pivot = prod_tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
                         
@@ -1045,6 +1423,30 @@ if __name__ == "__main__":
                         chart_row_offset += 20
 
     print("✅ All data processing and Google Sheet export complete!")
+    
+    # Add summary about test sensor exclusion
+    print("\n" + "="*60)
+    print("📊 GOOGLE SHEETS SUMMARY")
+    print("="*60)
+    if spreadsheet is not None:
+        print("✅ Google Sheet created successfully with PRODUCTION data only")
+        print("🔗 Sheet URL:", spreadsheet.url)
+        print("📋 Sheet Contents:")
+        print("   ✅ Production TSI sensor data (test sensors excluded)")
+        print("   ✅ Production WU sensor data (test sensors excluded)")
+        print("   ✅ Production-only charts and summaries")
+        print("   🧪 Test sensor data excluded from all sheets and charts")
+        
+        if test_wu_count > 0 or test_tsi_count > 0:
+            print(f"\n📊 Excluded from Google Sheets:")
+            if test_wu_count > 0:
+                print(f"   🧪 {test_wu_count} test WU sensor records")
+            if test_tsi_count > 0:
+                print(f"   🧪 {test_tsi_count} test TSI sensor records")
+            print("   💾 Test data saved separately for internal analysis")
+    else:
+        print("⚠️ No Google Sheet created - no production data available")
+    print("="*60)
     
     # Save data using the data manager for organized storage
     print("💾 Saving data with organized folder structure...")

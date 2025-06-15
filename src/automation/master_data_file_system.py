@@ -116,7 +116,7 @@ class MasterDataFileSystem:
             self.logger.warning("Google Drive integration not available")
             return None
             
-        creds_path = project_root / "creds" / "google_creds.json"
+        creds_path = self.project_root / "creds" / "google_creds.json"
         if not creds_path.exists():
             self.logger.warning(f"Google credentials not found at {creds_path}")
             return None

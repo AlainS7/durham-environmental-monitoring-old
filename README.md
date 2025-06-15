@@ -5,20 +5,34 @@ A comprehensive environmental monitoring system for Durham, NC, featuring real-t
 ## 🌟 Features
 
 - **Real-time Data Collection**: Weather Underground and TSI sensor integration
+- **Enhanced Test Sensor Separation**: Advanced separation of test vs production data with robust error handling
 - **Automated Reporting**: Daily, weekly, and monthly automated reports
 - **Google Drive Integration**: Seamless cloud storage and sharing
 - **Data Visualization**: Interactive charts and analysis tools
 - **Master Data Management**: Historical data aggregation and management
-- **Test Sensor Management**: Dedicated testing infrastructure
+- **Test Sensor Management**: Dedicated testing infrastructure with comprehensive validation
+- **Configuration Validation**: Automatic validation of sensor configurations before data collection
+- **Advanced Error Handling**: Robust error handling and graceful failure recovery
 
 ## 🚀 Quick Start
 
-1. **Install Dependencies**:
+1. **Quick Setup**:
+   ```bash
+   python quick_start.py
+   ```
+   This will automatically:
+   - Check system requirements
+   - Install dependencies
+   - Verify project structure
+   - Run health checks
+   - Guide you through credential setup
+
+2. **Manual Setup**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Configure Credentials**:
+3. **Configure Credentials**:
    - Add Google API credentials to `creds/google_creds.json`
    - Add Weather Underground API key to `creds/wu_api_key.json`
    - Add TSI credentials to `creds/tsi_creds.json`
@@ -26,6 +40,18 @@ A comprehensive environmental monitoring system for Durham, NC, featuring real-t
 3. **Run Data Collection**:
    ```bash
    python src/data_collection/faster_wu_tsi_to_sheets_async.py
+   ```
+
+4. **System Management**:
+   ```bash
+   # Check system health
+   python tests/comprehensive_test_suite.py
+   
+   # Production deployment
+   python scripts/production_manager.py deploy
+   
+   # Monitor system
+   python scripts/production_manager.py monitor
    ```
 
 ## 📁 Project Structure
@@ -67,7 +93,29 @@ A comprehensive environmental monitoring system for Durham, NC, featuring real-t
 4. **Reporting**: Master Files → Visualizations & Reports
 5. **Distribution**: Reports → Google Drive & Dashboard
 
-## 🔧 Configuration
+## �️ Troubleshooting
+
+### If Test Sensors Appear in Google Sheets
+The system is designed to exclude test sensors from Google Sheets. If test sensors appear:
+
+1. **Check Sheet Date**: Ensure you're looking at recently created sheets
+2. **Verify Configuration**: Confirm test sensor IDs are in `config/test_sensors_config.py`
+3. **Generate Fresh Sheet**: Run data collection to create new clean sheets
+4. **Review Data Sources**: Check if additional sensors should be classified as test sensors
+
+### Common Issues
+- **KeyError: 'Device Name'**: Fixed in current version with proper column handling
+- **Mixed Test/Production Data**: Resolved with enhanced separation logic
+- **Chart Data Issues**: Now uses production-only data sources
+
+### Validation
+Run the system with recent date ranges to verify clean separation:
+```bash
+python src/data_collection/faster_wu_tsi_to_sheets_async.py
+# Select date range within last 7 days for best results
+```
+
+## �🔧 Configuration
 
 Main configuration files:
 - `config/improved_google_drive_config.py` - Google Drive paths
@@ -79,6 +127,40 @@ Main configuration files:
 - **Daily**: Automated data collection and basic reporting
 - **Weekly**: Master data updates and system health checks
 - **Monthly**: Comprehensive system verification and cleanup
+
+## 🧪 Test Sensor Management
+
+### Current Configuration
+- **27 Test Sensors Configured**: 14 WU + 13 TSI test sensors
+- **Production Data Only**: Google Sheets contain only production sensor data
+- **Separate Storage**: Test data isolated for internal analysis
+
+### Test Sensor IDs
+**Weather Underground Test Sensors:**
+- KNCDURHA634 through KNCDURHA648 (MS-09 through MS-22)
+
+**TSI Test Sensors:**
+- AA-2 (Burch) through AA-14 (clustered test deployment)
+
+### Data Separation
+```
+🧪 TEST SENSORS → Local storage (/test_data/)
+🏭 PRODUCTION SENSORS → Google Sheets & reporting
+```
+
+## 🎯 System Status (June 2025)
+
+### ✅ Production Ready Features
+- **Clean Google Sheets**: Production sensor data only
+- **Test Sensor Exclusion**: All test sensors properly filtered from external reports
+- **Data Integrity**: Robust separation logic with comprehensive validation
+- **Professional Output**: Production-ready visualizations and reports
+
+### Key Technical Implementations
+- **Enhanced Separation Logic**: `separate_sensor_data_by_type()` with comprehensive error handling
+- **Google Sheets Integration**: Production-only data flow with proper column handling
+- **Configuration Validation**: Pre-collection validation prevents common errors
+- **Smart TSI Detection**: Automatic detection of available sensor ID fields
 
 ## 🤝 Contributing
 

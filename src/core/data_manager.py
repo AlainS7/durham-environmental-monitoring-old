@@ -39,12 +39,9 @@ except ImportError:
     GOOGLE_DRIVE_AVAILABLE = False
     print("Warning: Google Drive integration not available. Install google-api-python-client")
 
-# Import your existing data fetching functions
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-try:
-    from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
-except ImportError:
-    print("Warning: Could not import data fetching functions")
+# Note: Removed circular import of data fetching functions
+# The fetch_wu_data and fetch_tsi_data functions are now accessed dynamically
+# to avoid circular import issues
 
 class DataManager:
     """Manages automated data pulls, storage, and Google Drive synchronization."""
@@ -129,7 +126,16 @@ class DataManager:
     def get_file_paths(self, data_type: str, start_date: str, end_date: str, 
                       file_format: str = "csv") -> Dict[str, Path]:
         """Generate file paths for different storage locations."""
-        year, week, week_str = self.get_week_info(datetime.strptime(start_date, "%Y%m%d"))
+        # Parse start_date - support both YYYY-MM-DD and YYYYMMDD formats
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y%m%d")
+            except ValueError:
+                raise ValueError(f"Date format not supported: {start_date}. Use YYYY-MM-DD or YYYYMMDD")
+        
+        year, week, week_str = self.get_week_info(start_dt)
         
         # Create week subfolder if it doesn't exist
         week_folder = self.base_dir / "raw_pulls" / data_type / str(year) / f"week_{week:02d}"
@@ -151,10 +157,17 @@ class DataManager:
         self.logger.info(f"Starting {data_type.upper()} data pull for {start_date} to {end_date}")
         
         try:
+            # Dynamically import data fetching functions to avoid circular imports
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).parent.parent / "data_collection"))
+            
             # Fetch data based on type
             if data_type == "wu":
+                from faster_wu_tsi_to_sheets_async import fetch_wu_data
                 df = fetch_wu_data(start_date, end_date)
             elif data_type == "tsi":
+                from faster_wu_tsi_to_sheets_async import fetch_tsi_data
                 df, _ = fetch_tsi_data(start_date, end_date)
             else:
                 self.logger.error(f"Unknown data type: {data_type}")
@@ -904,3 +917,37 @@ class DataManager:
             summary["log_files"]["count"] = len(list(self.test_config.test_logs_path.glob("*.log")))
         
         return summary
+    
+    def get_data_inventory(self) -> Dict[str, Any]:
+        """Get inventory of all data files"""
+        inventory = {
+            "total_files": 0,
+            "total_size_mb": 0.0,
+            "by_type": {},
+            "last_updated": datetime.now().isoformat()
+        }
+        
+        # Count files in data directories
+        data_dirs = [self.base_dir / "data"]
+        if hasattr(self, 'raw_data_path'):
+            data_dirs.append(self.raw_data_path)
+        if hasattr(self, 'processed_data_path'):
+            data_dirs.append(self.processed_data_path)
+        
+        for data_dir in data_dirs:
+            if data_dir.exists():
+                for file_path in data_dir.rglob("*"):
+                    if file_path.is_file():
+                        inventory["total_files"] += 1
+                        file_size = file_path.stat().st_size / (1024 * 1024)  # MB
+                        inventory["total_size_mb"] += file_size
+                        
+                        # Count by file type
+                        file_ext = file_path.suffix.lower()
+                        if file_ext not in inventory["by_type"]:
+                            inventory["by_type"][file_ext] = {"count": 0, "size_mb": 0.0}
+                        inventory["by_type"][file_ext]["count"] += 1
+                        inventory["by_type"][file_ext]["size_mb"] += file_size
+        
+        inventory["total_size_mb"] = round(inventory["total_size_mb"], 2)
+        return inventory
