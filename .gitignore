@@ -282,3 +282,76 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+# Debug and testing files
+debug_*.py
+test_*_debug.py
+*_test_*.py
+smart_*_detection.py
+identify_*_in_*.py
+
+# Redundant documentation files
+*_SUMMARY.md
+DEPLOYMENT_READY_*.md
+ENHANCED_*_SUMMARY.md
+FINAL_ENHANCEMENT_*.md
+ISSUE_RESOLUTION_*.md
+*_EXCLUSION_COMPLETE.md
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Enhanced features and infrastructure
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files and monitoring
+logs/test_results_*.json
+logs/production/*.log
+logs/monitoring_*.json
+logs/*_output.log
+logs/*_pid.txt
+
+# Backup files
+*_backup.txt
+*_backup_*.txt
+requirements_backup*.txt
+
+# Environment and deployment
+.env
+.env.local
+.env.production
+.env.development
+
+# Cache and temporary files
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Data analysis notebooks (optional - uncomment if you don't want to track)
+# *.ipynb
+# .ipynb_checkpoints/
+
+# Development and testing artifacts
+test_data/temp_*
+setup_test_*
+install_packages.py
+fix_current_env.sh
