@@ -1,0 +1,16 @@
+# Hot Durham Automated Data Pulls (timestamped logs)
+
+# BI-WEEKLY at 6:30 AM on Mondays (every 2 weeks) - replaces daily for efficiency
+30 6 * * 1 bash -c 'week=$(date +%U); if [ $((week % 2)) -eq 0 ]; then log="/Users/alainsoto/IdeaProjects/Hot Durham/logs/biweekly_pull_$(date +%Y-%m-%d_%H-%M-%S).log"; cd "/Users/alainsoto/IdeaProjects/Hot Durham" && echo "[$(date)] Starting bi-weekly pull..." >> "$log" && "/Users/alainsoto/IdeaProjects/Hot Durham/.venv/bin/python3" "./scripts/automated_data_pull.py" --bi-weekly >> "$log" 2>&1; fi'
+
+# WEEKLY at 6:00 AM on Mondays
+0 6 * * 1 bash -c 'log="/Users/alainsoto/IdeaProjects/Hot Durham/logs/weekly_pull_$(date +%Y-%m-%d_%H-%M-%S).log"; cd "/Users/alainsoto/IdeaProjects/Hot Durham" && echo "[$(date)] Starting weekly pull..." >> "$log" && "/Users/alainsoto/IdeaProjects/Hot Durham/.venv/bin/python3" "./scripts/automated_data_pull.py" --weekly >> "$log" 2>&1'
+
+# MONTHLY at 7:00 AM on the 1st
+0 7 1 * * bash -c 'log="/Users/alainsoto/IdeaProjects/Hot Durham/logs/monthly_pull_$(date +%Y-%m-%d_%H-%M-%S).log"; cd "/Users/alainsoto/IdeaProjects/Hot Durham" && echo "[$(date)] Starting monthly pull..." >> "$log" && "/Users/alainsoto/IdeaProjects/Hot Durham/.venv/bin/python3" "./scripts/automated_data_pull.py" --monthly >> "$log" 2>&1'
+
+# DELETE logs > 1 month old
+0 5 * * 0 find "/Users/alainsoto/IdeaProjects/Hot Durham/logs" -name "*.log" -type f -mtime +30 -delete
+
+# NIGHTLY MAINTENANCE SCRIPT
+0 2 * * * bash -c '"/Users/alainsoto/IdeaProjects/Hot Durham/automated_maintenance.sh"'
