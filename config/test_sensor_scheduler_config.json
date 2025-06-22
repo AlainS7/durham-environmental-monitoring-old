@@ -7,7 +7,9 @@
     "max_retry_attempts": 3,
     "retry_delay_seconds": 30,
     "collection_timeout_seconds": 300,
-    "batch_size": 5
+    "batch_size": 5,
+    "data_granularity": "15_minute",
+    "use_hourly_aggregation": false
   },
   "test_sensors": {
     "wu_sensors": [

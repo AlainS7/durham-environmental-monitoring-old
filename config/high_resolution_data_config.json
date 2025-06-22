@@ -1,0 +1,40 @@
+{
+  "version": "2.0",
+  "created": "2025-06-22T12:00:00.000000",
+  "description": "High-resolution 15-minute interval data collection configuration for accurate research",
+  "data_collection": {
+    "interval_minutes": 15,
+    "granularity": "15_minute",
+    "aggregation_disabled": true,
+    "preserve_raw_timestamps": true,
+    "collection_method": "continuous"
+  },
+  "processing_settings": {
+    "hourly_aggregation": false,
+    "daily_summaries": true,
+    "weekly_summaries": false,
+    "use_15min_intervals": true,
+    "deduplication_window": "15min",
+    "data_quality_threshold": 0.75
+  },
+  "sensor_priorities": {
+    "all": {
+      "pull_frequency_minutes": 15,
+      "max_gap_tolerance_minutes": 30,
+      "retry_attempts": 3,
+      "data_granularity": "15_minute"
+    }
+  },
+  "visualization": {
+    "chart_titles": "Daily Trends",
+    "time_axis_label": "Day",
+    "data_point_frequency": "15-minute intervals",
+    "aggregation_period": "daily"
+  },
+  "research_features": {
+    "high_accuracy_mode": true,
+    "preserve_all_measurements": true,
+    "statistical_analysis_ready": true,
+    "credible_data_standards": true
+  }
+}

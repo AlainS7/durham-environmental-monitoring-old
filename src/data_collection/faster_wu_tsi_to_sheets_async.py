@@ -318,9 +318,10 @@ async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, 
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         df = df.dropna(subset=['timestamp'])
-        df['timestamp_hour'] = df['timestamp'].dt.floor('h')
-        df = df.sort_values('timestamp').drop_duplicates(['timestamp_hour'], keep='first')
-        df = df.drop(columns=['timestamp_hour'])
+        # Keep 15-minute intervals instead of hourly aggregation for higher accuracy
+        df['timestamp_15min'] = df['timestamp'].dt.floor('15min')
+        df = df.sort_values('timestamp').drop_duplicates(['timestamp_15min'], keep='first')
+        df = df.drop(columns=['timestamp_15min'])
     return df, device_name
 
 async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_device):
@@ -938,7 +939,7 @@ if __name__ == "__main__":
                 prod_tsi_df.rename(columns={k: v}, inplace=True)
         combined_data = []
         summary_data = []
-        weekly_summary = {}
+        daily_summary = {}
         seen = set()
         
         print(f"📊 Processing {len(prod_tsi_df)} production TSI records for Google Sheets...")
@@ -991,8 +992,8 @@ if __name__ == "__main__":
             return [[safe(v) for v in row] for row in data]
         combined_data = sanitize_for_gs(combined_data)
         summary_data = sanitize_for_gs(summary_data)
-        for k in weekly_summary:
-            weekly_summary[k] = sanitize_for_gs(weekly_summary[k])
+        for k in daily_summary:
+            daily_summary[k] = sanitize_for_gs(daily_summary[k])
         combined_df = pd.DataFrame(combined_data, columns=["Device Name"] + col)
         for name, group in combined_df.groupby('Device Name'):
             group = group.copy()
@@ -1006,18 +1007,19 @@ if __name__ == "__main__":
                 round(group['RH (%)'].mean(), 2) if not pd.isna(group['RH (%)'].mean()) else ''
             ])
             group['timestamp'] = pd.to_datetime(group['timestamp'], errors='coerce')
-            group['week_start'] = group['timestamp'].dt.to_period('W').apply(lambda r: r.start_time.strftime('%Y-%m-%d'))
-            weekly = group.groupby('week_start').agg({
+            # Change from weekly to daily aggregation for more accurate data
+            group['day'] = group['timestamp'].dt.date
+            daily = group.groupby('day').agg({
                 'PM 2.5': 'mean', 'T (C)': ['min', 'max'], 'RH (%)': 'mean'
             }).reset_index()
-            weekly.columns = ['Week Start', 'Avg PM2.5', 'Min Temp', 'Max Temp', 'Avg RH']
-            for _, wrow in weekly.iterrows():
-                weekly_summary.setdefault(name, []).append([
-                    wrow['Week Start'],
-                    round(wrow['Avg PM2.5'], 2) if not pd.isna(wrow['Avg PM2.5']) else '',
-                    round(wrow['Min Temp'], 1) if not pd.isna(wrow['Min Temp']) else '',
-                    round(wrow['Max Temp'], 1) if not pd.isna(wrow['Max Temp']) else '',
-                    round(wrow['Avg RH'], 2) if not pd.isna(wrow['Avg RH']) else ''
+            daily.columns = ['Day', 'Avg PM2.5', 'Min Temp', 'Max Temp', 'Avg RH']
+            for _, drow in daily.iterrows():
+                daily_summary.setdefault(name, []).append([
+                    drow['Day'].strftime('%Y-%m-%d'),
+                    round(drow['Avg PM2.5'], 2) if not pd.isna(drow['Avg PM2.5']) else '',
+                    round(drow['Min Temp'], 1) if not pd.isna(drow['Min Temp']) else '',
+                    round(drow['Max Temp'], 1) if not pd.isna(drow['Max Temp']) else '',
+                    round(drow['Avg RH'], 2) if not pd.isna(drow['Avg RH']) else ''
                 ])
         
         # Only update Google Sheets if spreadsheet was created successfully
@@ -1029,14 +1031,14 @@ if __name__ == "__main__":
                 summary_headers = ['Device Name', 'Avg PM2.5 (µg/m³)', 'Max Temp (°C)', 'Min Temp (°C)', 'Avg RH (%)']
                 ws_summary = spreadsheet.add_worksheet(title="Production TSI Summary", rows=len(summary_data)+1, cols=5)
                 ws_summary.update([summary_headers] + summary_data)
-        weekly_headers = ['Device Name', 'Week Start', 'Avg PM2.5 (µg/m³)', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg RH (%)']
-        weekly_rows = []
-        for device, rows in weekly_summary.items():
+        daily_headers = ['Device Name', 'Day', 'Avg PM2.5 (µg/m³)', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg RH (%)']
+        daily_rows = []
+        for device, rows in daily_summary.items():
             for row in rows:
-                weekly_rows.append([device] + row)
-        if weekly_rows and spreadsheet is not None:
-            weekly_ws = spreadsheet.add_worksheet(title="Production TSI Weekly Summary", rows=len(weekly_rows)+1, cols=6)
-            weekly_ws.update([weekly_headers] + weekly_rows)
+                daily_rows.append([device] + row)
+        if daily_rows and spreadsheet is not None:
+            daily_ws = spreadsheet.add_worksheet(title="Production TSI Daily Summary", rows=len(daily_rows)+1, cols=6)
+            daily_ws.update([daily_headers] + daily_rows)
         if fetch_wu and prod_wu_df is not None and not prod_wu_df.empty and spreadsheet is not None:
             print(f"📊 Adding {len(prod_wu_df)} production WU records to Google Sheet...")
             wu_headers = prod_wu_df.columns.tolist()
@@ -1062,28 +1064,29 @@ if __name__ == "__main__":
                     ('Avg RH', 'Avg RH (%)')
                 ]
                 for col_name, y_label in data_columns:
-                    weeks = sorted({row[0] for rows in weekly_summary.values() for row in rows})
-                    devices = list(weekly_summary.keys())
+                    # Change from weeks to days for daily data analysis
+                    days = sorted({row[0] for rows in daily_summary.values() for row in rows})
+                    devices = list(daily_summary.keys())
                     
-                    # Extract year from weeks for chart title
+                    # Extract year from days for chart title
                     current_year = datetime.now().year
-                    if weeks:
+                    if days:
                         try:
-                            first_week_date = datetime.strptime(weeks[0], '%Y-%m-%d')
-                            current_year = first_week_date.year
+                            first_day_date = datetime.strptime(days[0], '%Y-%m-%d')
+                            current_year = first_day_date.year
                         except:
                             pass
                     
-                    pivot_header = ['Week Start'] + devices
+                    pivot_header = ['Day'] + devices
                     idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
-                    # Build wide-format pivot: each row is [week, dev1_val, dev2_val, ...]
+                    # Build wide-format pivot: each row is [day, dev1_val, dev2_val, ...]
                     pivot_rows = []
-                    for week in weeks:
-                        row = [week]
+                    for day in days:
+                        row = [day]
                         for device in devices:
                             val = ''
-                            for r in weekly_summary.get(device, []):
-                                if r[0] == week:
+                            for r in daily_summary.get(device, []):
+                                if r[0] == day:
                                     val = r[idx_map[col_name]]
                                     break
                             row.append(val)
@@ -1109,7 +1112,7 @@ if __name__ == "__main__":
                             return str(x)
                     pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
                     pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
-                    pivot_title = f"{col_name} Weekly Data"
+                    pivot_title = f"{col_name} Daily Data"
                     try:
                         old = spreadsheet.worksheet(pivot_title)
                         spreadsheet.del_worksheet(old)
@@ -1125,7 +1128,7 @@ if __name__ == "__main__":
                             "series": {"sourceRange": {"sources": [{
                                         "sheetId": pivot_id,
                                         "startRowIndex": 0,
-                                        "endRowIndex": len(weeks)+1,
+                                        "endRowIndex": len(days)+1,
                                         "startColumnIndex": i,
                                         "endColumnIndex": i+1
                             }]}},
@@ -1134,7 +1137,7 @@ if __name__ == "__main__":
                     domain = {"domain": {"sourceRange": {"sources": [{
                                 "sheetId": pivot_id,
                                 "startRowIndex": 1,
-                                "endRowIndex": len(weeks)+1,
+                                "endRowIndex": len(days)+1,
                                 "startColumnIndex": 0,
                                 "endColumnIndex": 1
                     }]}}}
@@ -1144,12 +1147,12 @@ if __name__ == "__main__":
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Weekly {col_name} Trend - {current_year} (By Device)",
+                                            "title": f"Daily {col_name} Trend - {current_year} (By Device)",
                                             "basicChart": {
                                                 "chartType": "LINE",
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
-                                                    {"position": "BOTTOM_AXIS", "title": "Week Start"},
+                                                    {"position": "BOTTOM_AXIS", "title": "Day"},
                                                     {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
                                                 "domains": [domain],

@@ -1,7 +1,8 @@
 {
   "share_email": "hotdurham@gmail.com",
   "automation_enabled": true,
-  "default_pull_type": "weekly",
+  "default_pull_type": "daily",
+  "data_granularity": "15_minute",
   "google_drive_sync": true,
   "notifications": {
     "email_on_success": false,
@@ -14,8 +15,14 @@
     "auto_cleanup": false
   },
   "schedules": {
-    "weekly_pull": {
+    "daily_pull": {
       "enabled": true,
+      "time": "06:00",
+      "sources": ["wu", "tsi"],
+      "data_granularity": "15_minute"
+    },
+    "weekly_pull": {
+      "enabled": false,
       "day_of_week": "monday",
       "time": "06:00",
       "sources": ["wu", "tsi"]

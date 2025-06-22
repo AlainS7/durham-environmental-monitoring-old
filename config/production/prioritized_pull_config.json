@@ -8,6 +8,7 @@
       "pull_frequency_minutes": 15,
       "max_gap_tolerance_minutes": 30,
       "retry_attempts": 3,
+      "data_granularity": "15_minute",
       "sensors": [
         {
           "type": "tsi",
@@ -30,9 +31,10 @@
     },
     "high": {
       "description": "Important outdoor sensors and weather stations",
-      "pull_frequency_minutes": 60,
-      "max_gap_tolerance_minutes": 120,
+      "pull_frequency_minutes": 15,
+      "max_gap_tolerance_minutes": 30,
       "retry_attempts": 2,
+      "data_granularity": "15_minute",
       "sensors": [
         {
           "type": "tsi",
@@ -67,9 +69,10 @@
     },
     "standard": {
       "description": "Regular monitoring sensors",
-      "pull_frequency_minutes": 240,
-      "max_gap_tolerance_minutes": 480,
+      "pull_frequency_minutes": 15,
+      "max_gap_tolerance_minutes": 60,
       "retry_attempts": 1,
+      "data_granularity": "15_minute",
       "sensors": [
         {
           "type": "wu",

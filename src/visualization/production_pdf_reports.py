@@ -166,27 +166,30 @@ class ProductionSensorPDFReporter:
                 if not self.preprocess_row(row):
                     exclude_indices.append(idx)
             
-            # Group by hour and count valid records
-            valid_hours = 0
-            hourly_groups = df.groupby(df[timestamp_col].dt.floor('h'))
+            # Group by 15-minute intervals and count valid records for higher resolution
+            valid_intervals = 0
+            interval_groups = df.groupby(df[timestamp_col].dt.floor('15min'))
             
-            if len(hourly_groups) == 0:
-                logger.warning(f"No hourly groups found for sensor {sensor_id}")
+            if len(interval_groups) == 0:
+                logger.warning(f"No 15-minute interval groups found for sensor {sensor_id}")
                 return 0.0
             
-            for hour, group in hourly_groups:
+            for interval, group in interval_groups:
                 # Remove excluded indices
                 valid_group = group[~group.index.isin(exclude_indices)]
                 
-                # Check if we have enough valid records for this hour (75% threshold)
-                if interval > 0 and len(valid_group) >= (3600 / interval * 0.75):
-                    valid_hours += 1
+                # Check if we have enough valid records for this 15-minute interval (75% threshold)
+                # Expect roughly 1 record per 15-minute interval for quality data
+                if len(valid_group) >= 0.75:  # At least 75% of expected data points
+                    valid_intervals += 1
             
-            if total_hours <= 0:
-                logger.warning(f"Total hours is zero or negative for sensor {sensor_id}")
+            # Calculate total expected 15-minute intervals
+            total_intervals = total_hours * 4  # 4 intervals per hour
+            if total_intervals <= 0:
+                logger.warning(f"Total intervals is zero or negative for sensor {sensor_id}")
                 return 0.0
                 
-            uptime = (valid_hours / total_hours * 100)
+            uptime = (valid_intervals / total_intervals * 100)
             return min(100.0, max(0.0, uptime))
             
         except Exception as e:

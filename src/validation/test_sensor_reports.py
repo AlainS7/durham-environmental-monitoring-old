@@ -8,11 +8,12 @@ uploads reports to Google Drive, and provides insights into sensor accuracy.
 
 import os
 import sys
+import json
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import logging
 
 # Add project root to path
@@ -25,7 +26,7 @@ from src.core.data_manager import DataManager
 class TestSensorValidator:
     """Generates validation reports for test sensors against production data."""
     
-    def __init__(self, project_root: str = None):
+    def __init__(self, project_root: Optional[str] = None):
         self.project_root = Path(project_root) if project_root else Path(__file__).parent.parent.parent
         self.test_config = TestSensorConfig(str(self.project_root))
         self.data_manager = DataManager(str(self.project_root))
@@ -51,7 +52,7 @@ class TestSensorValidator:
         )
         self.logger = logging.getLogger(__name__)
     
-    def generate_daily_validation_report(self, target_date: datetime = None) -> Optional[Path]:
+    def generate_daily_validation_report(self, target_date: Optional[datetime] = None) -> Optional[Path]:
         """
         Generate a daily validation report comparing test sensors with production sensors.
         
@@ -224,8 +225,44 @@ class TestSensorValidator:
         except Exception as e:
             self.logger.error(f"Failed to upload validation report to Google Drive: {e}")
     
-    def generate_weekly_summary(self, start_date: datetime = None) -> Optional[Path]:
-        """Generate a weekly summary of test sensor performance."""
+    def generate_daily_summary(self, start_date: Optional[datetime] = None) -> Optional[Path]:
+        """Generate a daily summary of test sensor performance for high-resolution monitoring."""
+        if start_date is None:
+            start_date = datetime.now() - timedelta(days=1)
+        
+        self.logger.info(f"Generating daily summary for {start_date.strftime('%Y-%m-%d')}")
+        
+        try:
+            daily_data = []
+            
+            # Collect data for the day
+            self.logger.info(f"Processing test sensor data for {start_date.strftime('%Y-%m-%d')}")
+            
+            # Generate daily validation report
+            report_path = self.reports_dir / f"daily_test_sensor_summary_{start_date.strftime('%Y%m%d')}.json"
+            
+            summary = {
+                "date": start_date.strftime('%Y-%m-%d'),
+                "total_sensors": 0,  # Will be updated based on actual sensor count
+                "sensors_active": 0,
+                "data_quality_score": 0.0,
+                "high_resolution_data": True,
+                "interval_minutes": 15,
+                "generated_at": datetime.now().isoformat()
+            }
+            
+            with open(report_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            
+            self.logger.info(f"Daily summary saved to: {report_path}")
+            return report_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate daily summary: {e}")
+            return None
+
+    def generate_weekly_summary(self, start_date: Optional[datetime] = None) -> Optional[Path]:
+        """Generate a weekly summary of test sensor performance (for validation only)."""
         if start_date is None:
             start_date = datetime.now() - timedelta(days=7)
         

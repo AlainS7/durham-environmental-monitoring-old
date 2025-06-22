@@ -419,9 +419,9 @@ class AnomalyDetectionSystem:
             device_data = self.tsi_df[self.tsi_df[self.device_col] == device].copy()
             device_data = device_data.sort_values('timestamp')
             
-            # Hourly aggregation for trend analysis
-            device_data['hour'] = device_data['timestamp'].dt.floor('H')
-            hourly_data = device_data.groupby('hour').agg({
+            # 15-minute interval aggregation for higher resolution trend analysis
+            device_data['interval_15min'] = device_data['timestamp'].dt.floor('15min')
+            interval_data = device_data.groupby('interval_15min').agg({
                 col: 'mean' for col in ['PM 2.5', 'mcpm2x5', 'T (C)', 'temp_c', 'RH (%)', 'rh_percent']
                 if col in device_data.columns
             }).reset_index()
@@ -435,16 +435,17 @@ class AnomalyDetectionSystem:
                 'RH (%)': 'Humidity', 'rh_percent': 'Humidity'
             }
             
-            for col in hourly_data.columns:
+            for col in interval_data.columns:
                 if col in metric_mapping:
                     metric_name = metric_mapping[col]
-                    values = hourly_data[col].dropna()
+                    values = interval_data[col].dropna()
                     
                     if len(values) > 3:
-                        hours_numeric = [(h - hourly_data['hour'].iloc[0]).total_seconds() / 3600 
-                                       for h in hourly_data['hour']]
+                        # Convert 15-minute intervals to numeric (in hours)
+                        intervals_numeric = [(t - interval_data['interval_15min'].iloc[0]).total_seconds() / 3600 
+                                           for t in interval_data['interval_15min']]
                         
-                        trend_info = self._calculate_trend_slope(pd.Series(hours_numeric), values)
+                        trend_info = self._calculate_trend_slope(pd.Series(intervals_numeric), values)
                         if trend_info:
                             slope = trend_info['slope']
                             p_value = trend_info['p_value']
@@ -587,14 +588,14 @@ class AnomalyDetectionSystem:
             
             for metric, ylabel, ax in metrics:
                 if metric == 'data_quality':
-                    # Data quality visualization
-                    device_data['hour'] = device_data['timestamp'].dt.floor('H')
-                    hourly_counts = device_data.groupby('hour').size()
+                    # Data quality visualization with 15-minute intervals
+                    device_data['interval_15min'] = device_data['timestamp'].dt.floor('15min')
+                    interval_counts = device_data.groupby('interval_15min').size()
                     
-                    ax.bar(hourly_counts.index, hourly_counts.values, alpha=0.7, color='green')
+                    ax.bar(interval_counts.index, interval_counts.values, alpha=0.7, color='green')
                     ax.set_xlabel('Time')
-                    ax.set_ylabel('Records per Hour')
-                    ax.set_title('Data Collection Frequency')
+                    ax.set_ylabel('Records per 15-min Interval')
+                    ax.set_title('Data Collection Frequency (15-min intervals)')
                     ax.grid(True, alpha=0.3)
                     plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
                     continue

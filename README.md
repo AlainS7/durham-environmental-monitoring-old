@@ -1,20 +1,37 @@
 # Hot Durham Environmental Monitoring System
 
-A comprehensive environmental monitoring system for Durham, NC, featuring real-time data collection from Weather Underground and TSI air quality sensors.
+A comprehensive environmental monitoring system for Durham, NC, featuring **high-resolution 15-minute interval** data collection from Weather Underground and TSI air quality sensors for accurate research and analysis.
 
 ## 🌟 Features
 
-- **Real-time Data Collection**: Weather Underground and TSI sensor integration
+- **High-Resolution Data Collection**: 15-minute interval data from Weather Underground and TSI sensors
+- **Daily Data Processing**: Daily summaries instead of weekly for increased accuracy
+- **Research-Grade Data**: Credible, high-granularity data suitable for academic research
 - **Enhanced Test Sensor Separation**: Advanced separation of test vs production data with robust error handling
 - **Automated Reporting**: Daily, weekly, and monthly automated reports
 - **Google Drive Integration**: Seamless cloud storage and sharing
-- **Data Visualization**: Interactive charts and analysis tools
+- **Data Visualization**: Interactive charts and analysis tools with 15-minute resolution
 - **Master Data Management**: Historical data aggregation and management
 - **Test Sensor Management**: Dedicated testing infrastructure with comprehensive validation
 - **Configuration Validation**: Automatic validation of sensor configurations before data collection
 - **Advanced Error Handling**: Robust error handling and graceful failure recovery
 
-## 🚀 Quick Start
+## � Data Collection Specifications
+
+### High-Resolution Research-Grade Data
+- **Temporal Resolution**: 15-minute intervals
+- **Data Processing**: Daily aggregations (no weekly averaging)
+- **Quality Standards**: Research-grade accuracy and credibility
+- **Collection Frequency**: Automated daily pulls at 6:00 AM
+- **Data Preservation**: All 15-minute measurements retained for analysis
+
+### Sensor Coverage
+- **TSI Air Quality Sensors**: PM2.5, PM10, Temperature, Humidity
+- **Weather Underground Stations**: Temperature, Humidity, Wind, Solar Radiation
+- **Update Frequency**: Every 15 minutes for all sensors
+- **Data Validation**: Continuous quality monitoring and anomaly detection
+
+## �🚀 Quick Start
 
 1. **Quick Setup**:
    ```bash

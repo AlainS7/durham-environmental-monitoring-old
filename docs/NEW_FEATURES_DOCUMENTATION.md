@@ -297,8 +297,8 @@ All new features are designed to integrate seamlessly with existing components:
 New features can be integrated into existing cron jobs:
 
 ```bash
-# Add to existing weekly automation
-0 6 * * 1 cd /path/to/project && python scripts/complete_analysis_suite.py >> logs/analysis.log 2>&1
+# Add to existing daily automation
+0 6 * * * cd /path/to/project && python scripts/complete_analysis_suite.py >> logs/analysis.log 2>&1
 
 # Daily backup automation
 0 2 * * * cd /path/to/project && python scripts/backup_system.py --full >> logs/backup.log 2>&1
@@ -315,7 +315,7 @@ New features can be integrated into existing cron jobs:
 python scripts/status_check.py --detailed
 python scripts/complete_analysis_suite.py
 
-# Weekly routine: Full backup and comprehensive analysis
+# Daily routine: Automated backup and comprehensive analysis
 python scripts/backup_system.py --full --encrypt
 python scripts/anomaly_detection_and_trend_analysis.py --days-back 7
 ```

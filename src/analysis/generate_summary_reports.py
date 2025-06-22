@@ -120,9 +120,9 @@ class SummaryReportGenerator:
         daily_wu = daily_wu.reset_index()
         daily_wu.rename(columns={'obsTimeUtc': 'date'}, inplace=True)
         
-        # Weekly aggregations  
-        self.wu_df['week_start'] = self.wu_df['obsTimeUtc'].dt.to_period('W').apply(lambda r: r.start_time)
-        weekly_wu = self.wu_df.groupby(['week_start', 'stationID']).agg({
+        # Daily aggregations (changed from weekly for higher resolution)
+        self.wu_df['day_start'] = self.wu_df['obsTimeUtc'].dt.to_period('D').apply(lambda r: r.start_time)
+        daily_wu_agg = self.wu_df.groupby(['day_start', 'stationID']).agg({
             'tempAvg': ['mean', 'min', 'max'],
             'humidityAvg': 'mean',
             'precipTotal': 'sum',
@@ -132,8 +132,8 @@ class SummaryReportGenerator:
             'pressureMin': 'min'
         }).round(2)
         
-        weekly_wu.columns = [f'{col[0]}_{col[1]}' for col in weekly_wu.columns]
-        weekly_wu = weekly_wu.reset_index()
+        daily_wu_agg.columns = [f'{col[0]}_{col[1]}' for col in daily_wu_agg.columns]
+        daily_wu_agg = daily_wu_agg.reset_index()
         
         # Monthly aggregations
         self.wu_df['month_start'] = self.wu_df['obsTimeUtc'].dt.to_period('M').apply(lambda r: r.start_time)
@@ -153,17 +153,17 @@ class SummaryReportGenerator:
         # Save summaries
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Weekly summaries
-        weekly_file = self.processed_dir / "weekly_summaries" / f"wu_weekly_summary_{timestamp}.csv"
-        weekly_wu.to_csv(weekly_file, index=False)
-        print(f"Saved weekly WU summary: {weekly_file.name}")
+        # Daily summaries (higher resolution data)
+        daily_file = self.processed_dir / "daily_summaries" / f"wu_daily_summary_{timestamp}.csv"
+        daily_wu_agg.to_csv(daily_file, index=False)
+        print(f"Saved daily WU summary: {daily_file.name}")
         
         # Monthly summaries
         monthly_file = self.processed_dir / "monthly_summaries" / f"wu_monthly_summary_{timestamp}.csv"
         monthly_wu.to_csv(monthly_file, index=False)
         print(f"Saved monthly WU summary: {monthly_file.name}")
         
-        return daily_wu, weekly_wu, monthly_wu
+        return daily_wu, daily_wu_agg, monthly_wu
         
     def generate_tsi_summaries(self):
         """Generate TSI sensor data summaries."""
@@ -200,16 +200,16 @@ class SummaryReportGenerator:
         daily_tsi = daily_tsi.reset_index()
         daily_tsi.rename(columns={'timestamp': 'date'}, inplace=True)
         
-        # Weekly aggregations
-        self.tsi_df['week_start'] = self.tsi_df['timestamp'].dt.to_period('W').apply(lambda r: r.start_time)
-        weekly_tsi = self.tsi_df.groupby(['week_start', device_col]).agg({
+        # Daily aggregations (changed from weekly for higher resolution)
+        self.tsi_df['day_start'] = self.tsi_df['timestamp'].dt.to_period('D').apply(lambda r: r.start_time)
+        daily_tsi_agg = self.tsi_df.groupby(['day_start', device_col]).agg({
             'PM 2.5': ['mean', 'min', 'max'],
             'T (C)': ['mean', 'min', 'max'], 
             'RH (%)': 'mean'
         }).round(2)
         
-        weekly_tsi.columns = [f'{col[0]}_{col[1]}' for col in weekly_tsi.columns]
-        weekly_tsi = weekly_tsi.reset_index()
+        daily_tsi_agg.columns = [f'{col[0]}_{col[1]}' for col in daily_tsi_agg.columns]
+        daily_tsi_agg = daily_tsi_agg.reset_index()
         
         # Monthly aggregations
         self.tsi_df['month_start'] = self.tsi_df['timestamp'].dt.to_period('M').apply(lambda r: r.start_time)
@@ -243,10 +243,10 @@ class SummaryReportGenerator:
         # Save summaries
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Weekly summaries
-        weekly_file = self.processed_dir / "weekly_summaries" / f"tsi_weekly_summary_{timestamp}.csv"
-        weekly_tsi.to_csv(weekly_file, index=False)
-        print(f"Saved weekly TSI summary: {weekly_file.name}")
+        # Daily summaries (higher resolution data)
+        daily_file = self.processed_dir / "daily_summaries" / f"tsi_daily_summary_{timestamp}.csv"
+        daily_tsi_agg.to_csv(daily_file, index=False)
+        print(f"Saved daily TSI summary: {daily_file.name}")
         
         # Monthly summaries
         monthly_file = self.processed_dir / "monthly_summaries" / f"tsi_monthly_summary_{timestamp}.csv"
@@ -259,97 +259,97 @@ class SummaryReportGenerator:
             json.dump(device_summaries, f, indent=2, default=str)
         print(f"Saved device summaries: {device_file.name}")
         
-        return daily_tsi, weekly_tsi, monthly_tsi, device_summaries
+        return daily_tsi, daily_tsi_agg, monthly_tsi, device_summaries
         
-    def generate_visualizations(self, daily_wu=None, weekly_wu=None, monthly_wu=None, 
-                              daily_tsi=None, weekly_tsi=None, monthly_tsi=None):
-        """Generate comprehensive visualizations."""
+    def generate_visualizations(self, daily_wu=None, daily_wu_agg=None, monthly_wu=None, 
+                              daily_tsi=None, daily_tsi_agg=None, monthly_tsi=None):
+        """Generate comprehensive visualizations using daily aggregations for higher resolution."""
         print("Generating visualizations...")
         
-        # Weather Underground visualizations
-        if weekly_wu is not None and not weekly_wu.empty:
+        # Weather Underground visualizations - using daily aggregations for high resolution
+        if daily_wu_agg is not None and not daily_wu_agg.empty:
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            fig.suptitle('Weather Underground Weekly Trends', fontsize=16)
+            fig.suptitle('Weather Underground Daily Trends (High Resolution)', fontsize=16)
             
             # Temperature trends
-            for station in weekly_wu['stationID'].unique():
-                station_data = weekly_wu[weekly_wu['stationID'] == station]
-                axes[0,0].plot(station_data['week_start'], station_data['tempAvg_mean'], 
+            for station in daily_wu_agg['stationID'].unique():
+                station_data = daily_wu_agg[daily_wu_agg['stationID'] == station]
+                axes[0,0].plot(station_data['day_start'], station_data['tempAvg_mean'], 
                               marker='o', label=station)
-            axes[0,0].set_title('Average Temperature by Week')
+            axes[0,0].set_title('Average Temperature by Day')
             axes[0,0].set_ylabel('Temperature (°C)')
             axes[0,0].legend()
             axes[0,0].tick_params(axis='x', rotation=45)
             
             # Humidity trends
-            for station in weekly_wu['stationID'].unique():
-                station_data = weekly_wu[weekly_wu['stationID'] == station]
-                axes[0,1].plot(station_data['week_start'], station_data['humidityAvg_mean'], 
+            for station in daily_wu_agg['stationID'].unique():
+                station_data = daily_wu_agg[daily_wu_agg['stationID'] == station]
+                axes[0,1].plot(station_data['day_start'], station_data['humidityAvg_mean'], 
                               marker='s', label=station)
-            axes[0,1].set_title('Average Humidity by Week')
+            axes[0,1].set_title('Average Humidity by Day')
             axes[0,1].set_ylabel('Humidity (%)')
             axes[0,1].legend()
             axes[0,1].tick_params(axis='x', rotation=45)
             
             # Precipitation totals
-            for station in weekly_wu['stationID'].unique():
-                station_data = weekly_wu[weekly_wu['stationID'] == station]
-                axes[1,0].bar(station_data['week_start'], station_data['precipTotal_sum'], 
+            for station in daily_wu_agg['stationID'].unique():
+                station_data = daily_wu_agg[daily_wu_agg['stationID'] == station]
+                axes[1,0].bar(station_data['day_start'], station_data['precipTotal_sum'], 
                              alpha=0.7, label=station)
-            axes[1,0].set_title('Weekly Precipitation Total')
+            axes[1,0].set_title('Daily Precipitation Total')
             axes[1,0].set_ylabel('Precipitation (mm)')
             axes[1,0].legend()
             axes[1,0].tick_params(axis='x', rotation=45)
             
             # Wind speed
-            for station in weekly_wu['stationID'].unique():
-                station_data = weekly_wu[weekly_wu['stationID'] == station]
-                axes[1,1].plot(station_data['week_start'], station_data['windspeedAvg_mean'], 
+            for station in daily_wu_agg['stationID'].unique():
+                station_data = daily_wu_agg[daily_wu_agg['stationID'] == station]
+                axes[1,1].plot(station_data['day_start'], station_data['windspeedAvg_mean'], 
                               marker='^', label=station)
-            axes[1,1].set_title('Average Wind Speed by Week')
+            axes[1,1].set_title('Average Wind Speed by Day')
             axes[1,1].set_ylabel('Wind Speed (km/h)')
             axes[1,1].legend()
             axes[1,1].tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
-            chart_file = self.charts_dir / f"wu_weekly_trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            chart_file = self.charts_dir / f"wu_daily_trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             plt.savefig(chart_file, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Saved WU chart: {chart_file.name}")
         
-        # TSI sensor visualizations
-        if weekly_tsi is not None and not weekly_tsi.empty:
-            device_col = weekly_tsi.columns[1]  # Second column should be device name
+        # TSI sensor visualizations - using daily aggregations for high resolution
+        if daily_tsi_agg is not None and not daily_tsi_agg.empty:
+            device_col = daily_tsi_agg.columns[1]  # Second column should be device name
             
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            fig.suptitle('TSI Air Quality Sensors Weekly Trends', fontsize=16)
+            fig.suptitle('TSI Air Quality Sensors Daily Trends (High Resolution)', fontsize=16)
             
             # PM2.5 trends
-            for device in weekly_tsi[device_col].unique():
-                device_data = weekly_tsi[weekly_tsi[device_col] == device]
-                axes[0,0].plot(device_data['week_start'], device_data['PM 2.5_mean'], 
+            for device in daily_tsi_agg[device_col].unique():
+                device_data = daily_tsi_agg[daily_tsi_agg[device_col] == device]
+                axes[0,0].plot(device_data['day_start'], device_data['PM 2.5_mean'], 
                               marker='o', label=device[:20])  # Truncate long names
-            axes[0,0].set_title('Average PM2.5 by Week')
+            axes[0,0].set_title('Average PM2.5 by Day')
             axes[0,0].set_ylabel('PM2.5 (µg/m³)')
             axes[0,0].legend()
             axes[0,0].tick_params(axis='x', rotation=45)
             
             # Temperature trends
-            for device in weekly_tsi[device_col].unique():
-                device_data = weekly_tsi[weekly_tsi[device_col] == device]
-                axes[0,1].plot(device_data['week_start'], device_data['T (C)_mean'], 
+            for device in daily_tsi_agg[device_col].unique():
+                device_data = daily_tsi_agg[daily_tsi_agg[device_col] == device]
+                axes[0,1].plot(device_data['day_start'], device_data['T (C)_mean'], 
                               marker='s', label=device[:20])
-            axes[0,1].set_title('Average Temperature by Week')
+            axes[0,1].set_title('Average Temperature by Day')
             axes[0,1].set_ylabel('Temperature (°C)')
             axes[0,1].legend()
             axes[0,1].tick_params(axis='x', rotation=45)
             
             # Humidity trends
-            for device in weekly_tsi[device_col].unique():
-                device_data = weekly_tsi[weekly_tsi[device_col] == device]
-                axes[1,0].plot(device_data['week_start'], device_data['RH (%)_mean'], 
+            for device in daily_tsi_agg[device_col].unique():
+                device_data = daily_tsi_agg[daily_tsi_agg[device_col] == device]
+                axes[1,0].plot(device_data['day_start'], device_data['RH (%)_mean'], 
                               marker='^', label=device[:20])
-            axes[1,0].set_title('Average Humidity by Week')
+            axes[1,0].set_title('Average Humidity by Day')
             axes[1,0].set_ylabel('Humidity (%)')
             axes[1,0].legend()
             axes[1,0].tick_params(axis='x', rotation=45)
@@ -357,8 +357,8 @@ class SummaryReportGenerator:
             # PM2.5 distribution
             pm25_data = []
             device_names = []
-            for device in weekly_tsi[device_col].unique():
-                device_data = weekly_tsi[weekly_tsi[device_col] == device]
+            for device in daily_tsi_agg[device_col].unique():
+                device_data = daily_tsi_agg[daily_tsi_agg[device_col] == device]
                 pm25_data.append(device_data['PM 2.5_mean'].dropna())
                 device_names.append(device[:20])
             
@@ -368,7 +368,7 @@ class SummaryReportGenerator:
             axes[1,1].tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
-            chart_file = self.charts_dir / f"tsi_weekly_trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            chart_file = self.charts_dir / f"tsi_daily_trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             plt.savefig(chart_file, dpi=300, bbox_inches='tight')
             plt.close()
             print(f"Saved TSI chart: {chart_file.name}")

@@ -543,7 +543,7 @@ class DailySheetsSystem:
                 ["- Temperature trends by station"],
                 ["- Humidity comparison"],
                 ["- Air quality index trends"],
-                ["- Hourly data visualization"],
+                ["- 15-minute interval data visualization"],
                 [""],
                 ["This feature uses the existing chart generation"],
                 ["system from the Hot Durham project."]

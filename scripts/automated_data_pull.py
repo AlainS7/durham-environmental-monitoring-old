@@ -42,7 +42,11 @@ def get_date_range(pull_type):
     """Calculate start and end dates based on pull type"""
     today = datetime.now()
     
-    if pull_type == 'weekly':
+    if pull_type == 'daily':
+        # Yesterday's data
+        start_date = today - timedelta(days=1)
+        end_date = today - timedelta(days=1)
+    elif pull_type == 'weekly':
         # Last Monday to Sunday
         days_since_monday = today.weekday()
         start_date = today - timedelta(days=days_since_monday + 7)
@@ -124,6 +128,7 @@ def create_google_sheet(data_manager, wu_df, tsi_df, start_date, end_date, pull_
 
 def main():
     parser = argparse.ArgumentParser(description='Automated data pull for Hot Durham project')
+    parser.add_argument('--daily', action='store_true', help='Pull daily data (yesterday)')
     parser.add_argument('--weekly', action='store_true', help='Pull weekly data (last Monday-Sunday)')
     parser.add_argument('--bi-weekly', action='store_true', help='Pull bi-weekly data (last 2 weeks)')
     parser.add_argument('--monthly', action='store_true', help='Pull monthly data (last month)')
@@ -135,15 +140,17 @@ def main():
     args = parser.parse_args()
     
     # Determine pull type
-    if args.weekly:
+    if args.daily:
+        pull_type = 'daily'
+    elif args.weekly:
         pull_type = 'weekly'
     elif args.bi_weekly:
         pull_type = 'bi_weekly'
     elif args.monthly:
         pull_type = 'monthly'
     else:
-        # Default to weekly if no type specified
-        pull_type = 'weekly'
+        # Default to daily instead of weekly for higher accuracy
+        pull_type = 'daily'
     
     # Determine data sources
     fetch_wu = not args.tsi_only
