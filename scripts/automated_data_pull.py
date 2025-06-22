@@ -25,18 +25,21 @@ sys.path.append(os.path.join(project_root, 'src', 'core'))
 sys.path.append(os.path.join(project_root, 'src', 'data_collection'))
 
 try:
-    from data_manager import DataManager
-except ImportError:
-    # Try alternative paths
-    sys.path.append(project_root)
-    sys.path.append(os.path.join(project_root, 'src'))
     from src.core.data_manager import DataManager
-
-# Import the data fetching functions from the main script  
-try:
-    from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
 except ImportError:
+    try:
+        from data_manager import DataManager
+    except ImportError:
+        DataManager = None
+
+try:
     from src.data_collection.faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
+except ImportError:
+    try:
+        from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
+    except ImportError:
+        fetch_wu_data = None
+        fetch_tsi_data = None
 
 def get_date_range(pull_type):
     """Calculate start and end dates based on pull type"""
@@ -164,7 +167,11 @@ def main():
     print(f"📅 Date range: {start_date} to {end_date}")
     
     # Initialize data manager
-    data_manager = DataManager(project_root)
+    if DataManager is not None:
+        data_manager = DataManager(project_root)
+    else:
+        print("⚠️ DataManager not available, skipping data management setup")
+        data_manager = None
     
     # Fetch data
     wu_df = None
@@ -173,42 +180,56 @@ def main():
     if fetch_wu:
         print("🌤️ Fetching Weather Underground data...")
         try:
-            wu_df = fetch_wu_data(start_date, end_date)
-            if wu_df is not None and not wu_df.empty:
-                print(f"✅ WU: {len(wu_df)} records fetched")
-                # Save WU data
-                wu_path = data_manager.save_raw_data(
-                    data=wu_df,
-                    source='wu',
-                    start_date=start_date,
-                    end_date=end_date,
-                    pull_type=pull_type,
-                    file_format='csv'
-                )
-                print(f"📁 WU data saved to: {wu_path}")
+            if fetch_wu_data is not None:
+                wu_df = fetch_wu_data(start_date, end_date)
+                if wu_df is not None and not wu_df.empty:
+                    print(f"✅ WU: {len(wu_df)} records fetched")
+                    # Save WU data
+                    if data_manager is not None:
+                        wu_path = data_manager.save_raw_data(
+                            data=wu_df,
+                            source='wu',
+                            start_date=start_date,
+                            end_date=end_date,
+                            pull_type=pull_type,
+                            file_format='csv'
+                        )
+                        print(f"📁 WU data saved to: {wu_path}")
+                    else:
+                        print("⚠️ data_manager not available, cannot save WU data")
+                else:
+                    print("⚠️ No WU data retrieved")
             else:
-                print("⚠️ No WU data retrieved")
+                wu_df = None
+                print("⚠️ fetch_wu_data not available")
         except Exception as e:
             print(f"❌ Error fetching WU data: {e}")
     
     if fetch_tsi:
         print("🔬 Fetching TSI data...")
         try:
-            tsi_df, _ = fetch_tsi_data(start_date, end_date)
-            if tsi_df is not None and not tsi_df.empty:
-                print(f"✅ TSI: {len(tsi_df)} records fetched")
-                # Save TSI data
-                tsi_path = data_manager.save_raw_data(
-                    data=tsi_df,
-                    source='tsi',
-                    start_date=start_date,
-                    end_date=end_date,
-                    pull_type=pull_type,
-                    file_format='csv'
-                )
-                print(f"📁 TSI data saved to: {tsi_path}")
+            if fetch_tsi_data is not None:
+                tsi_df, _ = fetch_tsi_data(start_date, end_date)
+                if tsi_df is not None and not tsi_df.empty:
+                    print(f"✅ TSI: {len(tsi_df)} records fetched")
+                    # Save TSI data
+                    if data_manager is not None:
+                        tsi_path = data_manager.save_raw_data(
+                            data=tsi_df,
+                            source='tsi',
+                            start_date=start_date,
+                            end_date=end_date,
+                            pull_type=pull_type,
+                            file_format='csv'
+                        )
+                        print(f"📁 TSI data saved to: {tsi_path}")
+                    else:
+                        print("⚠️ data_manager not available, cannot save TSI data")
+                else:
+                    print("⚠️ No TSI data retrieved")
             else:
-                print("⚠️ No TSI data retrieved")
+                tsi_df = None
+                print("⚠️ fetch_tsi_data not available")
         except Exception as e:
             print(f"❌ Error fetching TSI data: {e}")
     
@@ -224,15 +245,21 @@ def main():
                 sheet_info['data_sources'].append('TSI')
             
             # Save sheet metadata
-            data_manager.save_sheet_metadata(sheet_info, start_date, end_date, pull_type)
+            if data_manager is not None:
+                data_manager.save_sheet_metadata(sheet_info, start_date, end_date, pull_type)
+            else:
+                print("⚠️ data_manager not available, cannot save sheet metadata")
             print(f"🔗 Google Sheet created: {sheet_info['sheet_url']}")
     
     # Sync to Google Drive if not disabled
     if not args.no_sync:
         print("☁️ Syncing to Google Drive...")
         try:
-            data_manager.sync_to_drive()
-            print("✅ Google Drive sync completed!")
+            if data_manager is not None:
+                data_manager.sync_to_drive()
+                print("✅ Google Drive sync completed!")
+            else:
+                print("⚠️ data_manager not available, cannot sync to drive")
         except Exception as e:
             print(f"⚠️ Google Drive sync failed: {e}")
     
@@ -250,7 +277,10 @@ def main():
     }
     
     # Save to automation log
-    data_manager.log_automation_run(log_entry)
+    if data_manager is not None:
+        data_manager.log_automation_run(log_entry)
+    else:
+        print("⚠️ data_manager not available, cannot log automation run")
 
 if __name__ == "__main__":
     main()

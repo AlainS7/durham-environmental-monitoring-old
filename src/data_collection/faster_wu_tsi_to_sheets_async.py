@@ -8,8 +8,24 @@ sys.path.insert(0, os.path.join(project_root, 'src', 'core'))
 sys.path.insert(0, os.path.join(project_root, 'config'))
 
 # Now we can import the data manager and test sensor config
-from data_manager import DataManager
-from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+try:
+    from data_manager import DataManager
+except ImportError:
+    try:
+        from src.core.data_manager import DataManager
+    except ImportError:
+        DataManager = None
+
+try:
+    from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+except ImportError:
+    try:
+        from config.test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+    except ImportError:
+        TestSensorConfig = None
+        is_test_sensor = None
+        get_data_path = None
+        get_log_path = None
 
 # Import enhanced utilities
 try:
@@ -338,38 +354,51 @@ async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_
 
 def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     # Import TSI date range manager
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent / "utils"))
-    from tsi_date_manager import TSIDateRangeManager
+    try:
+        from src.utils.tsi_date_manager import TSIDateRangeManager
+    except ImportError:
+        # Fallback for direct path import
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent / "utils"))
+        try:
+            from tsi_date_manager import TSIDateRangeManager
+        except ImportError:
+            print("⚠️ Warning: TSI date manager not available, using basic date handling")
+            TSIDateRangeManager = None
     
     # Check and adjust date range for TSI API limitation
     original_start, original_end = start_date, end_date
-    days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
-    days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
     
-    if not TSIDateRangeManager.is_within_limit(start_date, end_date):
-        print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, exceeds TSI's 90-day historical limit")
-        print(f"   TSI API Error: 'start_date cannot be more than 90 days in the past'")
-        print("   Options:")
-        print("   1. Use most recent valid date range")
-        print("   2. Skip TSI data collection") 
-        print("   3. Split into multiple API calls (advanced)")
+    if TSIDateRangeManager is not None:
+        days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
+        days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
         
-        # For automated systems, default to most recent data
-        adjusted_start, adjusted_end, was_adjusted = TSIDateRangeManager.adjust_date_range_for_tsi(
-            start_date, end_date, prefer_recent=True
-        )
-        
-        if was_adjusted:
-            start_date, end_date = adjusted_start, adjusted_end
-            new_days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
-            new_days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
-            print(f"   🔄 Automatically adjusted to: {start_date} to {end_date}")
-            print(f"   📊 New range: {new_days_span} days span, starting {new_days_back} days back")
+        if not TSIDateRangeManager.is_within_limit(start_date, end_date):
+            print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, exceeds TSI's 90-day historical limit")
+            print(f"   TSI API Error: 'start_date cannot be more than 90 days in the past'")
+            print("   Options:")
+            print("   1. Use most recent valid date range")
+            print("   2. Skip TSI data collection") 
+            print("   3. Split into multiple API calls (advanced)")
+            
+            # For automated systems, default to most recent data
+            adjusted_start, adjusted_end, was_adjusted = TSIDateRangeManager.adjust_date_range_for_tsi(
+                start_date, end_date, prefer_recent=True
+            )
+            
+            if was_adjusted:
+                start_date, end_date = adjusted_start, adjusted_end
+                new_days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
+                new_days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
+                print(f"   🔄 Automatically adjusted to: {start_date} to {end_date}")
+                print(f"   📊 New range: {new_days_span} days span, starting {new_days_back} days back")
+        else:
+            print(f"✅ TSI date range valid: {start_date} to {end_date}")
+            print(f"   📊 Range: {days_span} days span, starting {days_back} days back")
     else:
-        print(f"✅ TSI date range valid: {start_date} to {end_date}")
-        print(f"   📊 Range: {days_span} days span, starting {days_back} days back")
+        print(f"⚠️ Using basic date handling: {start_date} to {end_date}")
+    
     
     if not os.path.exists(ts_creds_abs):
         print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
@@ -429,9 +458,9 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
     Returns:
         tuple: (test_data, prod_data) dictionaries with separated DataFrames
     """
-    # Initialize return dictionaries
-    test_data = {'wu': None, 'tsi': None}
-    prod_data = {'wu': None, 'tsi': None}
+    # Initialize return dictionaries with proper typing
+    test_data: dict = {'wu': None, 'tsi': None}
+    prod_data: dict = {'wu': None, 'tsi': None}
     
     # Statistics tracking
     separation_stats = {
@@ -767,18 +796,26 @@ if __name__ == "__main__":
     
     # Initialize data manager for organized data storage and Google Drive sync
     print("🗂️ Initializing data management system...")
-    data_manager = DataManager(project_root)
+    if DataManager is not None:
+        data_manager = DataManager(project_root)
+    else:
+        print("⚠️ Warning: DataManager not available, skipping data management setup")
+        data_manager = None
     
     # Initialize test sensor configuration
     print("🧪 Initializing test sensor configuration...")
-    test_config = TestSensorConfig(project_root)
-    
-    # Validate test sensor configuration
-    validation_result = test_config.validate_configuration()
-    
-    # Display test sensor configuration status
-    print(f"📋 Test sensor configuration loaded:")
-    print(f"   - Total test sensors: {validation_result['stats']['total_test_sensors']}")
+    if TestSensorConfig is not None:
+        test_config = TestSensorConfig(project_root)
+        
+        # Validate test sensor configuration
+        validation_result = test_config.validate_configuration()
+        
+        # Display test sensor configuration status
+        print(f"📋 Test sensor configuration loaded:")
+        print(f"   - Total test sensors: {validation_result['stats']['total_test_sensors']}")
+    else:
+        print("⚠️ Warning: TestSensorConfig not available, skipping test sensor configuration")
+        test_config = None
     print(f"   - WU test sensors: {validation_result['stats']['wu_test_sensors']}")
     print(f"   - TSI test sensors: {validation_result['stats']['tsi_test_sensors']}")
     print(f"   - Test data path: {test_config.test_data_path}")

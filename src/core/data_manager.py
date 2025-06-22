@@ -18,7 +18,14 @@ import time
 # Import test sensor configuration
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / 'config'))
-from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+try:
+    from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+except ImportError:
+    print("Warning: test_sensors_config not available")
+    TestSensorConfig = None
+    is_test_sensor = None
+    get_data_path = None
+    get_log_path = None
 
 # Optional imports
 try:
@@ -46,11 +53,14 @@ except ImportError:
 class DataManager:
     """Manages automated data pulls, storage, and Google Drive synchronization."""
     
-    def __init__(self, base_dir: str = None):
+    def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = Path(base_dir) if base_dir else Path(__file__).parent.parent / "data"
         
         # Initialize test sensor configuration
-        self.test_config = TestSensorConfig()
+        if TestSensorConfig is not None:
+            self.test_config = TestSensorConfig()
+        else:
+            self.test_config = None
         
         self.setup_directories()
         self.setup_logging()
@@ -115,7 +125,7 @@ class DataManager:
             self.logger.error(f"Failed to initialize Google Drive service: {e}")
             return None
     
-    def get_week_info(self, date: datetime = None) -> Tuple[int, int, str]:
+    def get_week_info(self, date: Optional[datetime] = None) -> Tuple[int, int, str]:
         """Get ISO week number, year, and formatted string for a given date."""
         if date is None:
             date = datetime.now()
@@ -164,11 +174,19 @@ class DataManager:
             
             # Fetch data based on type
             if data_type == "wu":
-                from faster_wu_tsi_to_sheets_async import fetch_wu_data
-                df = fetch_wu_data(start_date, end_date)
+                try:
+                    from faster_wu_tsi_to_sheets_async import fetch_wu_data
+                    df = fetch_wu_data(start_date, end_date)
+                except ImportError:
+                    self.logger.error("Cannot import fetch_wu_data function")
+                    return None
             elif data_type == "tsi":
-                from faster_wu_tsi_to_sheets_async import fetch_tsi_data
-                df, _ = fetch_tsi_data(start_date, end_date)
+                try:
+                    from faster_wu_tsi_to_sheets_async import fetch_tsi_data
+                    df, _ = fetch_tsi_data(start_date, end_date)
+                except ImportError:
+                    self.logger.error("Cannot import fetch_tsi_data function")
+                    return None
             else:
                 self.logger.error(f"Unknown data type: {data_type}")
                 return None
@@ -796,24 +814,31 @@ class DataManager:
             self.logger.error(f"Error logging automation run: {e}")
 
     def get_sensor_file_paths(self, sensor_id: str, data_type: str, start_date: str, 
-                             end_date: str, file_format: str = "csv") -> Dict[str, Path]:
+                             end_date: str, file_format: str = "csv") -> Dict[str, Any]:
         """Generate file paths for sensor data based on test vs production status."""
         year, week, week_str = self.get_week_info(datetime.strptime(start_date, "%Y%m%d"))
         
         # Determine if this is a test sensor
-        is_test = self.test_config.is_test_sensor(sensor_id)
+        if self.test_config is not None and hasattr(self.test_config, 'is_test_sensor'):
+            is_test = self.test_config.is_test_sensor(sensor_id)
+        else:
+            is_test = False
         
-        if is_test:
+        if is_test and self.test_config is not None:
             # Use test data paths
-            base_path = self.test_config.get_data_path(sensor_id)
-            log_path = self.test_config.get_log_path(sensor_id)
-            prefix = self.test_config.get_filename_prefix(sensor_id)
+            base_path = self.test_config.get_data_path(sensor_id) if hasattr(self.test_config, 'get_data_path') else Path('.')
+            log_path = self.test_config.get_log_path(sensor_id) if hasattr(self.test_config, 'get_log_path') else Path('.')
+            prefix = self.test_config.get_filename_prefix(sensor_id) if hasattr(self.test_config, 'get_filename_prefix') else ''
             
             # Create test-specific subdirectories
             week_folder = base_path / data_type / str(year) / f"week_{week:02d}"
             week_folder.mkdir(parents=True, exist_ok=True)
             
             filename = f"{prefix}_{data_type}_data_{start_date}_to_{end_date}_{sensor_id}.{file_format}"
+            
+            # If returning a dict with 'type', use Dict[str, Any] or handle 'type' key separately
+            result: Dict[str, Any] = {}
+            result['type'] = 'test'  # or 'production'
             
             return {
                 "raw": week_folder / filename,
@@ -896,25 +921,27 @@ class DataManager:
 
     def get_test_sensor_summary(self) -> Dict[str, Any]:
         """Get summary of test sensor configuration and data status."""
-        summary = {
-            "test_sensors_count": len(self.test_config.get_test_sensors()),
-            "test_sensors": self.test_config.get_test_sensors(),
-            "test_data_path": str(self.test_config.test_data_path),
-            "test_logs_path": str(self.test_config.test_logs_path),
-            "data_files": {},
-            "log_files": {}
-        }
-        
+        summary = {}
+        if self.test_config is not None:
+            if hasattr(self.test_config, 'get_test_sensors'):
+                summary["test_sensors_count"] = len(self.test_config.get_test_sensors())
+                summary["test_sensors"] = self.test_config.get_test_sensors()
+            if hasattr(self.test_config, 'test_data_path'):
+                summary["test_data_path"] = str(self.test_config.test_data_path)
+            if hasattr(self.test_config, 'test_logs_path'):
+                summary["test_logs_path"] = str(self.test_config.test_logs_path)
         # Count data files in test directories
-        if self.test_config.test_sensors_path.exists():
-            for data_type in ['wu', 'tsi']:
-                type_path = self.test_config.test_sensors_path / data_type
-                if type_path.exists():
-                    summary["data_files"][data_type] = len(list(type_path.rglob("*.csv"))) + len(list(type_path.rglob("*.xlsx")))
+        if self.test_config is not None and hasattr(self.test_config, 'test_sensors_path'):
+            if self.test_config.test_sensors_path.exists():
+                for data_type in ['wu', 'tsi']:
+                    type_path = self.test_config.test_sensors_path / data_type
+                    if type_path.exists():
+                        summary["data_files"][data_type] = len(list(type_path.rglob("*.csv"))) + len(list(type_path.rglob("*.xlsx")))
         
         # Count log files
-        if self.test_config.test_logs_path.exists():
-            summary["log_files"]["count"] = len(list(self.test_config.test_logs_path.glob("*.log")))
+        if self.test_config is not None and hasattr(self.test_config, 'test_logs_path'):
+            if self.test_config.test_logs_path.exists():
+                summary["log_files"]["count"] = len(list(self.test_config.test_logs_path.glob("*.log")))
         
         return summary
     

@@ -52,7 +52,7 @@ class ProductionSensorPDFReporter:
     PDF system with adaptations for the Hot Durham project structure.
     """
     
-    def __init__(self, project_root: str = None):
+    def __init__(self, project_root: Optional[str] = None):
         if project_root is None:
             self.project_root = Path(__file__).parent.parent.parent
         else:
@@ -196,7 +196,7 @@ class ProductionSensorPDFReporter:
             logger.error(f"Error calculating uptime for {sensor_id}: {e}")
             return 0.0
     
-    def create_sensor_chart(self, df: pd.DataFrame, sensor_id: str, metric: str, sensor_name: str = None) -> str:
+    def create_sensor_chart(self, df: pd.DataFrame, sensor_id: str, metric: str, sensor_name: Optional[str] = None) -> Optional[str]:
         """
         Create individual sensor chart and return as base64 string.
         
@@ -304,7 +304,7 @@ class ProductionSensorPDFReporter:
             plt.close()
             return ""
     
-    def _find_metric_column(self, df: pd.DataFrame, metric_aliases: list) -> str:
+    def _find_metric_column(self, df: pd.DataFrame, metric_aliases: list) -> Optional[str]:
         """
         Find the best matching column for a metric from a list of aliases (case-insensitive, ignore spaces/underscores).
         """
@@ -658,7 +658,7 @@ class ProductionSensorPDFReporter:
         
         return uptimes
     
-    def generate_pdf_report(self, output_filename: str = None) -> str:
+    def generate_pdf_report(self, output_filename: Optional[str] = None) -> str:
         """
         Generate comprehensive PDF report for production sensors.
         

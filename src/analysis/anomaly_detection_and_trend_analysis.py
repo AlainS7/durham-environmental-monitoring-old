@@ -332,11 +332,12 @@ class AnomalyDetectionSystem:
         timestamp_numeric = [(t - timestamps.iloc[0]).total_seconds() / 86400 for t in timestamps]
         
         try:
-            slope, intercept, r_value, p_value, std_err = stats.linregress(timestamp_numeric, values)
+            # Use direct unpacking which works with both old and new scipy versions
+            slope, intercept, r_value, p_value, std_err = stats.linregress(timestamp_numeric, values)  # type: ignore
             return {
-                'slope': float(slope),
-                'r_squared': float(r_value ** 2),
-                'p_value': float(p_value)
+                'slope': float(slope),  # type: ignore
+                'r_squared': float(r_value ** 2),  # type: ignore
+                'p_value': float(p_value)  # type: ignore
             }
         except:
             return None
@@ -979,7 +980,7 @@ class AnomalyDetectionSystem:
 
 def main():
     """Main execution function."""
-    detector = AnomalyDetector()
+    detector = AnomalyDetectionSystem()
     report = detector.run_complete_analysis()
     
     # Print quick summary
