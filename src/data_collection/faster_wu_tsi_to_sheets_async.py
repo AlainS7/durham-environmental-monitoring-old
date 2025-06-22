@@ -276,11 +276,20 @@ def fetch_wu_data(start_date_str, end_date_str):
     return df
 
 def to_iso8601(date_str):
+    """Convert date string to ISO8601 format, supporting both YYYY-MM-DD and YYYYMMDD formats."""
     try:
+        # Try YYYY-MM-DD format first
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         return dt.strftime("%Y-%m-%dT00:00:00Z")
-    except Exception:
-        return date_str
+    except ValueError:
+        try:
+            # Try YYYYMMDD format
+            dt = datetime.strptime(date_str, "%Y%m%d")
+            return dt.strftime("%Y-%m-%dT00:00:00Z")
+        except ValueError:
+            # If neither format works, return original string
+            print(f"⚠️ Warning: Could not parse date {date_str}, using as-is")
+            return date_str
 
 async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, per_device):
     device_id = device.get('device_id')
@@ -736,10 +745,13 @@ def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, e
                             break
                 
                 # Use existing data manager method for production data
+                # For WU data, keep the date format as YYYY-MM-DD; for TSI, convert to YYYYMMDD
+                wu_start_date = start_date if data_type == 'wu' else start_date.replace('-', '')
+                wu_end_date = end_date if data_type == 'wu' else end_date.replace('-', '')
                 saved_path = data_manager.pull_and_store_data(
                     data_type=data_type,
-                    start_date=start_date.replace('-', ''),
-                    end_date=end_date.replace('-', ''),
+                    start_date=wu_start_date,
+                    end_date=wu_end_date,
                     file_format=file_format
                 )
                 
@@ -1083,12 +1095,17 @@ if __name__ == "__main__":
             wu_ws.update([wu_headers] + prod_wu_df.values.tolist())
         add_charts = read_or_fallback("Do you want to add charts to the Google Sheet? (y/n)", "y").lower() == 'y'
         if add_charts and spreadsheet is not None:
+            print(f"🔧 Starting chart creation process...")
+            print(f"📊 Daily summary data available for {len(daily_summary)} devices: {list(daily_summary.keys())}")
             creds = create_gspread_client_v2()
             sheets_api = build('sheets', 'v4', credentials=creds)
             sheet_id = spreadsheet.id
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'Production TSI Weekly Summary'), None)
+            print(f"📋 Available sheets: {[s['properties']['title'] for s in meta['sheets']]}")
+            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'Production TSI Summary'), None)
+            print(f"🔍 Found 'Production TSI Summary' sheet ID: {weekly_id}")
             if weekly_id:
+                print("✅ Found TSI Summary sheet, proceeding with chart creation...")
                 charts_title = 'Production TSI and WU Weekly Charts'
                 charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
                 meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
@@ -1211,7 +1228,11 @@ if __name__ == "__main__":
                             }
                         ]
                     }
-                    sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                    try:
+                        result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                        print(f"✅ Created chart for {col_name} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
+                    except Exception as chart_error:
+                        print(f"❌ Failed to create chart for {col_name}: {chart_error}")
                     chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
                 # Add charts for WU data if available (PRODUCTION ONLY)
@@ -1366,7 +1387,11 @@ if __name__ == "__main__":
                                 }
                             }]
                         }
-                        sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                        try:
+                            result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                            print(f"✅ Created chart for {col_name} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
+                        except Exception as chart_error:
+                            print(f"❌ Failed to create chart for {col_name}: {chart_error}")
                         chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
@@ -1459,8 +1484,20 @@ if __name__ == "__main__":
                                 }
                             ]
                         }
-                        sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                        try:
+                            result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
+                            print(f"✅ Created TSI time-series chart for {metric} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
+                        except Exception as chart_error:
+                            print(f"❌ Failed to create TSI time-series chart for {metric}: {chart_error}")
                         chart_row_offset += 20
+            else:
+                print("❌ 'Production TSI Summary' sheet not found - charts will not be created")
+                print(f"📋 Available sheets: {[s['properties']['title'] for s in meta['sheets']]}")
+        else:
+            if not add_charts:
+                print("⏭️ Chart creation skipped by user choice")
+            if spreadsheet is None:
+                print("❌ No spreadsheet available for chart creation")
 
     print("✅ All data processing and Google Sheet export complete!")
     

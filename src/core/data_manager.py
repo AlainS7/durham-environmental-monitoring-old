@@ -816,7 +816,16 @@ class DataManager:
     def get_sensor_file_paths(self, sensor_id: str, data_type: str, start_date: str, 
                              end_date: str, file_format: str = "csv") -> Dict[str, Any]:
         """Generate file paths for sensor data based on test vs production status."""
-        year, week, week_str = self.get_week_info(datetime.strptime(start_date, "%Y%m%d"))
+        # Parse start_date - support both YYYY-MM-DD and YYYYMMDD formats
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y%m%d")
+            except ValueError:
+                raise ValueError(f"Date format not supported: {start_date}. Use YYYY-MM-DD or YYYYMMDD")
+        
+        year, week, week_str = self.get_week_info(start_dt)
         
         # Determine if this is a test sensor
         if self.test_config is not None and hasattr(self.test_config, 'is_test_sensor'):
@@ -930,6 +939,11 @@ class DataManager:
                 summary["test_data_path"] = str(self.test_config.test_data_path)
             if hasattr(self.test_config, 'test_logs_path'):
                 summary["test_logs_path"] = str(self.test_config.test_logs_path)
+        # Ensure keys exist to avoid KeyError
+        if "data_files" not in summary:
+            summary["data_files"] = {}
+        if "log_files" not in summary:
+            summary["log_files"] = {}
         # Count data files in test directories
         if self.test_config is not None and hasattr(self.test_config, 'test_sensors_path'):
             if self.test_config.test_sensors_path.exists():
@@ -937,7 +951,6 @@ class DataManager:
                     type_path = self.test_config.test_sensors_path / data_type
                     if type_path.exists():
                         summary["data_files"][data_type] = len(list(type_path.rglob("*.csv"))) + len(list(type_path.rglob("*.xlsx")))
-        
         # Count log files
         if self.test_config is not None and hasattr(self.test_config, 'test_logs_path'):
             if self.test_config.test_logs_path.exists():
