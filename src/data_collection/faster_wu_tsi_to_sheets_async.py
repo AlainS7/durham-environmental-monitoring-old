@@ -136,7 +136,9 @@ def get_user_inputs():
         onedrive_folder = read_or_fallback("Enter OneDrive folder path (e.g. /Documents/HotDurham):", "/Documents/HotDurham")
     else:
         onedrive_folder = None
-    return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format, download_dir, upload_onedrive, onedrive_folder
+    # Add Google Drive sync option
+    sync_to_drive = read_or_fallback("Do you want to sync data to Google Drive? (y/n)", "n").lower() == 'y'
+    return fetch_wu, fetch_tsi, start_date, end_date, share_email, local_download, file_format, download_dir, upload_onedrive, onedrive_folder, sync_to_drive
 
 def create_gspread_client():
     scope = [
@@ -791,9 +793,12 @@ def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, e
 # 4. Set ENABLE_DISCONNECTED_POINTS = True to show data points without connecting lines
 
 ENABLE_OUTLIER_REMOVAL = True  # Set to False to disable outlier removal
-CHART_WIDTH = 1200  # Chart width in pixels (default is ~600)
-CHART_HEIGHT = 400  # Chart height in pixels (default is ~300)
-ENABLE_DISCONNECTED_POINTS = False  # Set to True to show data points without connecting lines
+CHART_WIDTH = 2400  # Increased chart width for better spacing (was 1800)
+CHART_HEIGHT = 400  # Slightly increased height for better proportions (was 400)
+ENABLE_DISCONNECTED_POINTS = True  # Set to True to show data points without connecting lines
+
+# TSI-specific chart configuration for better spacing
+TSI_DATA_SAMPLING_HOURS = 2  # Show every 2 hours instead of every hour (1=all hours, 2=every 2 hours, 4=every 4 hours)
 
 def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
     """
@@ -949,7 +954,7 @@ def get_chart_dimensions():
 if __name__ == "__main__":
     (
         fetch_wu, fetch_tsi, start_date, end_date, share_email,
-        local_download, file_format, download_dir, upload_onedrive, onedrive_folder
+        local_download, file_format, download_dir, upload_onedrive, onedrive_folder, sync_to_drive
     ) = get_user_inputs()
     
     # Initialize enhanced features if available
@@ -1410,15 +1415,18 @@ if __name__ == "__main__":
                                 "startColumnIndex": 0,
                                 "endColumnIndex": 1
                     }]}}}
+                    # Use SCATTER chart type for disconnected points, LINE for connected
+                    chart_type = "SCATTER" if ENABLE_DISCONNECTED_POINTS else "LINE"
+                    
                     chart = {
                         "requests": [
                             {
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Daily {col_name} Trend - {current_year} (By Device)",
+                                            "title": f"Daily {col_name} Trend - {current_year}",
                                             "basicChart": {
-                                                "chartType": "LINE",
+                                                "chartType": chart_type,
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
                                                     {"position": "BOTTOM_AXIS", "title": "Day"},
@@ -1633,14 +1641,17 @@ if __name__ == "__main__":
                                 }
                             }
                         }
+                        # Use SCATTER chart type for disconnected points, LINE for connected
+                        chart_type = "SCATTER" if ENABLE_DISCONNECTED_POINTS else "LINE"
+                        
                         chart = {
                             'requests': [{
                                 'addChart': {
                                     'chart': {
                                         'spec': {
-                                            'title': f'WU {metric} Trend - {year}',
+                                            'title': f'WU {metric} - {year}',
                                             'basicChart': {
-                                                'chartType': 'LINE',
+                                                'chartType': chart_type,
                                                 'legendPosition': 'BOTTOM_LEGEND',
                                                 'axis': [
                                                     {'position': 'BOTTOM_AXIS', 'title': 'Date'},
@@ -1675,6 +1686,7 @@ if __name__ == "__main__":
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
                 if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
+                    print("🎯 Starting TSI time-series chart creation...")
                     # Prepare TSI time-series pivot tables and charts using PRODUCTION data only
                     tsi_metrics = [
                         ('PM 2.5', 'PM2.5 (µg/m³)'),
@@ -1694,16 +1706,28 @@ if __name__ == "__main__":
                                 prod_tsi_df = remove_outliers(prod_tsi_df, metric, method='iqr')
                     
                     all_times = sorted(prod_tsi_df['timestamp'].dropna().unique())
+                    
+                    # Apply data sampling for better chart spacing (optional)
+                    if TSI_DATA_SAMPLING_HOURS > 1:
+                        print(f"📊 Applying data sampling: showing every {TSI_DATA_SAMPLING_HOURS} hours for clearer visualization")
+                        # Filter to every Nth hour based on sampling setting
+                        sampled_times = []
+                        for i, time in enumerate(all_times):
+                            if i % TSI_DATA_SAMPLING_HOURS == 0:
+                                sampled_times.append(time)
+                        all_times = sampled_times
+                        print(f"📊 Data points reduced from {len(sorted(prod_tsi_df['timestamp'].dropna().unique()))} to {len(all_times)} for better spacing")
                     for metric, y_label in tsi_metrics:
                         # Pivot: rows = timestamp, columns = device, values = metric (PRODUCTION data only)
                         pivot = prod_tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
                         
-                        # Extract year for chart title and format timestamp without hours/minutes for cleaner display
+                        # Extract year for chart title and preserve hourly data
                         year = pivot['timestamp'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
-                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%m-%d')
-                        
+                        # Keep the timestamp as datetime for proper chart display
+                        # Google Sheets will automatically format the datetime on the axis
+
                         # Skip if there's no data (all NaN values except timestamp column)
                         data_columns = [col for col in pivot.columns if col != 'timestamp']
                         if not data_columns or pivot[data_columns].isna().all().all():
@@ -1728,10 +1752,12 @@ if __name__ == "__main__":
                             pass
                         ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(devices_with_data)+1)
                         
-                        # Create sheet data with only devices that have data
+                        # Create sheet data with hourly timestamps
                         sheet_data = []
                         for _, row in pivot.iterrows():
-                            sheet_row = [row['timestamp']]
+                            # Use the timestamp for data - convert datetime to string for Google Sheets
+                            timestamp_str = row['timestamp'].strftime('%m-%d %H:%M')
+                            sheet_row = [timestamp_str]
                             for device in devices_with_data:
                                 value = row[device] if device in row else ''
                                 # Convert NaN to empty string for Google Sheets
@@ -1748,6 +1774,9 @@ if __name__ == "__main__":
                         # Build series with optional disconnected points styling
                         series = []
                         for i, device in enumerate(devices_with_data, start=1):
+                            # Extract just the device name without parenthetical info (e.g., "BS-01" from "BS-01 (Eno)")
+                            # clean_device_name = device.split(' (')[0] if ' (' in device else device, does not work yet
+
                             series_config = {
                                 "series": {"sourceRange": {"sources": [{
                                     "sheetId": sheet_id_pivot,
@@ -1765,6 +1794,8 @@ if __name__ == "__main__":
                             else:
                                 # Default connected line chart
                                 series_config["lineStyle"] = {"type": "SOLID"}
+                                # Explicitly set point style to match other graphs
+                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
                             series.append(series_config)
                         domain = {"domain": {"sourceRange": {"sources": [{
                             "sheetId": sheet_id_pivot,
@@ -1773,23 +1804,30 @@ if __name__ == "__main__":
                             "startColumnIndex": 0,
                             "endColumnIndex": 1
                         }]}}}
+                        # Use SCATTER chart type for disconnected points, LINE for connected
+                        chart_type = "SCATTER" if ENABLE_DISCONNECTED_POINTS else "LINE"
+                        
                         chart = {
                             "requests": [
                                 {
                                     "addChart": {
                                         "chart": {
                                             "spec": {
-                                                "title": f"TSI {metric} Over Time - {year}",
+                                                "title": f"TSI {metric} - {year}",
                                                 "basicChart": {
-                                                    "chartType": "LINE",
+                                                    "chartType": chart_type,
                                                     "legendPosition": "BOTTOM_LEGEND",
                                                     "axis": [
-                                                        {"position": "BOTTOM_AXIS", "title": "Date & Time"},
+                                                        {
+                                                            "position": "BOTTOM_AXIS", 
+                                                            "title": "Date & Time"
+                                                        },
                                                         {"position": "LEFT_AXIS", "title": y_label}
                                                     ],
                                                     "domains": [domain],
                                                     "series": series,
-                                                    "headerCount": 1
+                                                    "headerCount": 1,
+                                                    "interpolateNulls": False  # Don't connect points across gaps
                                                 }
                                             },
                                             "position": {
@@ -1814,6 +1852,11 @@ if __name__ == "__main__":
                         except Exception as chart_error:
                             print(f"❌ Failed to create TSI time-series chart for {metric}: {chart_error}")
                         chart_row_offset += 20
+                else:
+                    print("⚠️ TSI time-series charts skipped:")
+                    print(f"   - fetch_tsi: {fetch_tsi}")
+                    print(f"   - prod_tsi_df is not None: {prod_tsi_df is not None}")
+                    print(f"   - prod_tsi_df.empty: {prod_tsi_df.empty if prod_tsi_df is not None else 'N/A'}")
             else:
                 print("❌ 'Production TSI Summary' sheet not found - charts will not be created")
                 print(f"📋 Available sheets: {[s['properties']['title'] for s in meta['sheets']]}")
@@ -1892,13 +1935,16 @@ if __name__ == "__main__":
         print(f"📋 Google Sheet metadata saved")
     
     # Sync to Google Drive if enabled
-    print("☁️ Syncing data to Google Drive...")
-    try:
-        data_manager.sync_to_drive()
-        print("✅ Google Drive sync completed successfully!")
-    except Exception as e:
-        print(f"⚠️ Google Drive sync failed: {e}")
-        print("Data is still saved locally in the organized folder structure.")
+    if sync_to_drive:
+        print("☁️ Syncing data to Google Drive...")
+        try:
+            data_manager.sync_to_drive()
+            print("✅ Google Drive sync completed successfully!")
+        except Exception as e:
+            print(f"⚠️ Google Drive sync failed: {e}")
+            print("Data is still saved locally in the organized folder structure.")
+    else:
+        print("⏭️ Google Drive sync skipped by user choice")
     
     # Legacy local download support (for backward compatibility)
     if local_download and download_dir and download_dir != "data":
@@ -1923,4 +1969,23 @@ if __name__ == "__main__":
     if upload_onedrive and msal is not None:
         print("OneDrive upload not implemented in this script. Please use a separate tool or script for OneDrive uploads.")
     
-    print("🎉 Done! Data has been organized, saved locally, and synced to Google Drive.")
+    # Final summary with Google Sheet URL
+    print("\n" + "="*60)
+    print("🎉 DATA PROCESSING COMPLETE!")
+    print("="*60)
+    
+    if spreadsheet is not None:
+        print("🔗 Google Sheet URL:", spreadsheet.url)
+        print("📊 Google Sheet contains production sensor data only")
+        if sync_to_drive:
+            print("☁️ Data has been synced to Google Drive")
+        else:
+            print("💾 Data saved locally only (Google Drive sync skipped)")
+    else:
+        print("⚠️ No Google Sheet was created")
+        if sync_to_drive:
+            print("☁️ Local data has been synced to Google Drive")
+        else:
+            print("💾 Data saved locally only")
+    
+    print("="*60)
