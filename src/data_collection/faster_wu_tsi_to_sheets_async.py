@@ -116,8 +116,8 @@ def get_user_inputs():
     source_choice = read_or_fallback("Enter 1, 2, or 3", "3")
     fetch_wu = source_choice in ("1", "3")
     fetch_tsi = source_choice in ("2", "3")
-    start_date = read_or_fallback("Enter the start date (YYYY-MM-DD):", "2025-03-01")
-    end_date = read_or_fallback("Enter the end date (YYYY-MM-DD):", "2025-04-30")
+    start_date = read_or_fallback("Enter the start date (YYYY-MM-DD):", "2025-04-01")
+    end_date = read_or_fallback("Enter the end date (YYYY-MM-DD):", "2025-05-30")
     while True:
         share_email = read_or_fallback("Enter the email address to share the Google Sheet with:", "hotdurham@gmail.com").strip()
         if re.match(r"[^@]+@[^@]+\.[^@]+", share_email):
@@ -783,6 +783,169 @@ def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, e
     
     return saved_files
 
+# ========== CHART CONFIGURATION ==========
+# CHART IMPROVEMENTS:
+# 1. Set ENABLE_OUTLIER_REMOVAL = False to disable outlier removal completely
+# 2. Adjust CHART_WIDTH and CHART_HEIGHT to change chart dimensions
+# 3. Modify outlier detection method in remove_outliers() function ('iqr' or 'zscore')
+# 4. Set ENABLE_DISCONNECTED_POINTS = True to show data points without connecting lines
+
+ENABLE_OUTLIER_REMOVAL = True  # Set to False to disable outlier removal
+CHART_WIDTH = 1200  # Chart width in pixels (default is ~600)
+CHART_HEIGHT = 400  # Chart height in pixels (default is ~300)
+ENABLE_DISCONNECTED_POINTS = False  # Set to True to show data points without connecting lines
+
+def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
+    """
+    Remove outliers from a DataFrame column using IQR or Z-score method.
+    
+    Args:
+        df: DataFrame containing the data
+        column: Column name to remove outliers from
+        method: 'iqr' for Interquartile Range or 'zscore' for Z-score method
+        z_threshold: Z-score threshold for outlier detection (default: 3)
+        iqr_multiplier: IQR multiplier for outlier detection (default: 1.5)
+    
+    Returns:
+        DataFrame with outliers removed
+    """
+    if not ENABLE_OUTLIER_REMOVAL:
+        return df
+    
+    if column not in df.columns:
+        return df
+    
+    # Special handling: Skip outlier removal for Duke-Kestrel-01 entirely
+    # This station has different measurement ranges than the other WU stations
+    if 'stationID' in df.columns:
+        kestrel_only = (df['stationID'] == 'KNCDURHA590').all()
+        if kestrel_only:
+            print(f"   📊 Skipping outlier removal for Duke-Kestrel-01 {column} (different station type)")
+            return df
+        
+        # If mixed data, do per-station outlier removal
+        if 'KNCDURHA590' in df['stationID'].values:
+            return remove_outliers_per_station(df, column, method, z_threshold, iqr_multiplier)
+    elif 'Station Name' in df.columns:
+        kestrel_only = (df['Station Name'] == 'Duke-Kestrel-01').all()
+        if kestrel_only:
+            print(f"   📊 Skipping outlier removal for Duke-Kestrel-01 {column} (different station type)")
+            return df
+        
+        # If mixed data, do per-station outlier removal
+        if 'Duke-Kestrel-01' in df['Station Name'].values:
+            return remove_outliers_per_station(df, column, method, z_threshold, iqr_multiplier)
+    
+    # Convert to numeric, replacing non-numeric values with NaN
+    numeric_data = pd.to_numeric(df[column], errors='coerce')
+    
+    if method == 'iqr':
+        # Interquartile Range method
+        Q1 = numeric_data.quantile(0.25)
+        Q3 = numeric_data.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - iqr_multiplier * IQR
+        upper_bound = Q3 + iqr_multiplier * IQR
+        outlier_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+    elif method == 'zscore':
+        # Z-score method
+        mean = numeric_data.mean()
+        std = numeric_data.std()
+        z_scores = abs((numeric_data - mean) / std)
+        outlier_mask = z_scores <= z_threshold
+    else:
+        # Invalid method, return original DataFrame
+        return df
+    
+    # Filter out outliers
+    filtered_df = df[outlier_mask.fillna(True)]  # Keep NaN values
+    
+    if len(filtered_df) != len(df):
+        removed_count = len(df) - len(filtered_df)
+        print(f"   📊 Outlier removal: Removed {removed_count} outliers from {column} using {method} method")
+    
+    return filtered_df
+
+def remove_outliers_per_station(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
+    """
+    Remove outliers separately for each station to avoid cross-station contamination.
+    
+    Args:
+        df: DataFrame containing the data
+        column: Column name to remove outliers from
+        method: 'iqr' for Interquartile Range or 'zscore' for Z-score method
+        z_threshold: Z-score threshold for outlier detection (default: 3)
+        iqr_multiplier: IQR multiplier for outlier detection (default: 1.5)
+    
+    Returns:
+        DataFrame with outliers removed per station
+    """
+    station_col = 'stationID' if 'stationID' in df.columns else 'Station Name'
+    filtered_dfs = []
+    
+    for station, station_df in df.groupby(station_col):
+        # Skip Duke-Kestrel-01 entirely for outlier removal
+        if station in ['KNCDURHA590', 'Duke-Kestrel-01']:
+            print(f"   📊 Skipping outlier removal for {station} {column} (different station type)")
+            filtered_dfs.append(station_df)
+            continue
+        
+        # Apply outlier removal to this station's data only
+        station_df_copy = station_df.copy()
+        numeric_data = pd.to_numeric(station_df_copy[column], errors='coerce')
+        
+        if len(numeric_data.dropna()) < 5:  # Need at least 5 data points for outlier detection
+            filtered_dfs.append(station_df_copy)
+            continue
+        
+        if method == 'iqr':
+            # Interquartile Range method
+            Q1 = numeric_data.quantile(0.25)
+            Q3 = numeric_data.quantile(0.75)
+            IQR = Q3 - Q1
+            if IQR == 0:  # All values are the same
+                filtered_dfs.append(station_df_copy)
+                continue
+            lower_bound = Q1 - iqr_multiplier * IQR
+            upper_bound = Q3 + iqr_multiplier * IQR
+            outlier_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+        elif method == 'zscore':
+            # Z-score method
+            mean = numeric_data.mean()
+            std = numeric_data.std()
+            if std == 0:  # All values are the same
+                filtered_dfs.append(station_df_copy)
+                continue
+            z_scores = abs((numeric_data - mean) / std)
+            outlier_mask = z_scores <= z_threshold
+        else:
+            # Invalid method, keep original data
+            filtered_dfs.append(station_df_copy)
+            continue
+        
+        # Filter out outliers for this station
+        filtered_station_df = station_df_copy[outlier_mask.fillna(True)]
+        
+        if len(filtered_station_df) != len(station_df_copy):
+            removed_count = len(station_df_copy) - len(filtered_station_df)
+            print(f"   📊 Outlier removal for {station}: Removed {removed_count} outliers from {column} using {method} method")
+        
+        filtered_dfs.append(filtered_station_df)
+    
+    return pd.concat(filtered_dfs, ignore_index=True)
+
+def get_chart_dimensions():
+    """
+    Get chart dimensions for Google Sheets charts.
+    
+    Returns:
+        dict: Chart dimensions configuration
+    """
+    return {
+        'width': CHART_WIDTH,
+        'height': CHART_HEIGHT
+    }
+
 if __name__ == "__main__":
     (
         fetch_wu, fetch_tsi, start_date, end_date, share_email,
@@ -990,6 +1153,7 @@ if __name__ == "__main__":
         summary_data = []
         daily_summary = {}
         seen = set()
+        raw_data_for_daily = []  # Store raw data with datetime objects for daily summaries
         
         print(f"📊 Processing {len(prod_tsi_df)} production TSI records for Google Sheets...")
         
@@ -1016,8 +1180,18 @@ if __name__ == "__main__":
             if (name, hour) in seen:
                 continue
             seen.add((name, hour))
+            
+            # Store raw data with datetime for daily summaries
+            raw_data_for_daily.append({
+                'Device Name': name,
+                'timestamp': hour,
+                'PM 2.5': row.get('PM 2.5', ''),
+                'T (C)': row.get('T (C)', ''),
+                'RH (%)': row.get('RH (%)', ''),
+            })
+            
             values = [
-                hour.strftime('%Y-%m-%d %H:%M:%S'),
+                hour.strftime('%m-%d %H:%M'),
                 row.get('PM 2.5', ''),
                 row.get('T (C)', ''),
                 row.get('RH (%)', ''),
@@ -1044,10 +1218,18 @@ if __name__ == "__main__":
         for k in daily_summary:
             daily_summary[k] = sanitize_for_gs(daily_summary[k])
         combined_df = pd.DataFrame(combined_data, columns=["Device Name"] + col)
-        for name, group in combined_df.groupby('Device Name'):
+        
+        # Create daily summaries from raw data with datetime objects
+        raw_df = pd.DataFrame(raw_data_for_daily)
+        print(f"📊 Creating daily summaries from {len(raw_df)} raw records...")
+        
+        for name, group in raw_df.groupby('Device Name'):
             group = group.copy()
+            # Convert numeric columns
             for key in ['PM 2.5', 'T (C)', 'RH (%)']:
                 group[key] = pd.to_numeric(group[key], errors='coerce')
+            
+            # Create summary data for overview sheet
             summary_data.append([
                 name,
                 round(group['PM 2.5'].mean(), 2) if not pd.isna(group['PM 2.5'].mean()) else '',
@@ -1055,21 +1237,36 @@ if __name__ == "__main__":
                 round(group['T (C)'].min(), 2) if not pd.isna(group['T (C)'].min()) else '',
                 round(group['RH (%)'].mean(), 2) if not pd.isna(group['RH (%)'].mean()) else ''
             ])
-            group['timestamp'] = pd.to_datetime(group['timestamp'], errors='coerce')
-            # Change from weekly to daily aggregation for more accurate data
+            
+            # Create daily aggregations using datetime objects
             group['day'] = group['timestamp'].dt.date
+            
+            # Apply outlier removal to each metric if enabled
+            if ENABLE_OUTLIER_REMOVAL:
+                print(f"   📊 Applying outlier removal for device {name}")
+                group = remove_outliers(group, 'PM 2.5', method='iqr')
+                group = remove_outliers(group, 'T (C)', method='iqr')
+                group = remove_outliers(group, 'RH (%)', method='iqr')
+            
             daily = group.groupby('day').agg({
                 'PM 2.5': 'mean', 'T (C)': ['min', 'max'], 'RH (%)': 'mean'
             }).reset_index()
             daily.columns = ['Day', 'Avg PM2.5', 'Min Temp', 'Max Temp', 'Avg RH']
+            
+            print(f"📊 Device {name}: {len(daily)} daily records")
+            
             for _, drow in daily.iterrows():
                 daily_summary.setdefault(name, []).append([
-                    drow['Day'].strftime('%Y-%m-%d'),
+                    drow['Day'].strftime('%m-%d'),
                     round(drow['Avg PM2.5'], 2) if not pd.isna(drow['Avg PM2.5']) else '',
                     round(drow['Min Temp'], 1) if not pd.isna(drow['Min Temp']) else '',
                     round(drow['Max Temp'], 1) if not pd.isna(drow['Max Temp']) else '',
                     round(drow['Avg RH'], 2) if not pd.isna(drow['Avg RH']) else ''
                 ])
+        
+        print(f"📊 Daily summary created for {len(daily_summary)} devices:")
+        for device, data in daily_summary.items():
+            print(f"   📊 {device}: {len(data)} daily records")
         
         # Only update Google Sheets if spreadsheet was created successfully
         if spreadsheet is not None:
@@ -1167,6 +1364,15 @@ if __name__ == "__main__":
                     pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
                     pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
                     pivot_title = f"{col_name} Daily Data"
+                    
+                    print(f"📊 Creating {pivot_title} sheet with {len(pivot_rows_safe)} data rows and {len(devices)} devices")
+                    print(f"📊 Days available: {len(days)}, Sample days: {days[:3] if len(days) >= 3 else days}")
+                    
+                    # Skip if no data
+                    if not days or not devices or not pivot_rows_safe:
+                        print(f"⚠️ Skipping {pivot_title} - no data available")
+                        continue
+                    
                     try:
                         old = spreadsheet.worksheet(pivot_title)
                         spreadsheet.del_worksheet(old)
@@ -1178,7 +1384,7 @@ if __name__ == "__main__":
                     pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == pivot_title)
                     series = []
                     for i, device in enumerate(devices, start=1):
-                        series.append({
+                        series_config = {
                             "series": {"sourceRange": {"sources": [{
                                         "sheetId": pivot_id,
                                         "startRowIndex": 0,
@@ -1187,7 +1393,16 @@ if __name__ == "__main__":
                                         "endColumnIndex": i+1
                             }]}},
                             "targetAxis": "LEFT_AXIS"
-                        })
+                        }
+                        # Add disconnected points style if enabled
+                        if ENABLE_DISCONNECTED_POINTS:
+                            # For disconnected points, we use SCATTER chart type instead of line styles
+                            # This will be handled at the chart level, not series level
+                            series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
+                        else:
+                            # Default connected line chart
+                            series_config["lineStyle"] = {"type": "SOLID"}
+                        series.append(series_config)
                     domain = {"domain": {"sourceRange": {"sources": [{
                                 "sheetId": pivot_id,
                                 "startRowIndex": 1,
@@ -1220,7 +1435,9 @@ if __name__ == "__main__":
                                                     "sheetId": charts_id,
                                                     "rowIndex": chart_row_offset,
                                                     "columnIndex": 0
-                                                }
+                                                },
+                                                "widthPixels": CHART_WIDTH,
+                                                "heightPixels": CHART_HEIGHT
                                             }
                                         }
                                     }
@@ -1251,6 +1468,9 @@ if __name__ == "__main__":
                     # Remove any rows where obsTimeUtc couldn't be parsed
                     prod_wu_df = prod_wu_df.dropna(subset=['obsTimeUtc'])
                     
+                    # Keep hourly data but create day-only labels for cleaner chart display
+                    prod_wu_df['date_display'] = prod_wu_df['obsTimeUtc'].dt.strftime('%m-%d')
+                    
                     station_id_to_name = {
                         "KNCDURHA548": "Duke-MS-01",
                         "KNCDURHA549": "Duke-MS-02",
@@ -1263,39 +1483,66 @@ if __name__ == "__main__":
                     prod_wu_df['Station Name'] = prod_wu_df['stationID'].map(station_id_to_name).fillna(prod_wu_df['stationID'])
                     station_names = sorted(prod_wu_df['Station Name'].unique())
                     
-                    # Create a consistent time string column for lookup
-                    prod_wu_df['obsTimeUtc_str'] = prod_wu_df['obsTimeUtc'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                    all_times = sorted(prod_wu_df['obsTimeUtc'].unique())
+                    print(f"📊 WU Station Names found: {station_names}")
+                    for station in station_names:
+                        count = len(prod_wu_df[prod_wu_df['Station Name'] == station])
+                        print(f"   📈 {station}: {count} records")
                     
                     # Ensure all metric columns are numeric for pivot_table, skip if column missing
                     for metric, _ in wu_metrics:
                         if metric in prod_wu_df.columns:
                             prod_wu_df[metric] = pd.to_numeric(prod_wu_df[metric], errors='coerce')
+                    
+                    # Apply outlier removal to WU metrics if enabled
+                    if ENABLE_OUTLIER_REMOVAL:
+                        print(f"📊 Applying outlier removal to WU data...")
+                        for metric, _ in wu_metrics:
+                            if metric in prod_wu_df.columns:
+                                prod_wu_df = remove_outliers(prod_wu_df, metric, method='iqr')
+                    
+                    # Get unique timestamps for the time axis (keep hourly frequency)
+                    all_times = sorted(prod_wu_df['obsTimeUtc'].unique())
+                    
                     for metric, y_label in wu_metrics:
                         # Skip if metric column doesn't exist
                         if metric not in prod_wu_df.columns:
                             continue
                             
-                        # Use pivot_table for cleaner data reshaping (PRODUCTION data only)
+                        # Create pivot table with timestamps as index and stations as columns (hourly data)
                         pivot = prod_wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
                         
-                        # Extract year for chart title and format timestamp without year for better readability
+                        # Extract year for chart title and format timestamps for display (day-month only)
                         year = pivot['obsTimeUtc'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
-                        pivot['obsTimeUtc'] = pivot['obsTimeUtc'].dt.strftime('%m-%d %H:%M')
+                        pivot['time_display'] = pivot['obsTimeUtc'].dt.strftime('%m-%d')
                         
                         # Skip if there's no data (all NaN values except timestamp column)
-                        data_columns = [col for col in pivot.columns if col != 'obsTimeUtc']
+                        data_columns = [col for col in pivot.columns if col not in ['obsTimeUtc', 'time_display']]
                         if not data_columns or pivot[data_columns].isna().all().all():
                             continue
+                        
+                        # Filter out columns (stations) that have ALL NaN values for this metric
+                        # But be more lenient - keep stations with at least some valid data
+                        stations_with_data = []
+                        for col in data_columns:
+                            non_null_count = pivot[col].count()  # Count non-NaN values
+                            total_count = len(pivot)
+                            if non_null_count > 0:  # Keep stations with any valid data
+                                stations_with_data.append(col)
+                                # Extra debug for Duke-Kestrel-01
+                                if col == 'Duke-Kestrel-01':
+                                    print(f"   📊 Duke-Kestrel-01 {metric}: {non_null_count}/{total_count} non-null values in pivot table")
+                        
+                        # Use stations with data instead of all data columns
+                        actual_station_names = stations_with_data
                         
                         # Convert to safe format for Google Sheets
                         def safe_gs_value(x):
                             import pandas as pd
                             import numpy as np
                             if isinstance(x, (pd.Timestamp,)):
-                                return x.strftime('%Y-%m-%d %H:%M:%S')
+                                return x.strftime('%m-%d')
                             if isinstance(x, float):
                                 if pd.isna(x) or x == float('inf') or x == float('-inf'):
                                     return ''
@@ -1317,17 +1564,41 @@ if __name__ == "__main__":
                             spreadsheet.del_worksheet(old)
                         except:
                             pass
-                        ws = spreadsheet.add_worksheet(title=title, rows=len(pivot)+1, cols=len(station_names)+1)
-                        # Convert pivot to safe format
+                        
+                        # Get actual station columns from pivot table (some stations might not have data for this metric)
+                        # actual_station_names = [col for col in pivot.columns if col not in ['obsTimeUtc', 'time_display']]
+                        # Use the filtered list from above that excludes all-NaN columns
+                        
+                        print(f"📊 WU {metric} chart - Stations with data: {actual_station_names}")
+                        if 'Duke-Kestrel-01' not in actual_station_names:
+                            print(f"⚠️ Duke-Kestrel-01 missing from {metric} data!")
+                            # Check if Duke-Kestrel-01 has any non-null values for this metric
+                            kestrel_data = prod_wu_df[prod_wu_df['Station Name'] == 'Duke-Kestrel-01'][metric].dropna()
+                            print(f"   📊 Duke-Kestrel-01 {metric} records: {len(kestrel_data)} non-null values in source data")
+                        else:
+                            print(f"✅ Duke-Kestrel-01 successfully included in {metric} chart!")
+                        
+                        ws = spreadsheet.add_worksheet(title=title, rows=len(pivot)+1, cols=len(actual_station_names)+1)
+                        # Convert pivot to safe format, use time_display for x-axis labels
                         pivot_safe = pivot.fillna('')
+                        pivot_safe['time_display'] = pivot_safe['time_display'].apply(safe_gs_value)
                         for col in pivot_safe.columns:
-                            if col != 'obsTimeUtc':
+                            if col not in ['obsTimeUtc', 'time_display']:
                                 pivot_safe[col] = pivot_safe[col].apply(safe_gs_value)
-                        ws.update([['Time'] + station_names] + pivot_safe.values.tolist())
+                        
+                        # Create sheet data with day-month labels but keep all hourly data points
+                        sheet_data = []
+                        for _, row in pivot_safe.iterrows():
+                            sheet_row = [row['time_display']] + [row[station] for station in actual_station_names]
+                            sheet_data.append(sheet_row)
+                        
+                        ws.update([['Date'] + actual_station_names] + sheet_data)
                         meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
                         pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
-                        series = [
-                            {
+                        # Build series with optional disconnected points styling
+                        series = []
+                        for i, _ in enumerate(actual_station_names, start=1):
+                            series_config = {
                                 'series': {
                                     'sourceRange': {
                                         'sources': [{
@@ -1341,8 +1612,14 @@ if __name__ == "__main__":
                                 },
                                 'targetAxis': 'LEFT_AXIS'
                             }
-                            for i, _ in enumerate(station_names, start=1)
-                        ]
+                            # Add disconnected points style if enabled
+                            if ENABLE_DISCONNECTED_POINTS:
+                                # For disconnected points, use SCATTER chart type instead of line style
+                                series_config['pointStyle'] = {'shape': 'CIRCLE', 'size': 5}
+                            else:
+                                # Default connected line chart
+                                series_config['lineStyle'] = {'type': 'SOLID'}
+                            series.append(series_config)
                         domain = {
                             'domain': {
                                 'sourceRange': {
@@ -1366,7 +1643,7 @@ if __name__ == "__main__":
                                                 'chartType': 'LINE',
                                                 'legendPosition': 'BOTTOM_LEGEND',
                                                 'axis': [
-                                                    {'position': 'BOTTOM_AXIS', 'title': 'Date & Time'},
+                                                    {'position': 'BOTTOM_AXIS', 'title': 'Date'},
                                                     {'position': 'LEFT_AXIS', 'title': y_label}
                                                 ],
                                                 'domains': [domain],
@@ -1380,7 +1657,9 @@ if __name__ == "__main__":
                                                     'sheetId': charts_id,
                                                     'rowIndex': chart_row_offset,
                                                     'columnIndex': 0
-                                                }
+                                                },
+                                                'widthPixels': CHART_WIDTH,
+                                                'heightPixels': CHART_HEIGHT
                                             }
                                         }
                                     }
@@ -1389,9 +1668,9 @@ if __name__ == "__main__":
                         }
                         try:
                             result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                            print(f"✅ Created chart for {col_name} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
+                            print(f"✅ Created WU {metric} chart (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
                         except Exception as chart_error:
-                            print(f"❌ Failed to create chart for {col_name}: {chart_error}")
+                            print(f"❌ Failed to create WU {metric} chart: {chart_error}")
                         chart_row_offset += 20  # Use a fixed offset to prevent overlap
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
@@ -1406,6 +1685,14 @@ if __name__ == "__main__":
                     # Get all unique device names and all unique timestamps from PRODUCTION data
                     prod_tsi_df['timestamp'] = pd.to_datetime(prod_tsi_df['timestamp'], errors='coerce')
                     device_names = sorted(prod_tsi_df['Device Name'].unique())
+                    
+                    # Apply outlier removal to TSI time-series data if enabled
+                    if ENABLE_OUTLIER_REMOVAL:
+                        print(f"📊 Applying outlier removal to TSI time-series data...")
+                        for metric, _ in tsi_metrics:
+                            if metric in prod_tsi_df.columns:
+                                prod_tsi_df = remove_outliers(prod_tsi_df, metric, method='iqr')
+                    
                     all_times = sorted(prod_tsi_df['timestamp'].dropna().unique())
                     for metric, y_label in tsi_metrics:
                         # Pivot: rows = timestamp, columns = device, values = metric (PRODUCTION data only)
@@ -1413,13 +1700,25 @@ if __name__ == "__main__":
                         pivot = pivot.reindex(all_times)  # Ensure all times are present
                         pivot.reset_index(inplace=True)
                         
-                        # Extract year for chart title and format timestamp without year for better readability
+                        # Extract year for chart title and format timestamp without hours/minutes for cleaner display
                         year = pivot['timestamp'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
-                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%m-%d %H:%M')
+                        pivot['timestamp'] = pivot['timestamp'].dt.strftime('%m-%d')
                         
                         # Skip if there's no data (all NaN values except timestamp column)
                         data_columns = [col for col in pivot.columns if col != 'timestamp']
                         if not data_columns or pivot[data_columns].isna().all().all():
+                            continue
+                        
+                        # Filter device names to only include those with data for this metric
+                        devices_with_data = []
+                        for device in device_names:
+                            if device in pivot.columns and pivot[device].count() > 0:
+                                devices_with_data.append(device)
+                        
+                        print(f"📊 TSI {metric} chart - Devices with data: {devices_with_data}")
+                        
+                        if not devices_with_data:
+                            print(f"⚠️ No devices have data for {metric}, skipping chart creation")
                             continue
                         sheet_title = f"TSI {metric} Time Series"
                         try:
@@ -1427,14 +1726,29 @@ if __name__ == "__main__":
                             spreadsheet.del_worksheet(old)
                         except:
                             pass
-                        ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(device_names)+1)
-                        ws.update([['Time'] + device_names] + pivot.fillna('').values.tolist())
+                        ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(devices_with_data)+1)
+                        
+                        # Create sheet data with only devices that have data
+                        sheet_data = []
+                        for _, row in pivot.iterrows():
+                            sheet_row = [row['timestamp']]
+                            for device in devices_with_data:
+                                value = row[device] if device in row else ''
+                                # Convert NaN to empty string for Google Sheets
+                                if str(value).lower() in ['nan', 'none'] or value is None:
+                                    value = ''
+                                sheet_row.append(value)
+                            sheet_data.append(sheet_row)
+                        
+                        ws.update([['Time'] + devices_with_data] + sheet_data)
                         # Add chart for this metric
                         meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
                         sheet_id_pivot = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == sheet_title)
+                        
+                        # Build series with optional disconnected points styling
                         series = []
-                        for i, device in enumerate(device_names, start=1):
-                            series.append({
+                        for i, device in enumerate(devices_with_data, start=1):
+                            series_config = {
                                 "series": {"sourceRange": {"sources": [{
                                     "sheetId": sheet_id_pivot,
                                     "startRowIndex": 0,
@@ -1443,7 +1757,15 @@ if __name__ == "__main__":
                                     "endColumnIndex": i+1
                                 }]}},
                                 "targetAxis": "LEFT_AXIS"
-                            })
+                            }
+                            # Add disconnected points style if enabled
+                            if ENABLE_DISCONNECTED_POINTS:
+                                # For disconnected points, use point styling with no lines
+                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
+                            else:
+                                # Default connected line chart
+                                series_config["lineStyle"] = {"type": "SOLID"}
+                            series.append(series_config)
                         domain = {"domain": {"sourceRange": {"sources": [{
                             "sheetId": sheet_id_pivot,
                             "startRowIndex": 1,
@@ -1457,7 +1779,7 @@ if __name__ == "__main__":
                                     "addChart": {
                                         "chart": {
                                             "spec": {
-                                                "title": f"TSI {metric} Over Time - {year} (By Device)",
+                                                "title": f"TSI {metric} Over Time - {year}",
                                                 "basicChart": {
                                                     "chartType": "LINE",
                                                     "legendPosition": "BOTTOM_LEGEND",
@@ -1476,7 +1798,9 @@ if __name__ == "__main__":
                                                         "sheetId": charts_id,
                                                         "rowIndex": chart_row_offset,
                                                         "columnIndex": 0
-                                                    }
+                                                    },
+                                                    "widthPixels": CHART_WIDTH,
+                                                    "heightPixels": CHART_HEIGHT
                                                 }
                                             }
                                         }
