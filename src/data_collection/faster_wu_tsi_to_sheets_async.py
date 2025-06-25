@@ -800,11 +800,73 @@ ENABLE_DISCONNECTED_POINTS = True  # Set to True to show data points without con
 
 # TSI-specific chart configuration for better spacing
 TSI_DATA_SAMPLING_MINUTES = 15  # Show every 15 minutes for detailed trends (15=every 15min, 30=every 30min, 60=every hour, 120=every 2 hours)
-TSI_CHART_MAX_DAYS = 0  # Limit chart data to recent days for better visualization (set to 0 for all data)
+TSI_CHART_MAX_DAYS = 7  # Limit chart data to recent days for better visualization (set to 0 for all data)
+
+def apply_hard_caps_only(df, column):
+    """
+    Apply hard caps to remove extreme outliers regardless of station type.
+    These are absolute physical limits that no sensor should exceed.
+    """
+    if column not in df.columns:
+        return df
+    
+    # Define strict hard caps for extreme outliers
+    hard_caps = {
+        'PM 2.5': (0, 30),      # PM2.5 hard cap at 30 µg/m³ (more aggressive to catch 59)
+        'PM 10': (0, 60),       # PM10 hard cap
+        'tempAvg': (-30, 55),   # Temperature hard caps
+        'T (C)': (-30, 55),     # Temperature hard caps
+        'humidityAvg': (0, 100), # Humidity hard cap at 100%
+        'RH (%)': (0, 100),     # RH hard cap at 100%
+        'windspeedAvg': (0, 35), # Wind speed hard cap at 35 km/h (very generous to preserve Duke-Kestrel-01)
+        'precipTotal': (0, 75),  # Precipitation hard cap
+        'solarRadiationHigh': (0, 1200), # Solar radiation hard cap
+        'dewptAvg': (-30, 40),   # Dew point hard caps
+        'heatindexAvg': (-25, 65) # Heat index hard caps
+    }
+    
+    # Find matching hard cap
+    lower_cap, upper_cap = None, None
+    matched_key = None
+    for key, (low, high) in hard_caps.items():
+        if key in column:
+            lower_cap, upper_cap = low, high
+            matched_key = key
+            break
+    
+    if lower_cap is not None and upper_cap is not None:
+        numeric_data = pd.to_numeric(df[column], errors='coerce')
+        before_count = len(df)
+        
+        # Check for extreme values before applying caps
+        extreme_values = numeric_data[(numeric_data < lower_cap) | (numeric_data > upper_cap)].dropna()
+        if len(extreme_values) > 0:
+            print(f"   🚨 EXTREME VALUES DETECTED in {column} (matched key: {matched_key}):")
+            print(f"      Bounds: [{lower_cap}, {upper_cap}]")
+            print(f"      Extreme values: {extreme_values.unique()[:10]}")  # Show up to 10 unique extreme values
+        
+        # Apply hard caps
+        hard_cap_mask = (numeric_data >= lower_cap) & (numeric_data <= upper_cap)
+        filtered_df = df[hard_cap_mask.fillna(True)]
+        
+        if len(filtered_df) != before_count:
+            removed_count = before_count - len(filtered_df)
+            outliers = df[~hard_cap_mask.fillna(True)]
+            outlier_values = outliers[column].dropna().unique()[:5]
+            print(f"   🚫 Hard caps for {column}: [{lower_cap}, {upper_cap}] - Removed {removed_count} extreme outliers")
+            print(f"   🚫 Extreme outlier values removed: {outlier_values}")
+        else:
+            print(f"   ✅ Hard caps for {column}: [{lower_cap}, {upper_cap}] - No extreme outliers found")
+        
+        return filtered_df
+    else:
+        print(f"   ⚠️ No hard caps defined for column: {column}")
+    
+    return df
 
 def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
     """
-    Remove outliers from a DataFrame column using IQR or Z-score method.
+    Remove outliers from a DataFrame column using hard caps first, then statistical methods.
     
     Args:
         df: DataFrame containing the data
@@ -822,12 +884,14 @@ def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5)
     if column not in df.columns:
         return df
     
-    # Special handling: Skip outlier removal for Duke-Kestrel-01 entirely
-    # This station has different measurement ranges than the other WU stations
+    # ALWAYS apply hard caps first, regardless of station type
+    df = apply_hard_caps_only(df, column)
+    
+    # For Duke-Kestrel-01, only apply hard caps, skip statistical outlier removal
     if 'stationID' in df.columns:
         kestrel_only = (df['stationID'] == 'KNCDURHA590').all()
         if kestrel_only:
-            print(f"   📊 Skipping outlier removal for Duke-Kestrel-01 {column} (different station type)")
+            print(f"   📊 Applied hard caps only to Duke-Kestrel-01 {column} (skipping statistical outlier removal)")
             return df
         
         # If mixed data, do per-station outlier removal
@@ -836,7 +900,7 @@ def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5)
     elif 'Station Name' in df.columns:
         kestrel_only = (df['Station Name'] == 'Duke-Kestrel-01').all()
         if kestrel_only:
-            print(f"   📊 Skipping outlier removal for Duke-Kestrel-01 {column} (different station type)")
+            print(f"   📊 Applied hard caps only to Duke-Kestrel-01 {column} (skipping statistical outlier removal)")
             return df
         
         # If mixed data, do per-station outlier removal
@@ -846,36 +910,97 @@ def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5)
     # Convert to numeric, replacing non-numeric values with NaN
     numeric_data = pd.to_numeric(df[column], errors='coerce')
     
+    # Apply logical bounds first to catch obvious outliers
+    outlier_mask = apply_logical_bounds(numeric_data, column)
+    
     if method == 'iqr':
-        # Interquartile Range method
+        # Interquartile Range method with tighter bounds for better outlier detection
         Q1 = numeric_data.quantile(0.25)
         Q3 = numeric_data.quantile(0.75)
         IQR = Q3 - Q1
+        # Use more aggressive outlier detection for PM2.5 and wind speed
+        if 'PM' in column or 'windspeed' in column:
+            iqr_multiplier = 1.2  # Tighter bounds for these metrics
         lower_bound = Q1 - iqr_multiplier * IQR
         upper_bound = Q3 + iqr_multiplier * IQR
-        outlier_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+        statistical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+        outlier_mask = outlier_mask & statistical_mask
     elif method == 'zscore':
-        # Z-score method
+        # Z-score method with tighter threshold for PM and wind
+        if 'PM' in column or 'windspeed' in column:
+            z_threshold = 2.5  # Tighter threshold for these metrics
         mean = numeric_data.mean()
         std = numeric_data.std()
         z_scores = abs((numeric_data - mean) / std)
-        outlier_mask = z_scores <= z_threshold
+        statistical_mask = z_scores <= z_threshold
+        outlier_mask = outlier_mask & statistical_mask
     else:
-        # Invalid method, return original DataFrame
-        return df
+        # Invalid method, just use logical bounds
+        pass
     
     # Filter out outliers
     filtered_df = df[outlier_mask.fillna(True)]  # Keep NaN values
     
     if len(filtered_df) != len(df):
         removed_count = len(df) - len(filtered_df)
-        print(f"   📊 Outlier removal: Removed {removed_count} outliers from {column} using {method} method")
+        print(f"   📊 Outlier removal: Removed {removed_count} outliers from {column} using {method} method with logical bounds")
+        # Show some example outliers that were removed
+        outliers = df[~outlier_mask.fillna(True)]
+        if len(outliers) > 0:
+            outlier_values = outliers[column].dropna().unique()[:5]  # Show up to 5 example values
+            print(f"   📊 Example outlier values removed: {outlier_values}")
     
     return filtered_df
+
+def apply_logical_bounds(numeric_data, column):
+    """
+    Apply logical bounds to catch obvious outliers based on the type of measurement.
+    These are more lenient than hard caps but still catch unreasonable values.
+    
+    Args:
+        numeric_data: Pandas Series with numeric data
+        column: Column name to determine appropriate bounds
+    
+    Returns:
+        Boolean mask where True means the value is within logical bounds
+    """
+    # Define logical bounds for different types of measurements (more lenient than hard caps)
+    bounds = {
+        'PM 2.5': (0, 25),      # PM2.5 logical bound (even stricter to catch 59)
+        'PM 10': (0, 50),       # PM10 logical bound
+        'tempAvg': (-25, 50),   # Temperature in Celsius (reasonable for Durham, NC)
+        'T (C)': (-25, 50),     # Temperature in Celsius
+        'humidityAvg': (0, 100), # Humidity capped at 100% (reverted per user request)
+        'RH (%)': (0, 100),     # Relative humidity capped at 100%
+        'windspeedAvg': (0, 30), # Wind speed in km/h - updated to be more lenient for Duke-Kestrel-01
+        'precipTotal': (0, 60),  # Precipitation in mm - 60mm in an hour would be extreme
+        'solarRadiationHigh': (0, 1400), # Solar radiation W/m²
+        'dewptAvg': (-25, 35),   # Dew point in Celsius
+        'heatindexAvg': (-20, 60) # Heat index in Celsius
+    }
+    
+    # Find matching bound
+    lower_bound, upper_bound = None, None
+    for key, (low, high) in bounds.items():
+        if key in column:
+            lower_bound, upper_bound = low, high
+            break
+    
+    if lower_bound is not None and upper_bound is not None:
+        logical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+        # Count how many values are outside logical bounds
+        outside_bounds = (~logical_mask).sum()
+        if outside_bounds > 0:
+            print(f"   📊 Logical bounds for {column}: [{lower_bound}, {upper_bound}] - {outside_bounds} values outside bounds")
+        return logical_mask
+    else:
+        # No specific bounds defined, allow all values
+        return pd.Series([True] * len(numeric_data), index=numeric_data.index)
 
 def remove_outliers_per_station(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
     """
     Remove outliers separately for each station to avoid cross-station contamination.
+    Applies hard caps first, then statistical outlier removal.
     
     Args:
         df: DataFrame containing the data
@@ -887,17 +1012,20 @@ def remove_outliers_per_station(df, column, method='iqr', z_threshold=3, iqr_mul
     Returns:
         DataFrame with outliers removed per station
     """
+    # Apply hard caps to all stations first
+    df = apply_hard_caps_only(df, column)
+    
     station_col = 'stationID' if 'stationID' in df.columns else 'Station Name'
     filtered_dfs = []
     
     for station, station_df in df.groupby(station_col):
-        # Skip Duke-Kestrel-01 entirely for outlier removal
+        # For Duke-Kestrel-01, only apply hard caps (already done above), skip statistical outlier removal
         if station in ['KNCDURHA590', 'Duke-Kestrel-01']:
-            print(f"   📊 Skipping outlier removal for {station} {column} (different station type)")
+            print(f"   📊 Applied hard caps only to {station} {column} (skipping statistical outlier removal)")
             filtered_dfs.append(station_df)
             continue
         
-        # Apply outlier removal to this station's data only
+        # Apply statistical outlier removal to other stations
         station_df_copy = station_df.copy()
         numeric_data = pd.to_numeric(station_df_copy[column], errors='coerce')
         
@@ -905,37 +1033,51 @@ def remove_outliers_per_station(df, column, method='iqr', z_threshold=3, iqr_mul
             filtered_dfs.append(station_df_copy)
             continue
         
+        # Apply logical bounds first
+        outlier_mask = apply_logical_bounds(numeric_data, column)
+        
         if method == 'iqr':
-            # Interquartile Range method
+            # Interquartile Range method with adjusted multipliers
             Q1 = numeric_data.quantile(0.25)
             Q3 = numeric_data.quantile(0.75)
             IQR = Q3 - Q1
             if IQR == 0:  # All values are the same
                 filtered_dfs.append(station_df_copy)
                 continue
+            # Use more aggressive outlier detection for PM2.5 and wind speed
+            if 'PM' in column or 'windspeed' in column:
+                iqr_multiplier = 1.0  # Even tighter bounds for these metrics
             lower_bound = Q1 - iqr_multiplier * IQR
             upper_bound = Q3 + iqr_multiplier * IQR
-            outlier_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+            statistical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
+            outlier_mask = outlier_mask & statistical_mask
         elif method == 'zscore':
-            # Z-score method
+            # Z-score method with adjusted thresholds
+            if 'PM' in column or 'windspeed' in column:
+                z_threshold = 2.0  # Even tighter threshold for these metrics
             mean = numeric_data.mean()
             std = numeric_data.std()
             if std == 0:  # All values are the same
                 filtered_dfs.append(station_df_copy)
                 continue
             z_scores = abs((numeric_data - mean) / std)
-            outlier_mask = z_scores <= z_threshold
+            statistical_mask = z_scores <= z_threshold
+            outlier_mask = outlier_mask & statistical_mask
         else:
-            # Invalid method, keep original data
-            filtered_dfs.append(station_df_copy)
-            continue
+            # Invalid method, just use logical bounds
+            pass
         
         # Filter out outliers for this station
         filtered_station_df = station_df_copy[outlier_mask.fillna(True)]
         
         if len(filtered_station_df) != len(station_df_copy):
             removed_count = len(station_df_copy) - len(filtered_station_df)
-            print(f"   📊 Outlier removal for {station}: Removed {removed_count} outliers from {column} using {method} method")
+            print(f"   📊 Outlier removal for {station}: Removed {removed_count} outliers from {column} using {method} method with logical bounds")
+            # Show some example outliers that were removed for this station
+            outliers = station_df_copy[~outlier_mask.fillna(True)]
+            if len(outliers) > 0:
+                outlier_values = outliers[column].dropna().unique()[:3]  # Show up to 3 example values
+                print(f"   📊 Example outlier values removed from {station}: {outlier_values}")
         
         filtered_dfs.append(filtered_station_df)
     
@@ -952,6 +1094,241 @@ def get_chart_dimensions():
         'width': CHART_WIDTH,
         'height': CHART_HEIGHT
     }
+
+def generate_data_quality_report(tsi_df=None, wu_df=None, start_date=None, end_date=None):
+    """
+    Generate a comprehensive data quality report including outliers, missing data, and sensor anomalies.
+    
+    Args:
+        tsi_df: TSI DataFrame
+        wu_df: WU DataFrame  
+        start_date: Start date string
+        end_date: End date string
+    
+    Returns:
+        dict: Data quality report
+    """
+    report = {
+        'summary': {
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'date_range': f"{start_date} to {end_date}" if start_date and end_date else "Unknown",
+            'total_issues': 0
+        },
+        'tsi_quality': {},
+        'wu_quality': {},
+        'recommendations': []
+    }
+    
+    # TSI Data Quality Analysis
+    if tsi_df is not None and not tsi_df.empty:
+        print("📊 Analyzing TSI data quality...")
+        tsi_report = {
+            'total_records': len(tsi_df),
+            'devices': list(tsi_df['Device Name'].unique()) if 'Device Name' in tsi_df.columns else [],
+            'outliers_removed': {},
+            'missing_data': {},
+            'sensor_anomalies': []
+        }
+        
+        # Check for outliers in key metrics
+        for metric in ['PM 2.5', 'T (C)', 'RH (%)']:
+            if metric in tsi_df.columns:
+                numeric_data = pd.to_numeric(tsi_df[metric], errors='coerce')
+                total_values = len(numeric_data.dropna())
+                
+                # Apply same hard caps as in processing
+                if metric == 'PM 2.5':
+                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 30)].dropna()
+                elif metric == 'T (C)':
+                    outliers = numeric_data[(numeric_data < -30) | (numeric_data > 55)].dropna()
+                elif metric == 'RH (%)':
+                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 100)].dropna()
+                else:
+                    continue
+                
+                outlier_count = len(outliers)
+                if outlier_count > 0:
+                    tsi_report['outliers_removed'][metric] = {
+                        'count': outlier_count,
+                        'percentage': round(outlier_count / total_values * 100, 2) if total_values > 0 else 0,
+                        'extreme_values': list(outliers.unique()[:10])  # Top 10 extreme values
+                    }
+                    report['summary']['total_issues'] += outlier_count
+                
+                # Check for missing data
+                missing_count = tsi_df[metric].isna().sum()
+                if missing_count > 0:
+                    tsi_report['missing_data'][metric] = {
+                        'count': missing_count,
+                        'percentage': round(missing_count / len(tsi_df) * 100, 2)
+                    }
+        
+        # Check for sensor anomalies (devices with suspicious patterns)
+        for device in tsi_report['devices']:
+            device_data = tsi_df[tsi_df['Device Name'] == device]
+            
+            # Check for stuck sensors (all values the same)
+            for metric in ['PM 2.5', 'T (C)', 'RH (%)']:
+                if metric in device_data.columns:
+                    unique_values = device_data[metric].dropna().nunique()
+                    total_values = device_data[metric].dropna().count()
+                    if total_values > 10 and unique_values == 1:
+                        tsi_report['sensor_anomalies'].append({
+                            'device': device,
+                            'metric': metric,
+                            'issue': 'stuck_sensor',
+                            'description': f'All {total_values} values are identical'
+                        })
+                        report['summary']['total_issues'] += 1
+        
+        report['tsi_quality'] = tsi_report
+    
+    # WU Data Quality Analysis
+    if wu_df is not None and not wu_df.empty:
+        print("📊 Analyzing WU data quality...")
+        wu_report = {
+            'total_records': len(wu_df),
+            'stations': list(wu_df['stationID'].unique()) if 'stationID' in wu_df.columns else [],
+            'outliers_removed': {},
+            'missing_data': {},
+            'sensor_anomalies': []
+        }
+        
+        # Check for outliers in key metrics
+        for metric in ['tempAvg', 'humidityAvg', 'windspeedAvg']:
+            if metric in wu_df.columns:
+                numeric_data = pd.to_numeric(wu_df[metric], errors='coerce')
+                total_values = len(numeric_data.dropna())
+                
+                # Apply same hard caps as in processing
+                if metric == 'tempAvg':
+                    outliers = numeric_data[(numeric_data < -30) | (numeric_data > 55)].dropna()
+                elif metric == 'humidityAvg':
+                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 100)].dropna()
+                elif metric == 'windspeedAvg':
+                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 15)].dropna()
+                else:
+                    continue
+                
+                outlier_count = len(outliers)
+                if outlier_count > 0:
+                    wu_report['outliers_removed'][metric] = {
+                        'count': outlier_count,
+                        'percentage': round(outlier_count / total_values * 100, 2) if total_values > 0 else 0,
+                        'extreme_values': list(outliers.unique()[:10])  # Top 10 extreme values
+                    }
+                    report['summary']['total_issues'] += outlier_count
+                
+                # Check for missing data
+                missing_count = wu_df[metric].isna().sum()
+                if missing_count > 0:
+                    wu_report['missing_data'][metric] = {
+                        'count': missing_count,
+                        'percentage': round(missing_count / len(wu_df) * 100, 2)
+                    }
+        
+        # Check for sensor anomalies (stations with suspicious patterns)  
+        for station in wu_report['stations']:
+            station_data = wu_df[wu_df['stationID'] == station]
+            
+            # Check for stuck sensors
+            for metric in ['tempAvg', 'humidityAvg', 'windspeedAvg']:
+                if metric in station_data.columns:
+                    unique_values = station_data[metric].dropna().nunique()
+                    total_values = station_data[metric].dropna().count()
+                    if total_values > 10 and unique_values == 1:
+                        wu_report['sensor_anomalies'].append({
+                            'station': station,
+                            'metric': metric,
+                            'issue': 'stuck_sensor',
+                            'description': f'All {total_values} values are identical'
+                        })
+                        report['summary']['total_issues'] += 1
+        
+        report['wu_quality'] = wu_report
+    
+    # Generate recommendations
+    total_issues = report['summary']['total_issues']
+    if total_issues == 0:
+        report['recommendations'].append("✅ No data quality issues detected!")
+    else:
+        if total_issues > 100:
+            report['recommendations'].append("⚠️ High number of data quality issues detected - consider reviewing sensor calibration")
+        
+        # Check for specific issues
+        tsi_outliers = sum(len(v['extreme_values']) for v in report.get('tsi_quality', {}).get('outliers_removed', {}).values())
+        wu_outliers = sum(len(v['extreme_values']) for v in report.get('wu_quality', {}).get('outliers_removed', {}).values())
+        
+        if tsi_outliers > 0:
+            report['recommendations'].append(f"🔧 TSI sensors had {tsi_outliers} extreme outlier types - check sensor placement and calibration")
+        if wu_outliers > 0:
+            report['recommendations'].append(f"🔧 WU sensors had {wu_outliers} extreme outlier types - check station maintenance")
+    
+    return report
+
+def print_data_quality_report(report):
+    """Print a formatted data quality report to console."""
+    print("\n" + "="*80)
+    print("📊 DATA QUALITY REPORT")
+    print("="*80)
+    print(f"Generated: {report['summary']['generated_at']}")
+    print(f"Date Range: {report['summary']['date_range']}")
+    print(f"Total Issues Found: {report['summary']['total_issues']}")
+    
+    # TSI Quality Report
+    if report['tsi_quality']:
+        tsi = report['tsi_quality']
+        print(f"\n🔬 TSI DATA QUALITY:")
+        print(f"   Total Records: {tsi['total_records']}")
+        print(f"   Devices: {len(tsi['devices'])} ({', '.join(tsi['devices'][:5])}{'...' if len(tsi['devices']) > 5 else ''})")
+        
+        if tsi['outliers_removed']:
+            print(f"   🚫 Outliers Removed:")
+            for metric, data in tsi['outliers_removed'].items():
+                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
+                if data['extreme_values']:
+                    print(f"         Extreme values: {data['extreme_values']}")
+        
+        if tsi['missing_data']:
+            print(f"   ❓ Missing Data:")
+            for metric, data in tsi['missing_data'].items():
+                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
+        
+        if tsi['sensor_anomalies']:
+            print(f"   ⚠️ Sensor Anomalies:")
+            for anomaly in tsi['sensor_anomalies']:
+                print(f"      {anomaly['device']} - {anomaly['metric']}: {anomaly['description']}")
+    
+    # WU Quality Report
+    if report['wu_quality']:
+        wu = report['wu_quality']
+        print(f"\n🌤️ WU DATA QUALITY:")
+        print(f"   Total Records: {wu['total_records']}")
+        print(f"   Stations: {len(wu['stations'])} ({', '.join(wu['stations'][:5])}{'...' if len(wu['stations']) > 5 else ''})")
+        
+        if wu['outliers_removed']:
+            print(f"   🚫 Outliers Removed:")
+            for metric, data in wu['outliers_removed'].items():
+                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
+                if data['extreme_values']:
+                    print(f"         Extreme values: {data['extreme_values']}")
+        
+        if wu['missing_data']:
+            print(f"   ❓ Missing Data:")
+            for metric, data in wu['missing_data'].items():
+                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
+        
+        if wu['sensor_anomalies']:
+            print(f"   ⚠️ Sensor Anomalies:")
+            for anomaly in wu['sensor_anomalies']:
+                print(f"      {anomaly['station']} - {anomaly['metric']}: {anomaly['description']}")
+    
+    # Recommendations
+    print(f"\n💡 RECOMMENDATIONS:")
+    for rec in report['recommendations']:
+        print(f"   {rec}")
+    
+    print("="*80)
 
 if __name__ == "__main__":
     (
@@ -1251,6 +1628,13 @@ if __name__ == "__main__":
             # Apply outlier removal to each metric if enabled
             if ENABLE_OUTLIER_REMOVAL:
                 print(f"   📊 Applying outlier removal for device {name}")
+                
+                # Debug: Check for specific problematic values before outlier removal
+                pm25_data = pd.to_numeric(group['PM 2.5'], errors='coerce')
+                extreme_pm25 = pm25_data[pm25_data > 50].dropna()
+                if len(extreme_pm25) > 0:
+                    print(f"   🚨 FOUND EXTREME PM2.5 VALUES for {name}: {extreme_pm25.unique()}")
+                
                 group = remove_outliers(group, 'PM 2.5', method='iqr')
                 group = remove_outliers(group, 'T (C)', method='iqr')
                 group = remove_outliers(group, 'RH (%)', method='iqr')
@@ -1351,6 +1735,22 @@ if __name__ == "__main__":
                     # Get all unique timestamps with 15-minute granularity
                     prod_tsi_df_copy = prod_tsi_df.copy()
                     prod_tsi_df_copy['timestamp'] = pd.to_datetime(prod_tsi_df_copy['timestamp'], errors='coerce')
+                    
+                    # CRITICAL FIX: Apply outlier removal to chart data BEFORE creating charts
+                    if ENABLE_OUTLIER_REMOVAL:
+                        print(f"📊 Applying outlier removal to {col_name} chart data...")
+                        
+                        # Debug: Check for extreme values before outlier removal
+                        if df_column in prod_tsi_df_copy.columns:
+                            numeric_data = pd.to_numeric(prod_tsi_df_copy[df_column], errors='coerce')
+                            if df_column == 'PM 2.5':
+                                extreme_values = numeric_data[numeric_data > 50].dropna()
+                                if len(extreme_values) > 0:
+                                    print(f"   🚨 FOUND EXTREME PM2.5 VALUES in chart data: {extreme_values.unique()}")
+                        
+                        # Apply outlier removal to the specific metric for chart data
+                        prod_tsi_df_copy = remove_outliers(prod_tsi_df_copy, df_column, method='iqr')
+                        print(f"   ✅ Outlier removal applied to {col_name} chart data")
                     
                     # Limit chart data to recent days if configured (for better visualization)
                     if TSI_CHART_MAX_DAYS > 0:
@@ -1533,6 +1933,15 @@ if __name__ == "__main__":
 
                 # Add charts for WU data if available (PRODUCTION ONLY)
                 if fetch_wu and prod_wu_df is not None and not prod_wu_df.empty:
+                    print(f"📊 Starting WU chart processing with {len(prod_wu_df)} production WU records...")
+                    
+                    # Debug: Check what stations are in the original data
+                    if 'stationID' in prod_wu_df.columns:
+                        original_stations = prod_wu_df['stationID'].unique()
+                        print(f"   📊 Original station IDs: {original_stations}")
+                        kestrel_records = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
+                        print(f"   📊 Duke-Kestrel-01 (KNCDURHA590) records in original data: {kestrel_records}")
+                    
                     wu_metrics = [
                         ('tempAvg', 'Temperature (C)'),
                         ('humidityAvg', 'Humidity (%)'),
@@ -1575,9 +1984,58 @@ if __name__ == "__main__":
                     # Apply outlier removal to WU metrics if enabled
                     if ENABLE_OUTLIER_REMOVAL:
                         print(f"📊 Applying outlier removal to WU data...")
+                        
+                        # Debug: Check for specific problematic values before outlier removal
+                        if 'windspeedAvg' in prod_wu_df.columns:
+                            windspeed_data = pd.to_numeric(prod_wu_df['windspeedAvg'], errors='coerce')
+                            extreme_windspeed = windspeed_data[windspeed_data > 18].dropna()
+                            if len(extreme_windspeed) > 0:
+                                print(f"   🚨 FOUND EXTREME WINDSPEED VALUES: {extreme_windspeed.unique()}")
+                                # Check which stations have extreme windspeed
+                                for station_id in prod_wu_df['stationID'].unique():
+                                    station_data = prod_wu_df[prod_wu_df['stationID'] == station_id]
+                                    station_windspeed = pd.to_numeric(station_data['windspeedAvg'], errors='coerce')
+                                    station_extreme = station_windspeed[station_windspeed > 18].dropna()
+                                    if len(station_extreme) > 0:
+                                        station_name = station_id_to_name.get(station_id, station_id)
+                                        print(f"   🚨 Station {station_name} ({station_id}) has extreme windspeed: {station_extreme.unique()}")
+                        
                         for metric, _ in wu_metrics:
                             if metric in prod_wu_df.columns:
+                                # Debug: Check Duke-Kestrel-01 data before outlier removal
+                                if metric == 'windspeedAvg':
+                                    kestrel_before = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
+                                    print(f"   📊 Duke-Kestrel-01 records before {metric} outlier removal: {kestrel_before}")
+                                
                                 prod_wu_df = remove_outliers(prod_wu_df, metric, method='iqr')
+                                
+                                # Debug: Check Duke-Kestrel-01 data after outlier removal
+                                if metric == 'windspeedAvg':
+                                    kestrel_after = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
+                                    print(f"   📊 Duke-Kestrel-01 records after {metric} outlier removal: {kestrel_after}")
+                                    if kestrel_after < kestrel_before:
+                                        print(f"   🚨 WARNING: {kestrel_before - kestrel_after} Duke-Kestrel-01 records removed during {metric} outlier removal!")
+                    
+                    # Final debug: Check what stations remain after all outlier removal
+                    if 'stationID' in prod_wu_df.columns:
+                        final_stations = prod_wu_df['stationID'].unique()
+                        print(f"   📊 Final station IDs after outlier removal: {final_stations}")
+                        final_kestrel_records = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
+                        print(f"   📊 Duke-Kestrel-01 (KNCDURHA590) records after all outlier removal: {final_kestrel_records}")
+                    
+                    # Debug MS-03 precipitation issue specifically
+                    if 'precipTotal' in prod_wu_df.columns:
+                        ms03_precip = prod_wu_df[prod_wu_df['Station Name'] == 'Duke-MS-03']['precipTotal']
+                        if len(ms03_precip) > 0:
+                            non_zero_count = (ms03_precip > 0).sum()
+                            total_count = len(ms03_precip)
+                            unique_values = sorted(ms03_precip.unique())
+                            print(f"🔍 MS-03 Precipitation Debug:")
+                            print(f"   📊 Total records: {total_count}")
+                            print(f"   📊 Non-zero records: {non_zero_count}")
+                            print(f"   📊 Unique values: {unique_values[:10]}...")  # Show first 10 unique values
+                            if len(unique_values) == 1 and unique_values[0] == 0:
+                                print(f"   ⚠️ WARNING: ALL MS-03 precipitation values are 0 - possible sensor/data issue!")
                     
                     # Get unique timestamps for the time axis (keep hourly frequency)
                     all_times = sorted(prod_wu_df['obsTimeUtc'].unique())
@@ -1698,6 +2156,8 @@ if __name__ == "__main__":
                             else:
                                 # Default connected line chart
                                 series_config['lineStyle'] = {'type': 'SOLID'}
+                                # Explicitly set point style to match other graphs
+                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
                             series.append(series_config)
                         domain = {
                             'domain': {
@@ -1872,7 +2332,8 @@ if __name__ == "__main__":
                             }
                             # Add disconnected points style if enabled
                             if ENABLE_DISCONNECTED_POINTS:
-                                # For disconnected points, use point styling with no lines
+                                # For disconnected points, we use SCATTER chart type instead of line styles
+                                # This will be handled at the chart level, not series level
                                 series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
                             else:
                                 # Default connected line chart
@@ -1956,6 +2417,16 @@ if __name__ == "__main__":
                 print("❌ No spreadsheet available for chart creation")
 
     print("✅ All data processing and Google Sheet export complete!")
+    
+    # Generate and display data quality report
+    print("📊 Generating data quality report...")
+    quality_report = generate_data_quality_report(
+        tsi_df=tsi_df if fetch_tsi else None,
+        wu_df=wu_df if fetch_wu else None, 
+        start_date=start_date,
+        end_date=end_date
+    )
+    print_data_quality_report(quality_report)
     
     # Add summary about test sensor exclusion
     print("\n" + "="*60)
