@@ -791,6 +791,7 @@ def save_separated_sensor_data(data_manager, test_data, prod_data, start_date, e
 # 2. Adjust CHART_WIDTH and CHART_HEIGHT to change chart dimensions
 # 3. Modify outlier detection method in remove_outliers() function ('iqr' or 'zscore')
 # 4. Set ENABLE_DISCONNECTED_POINTS = True to show data points without connecting lines
+# 5. Set TSI_DATA_SAMPLING_MINUTES = 15 to show every 15 minutes for detailed trends
 
 ENABLE_OUTLIER_REMOVAL = True  # Set to False to disable outlier removal
 CHART_WIDTH = 2400  # Increased chart width for better spacing (was 1800)
@@ -798,7 +799,8 @@ CHART_HEIGHT = 400  # Slightly increased height for better proportions (was 400)
 ENABLE_DISCONNECTED_POINTS = True  # Set to True to show data points without connecting lines
 
 # TSI-specific chart configuration for better spacing
-TSI_DATA_SAMPLING_HOURS = 2  # Show every 2 hours instead of every hour (1=all hours, 2=every 2 hours, 4=every 4 hours)
+TSI_DATA_SAMPLING_MINUTES = 15  # Show every 15 minutes for detailed trends (15=every 15min, 30=every 30min, 60=every hour, 120=every 2 hours)
+TSI_CHART_MAX_DAYS = 0  # Limit chart data to recent days for better visualization (set to 0 for all data)
 
 def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
     """
@@ -1304,15 +1306,21 @@ if __name__ == "__main__":
             sheet_id = spreadsheet.id
             meta = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
             print(f"📋 Available sheets: {[s['properties']['title'] for s in meta['sheets']]}")
-            weekly_id = next((s['properties']['sheetId'] for s in meta['sheets'] if s['properties']['title'] == 'Production TSI Summary'), None)
-            print(f"🔍 Found 'Production TSI Summary' sheet ID: {weekly_id}")
-            if weekly_id:
-                print("✅ Found TSI Summary sheet, proceeding with chart creation...")
-                charts_title = 'Production TSI and WU Weekly Charts'
-                charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=20)
-                meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
-                chart_row_offset = 0
+            
+            # Create charts worksheet
+            charts_title = 'Production TSI and WU Weekly Charts'
+            charts_ws = spreadsheet.add_worksheet(title=charts_title, rows=20000, cols=30)  # Extended to 30 columns (column AD)
+            meta2 = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
+            charts_id = next((s['properties']['sheetId'] for s in meta2['sheets'] if s['properties']['title'] == charts_title), None)
+            
+            # Initialize chart positioning variables
+            chart_row_offset = 0
+            chart_col_offset = 0  # Add column offset for horizontal positioning
+            charts_per_row = 2  # Number of charts per row
+            chart_count = 0  # Track total charts created for positioning
+            
+            # Only create TSI trend charts if we have TSI data
+            if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
                 data_columns = [
                     ('Avg PM2.5', 'PM2.5 (µg/m³)'),
                     ('Min Temp', 'Min Temp (°C)'),
@@ -1320,33 +1328,87 @@ if __name__ == "__main__":
                     ('Avg RH', 'Avg RH (%)')
                 ]
                 for col_name, y_label in data_columns:
-                    # Change from weeks to days for daily data analysis
-                    days = sorted({row[0] for rows in daily_summary.values() for row in rows})
-                    devices = list(daily_summary.keys())
+                    # Use detailed 15-minute data instead of daily summary for trend charts
+                    print(f"📊 Creating detailed 15-minute trend chart for {col_name}...")
                     
-                    # Extract year from days for chart title
-                    current_year = datetime.now().year
-                    if days:
-                        try:
-                            first_day_date = datetime.strptime(days[0], '%Y-%m-%d')
-                            current_year = first_day_date.year
-                        except:
-                            pass
+                    # Map column names to DataFrame columns
+                    metric_mapping = {
+                        'Avg PM2.5': 'PM 2.5',
+                        'Min Temp': 'T (C)',
+                        'Max Temp': 'T (C)', 
+                        'Avg RH': 'RH (%)'
+                    }
                     
-                    pivot_header = ['Day'] + devices
-                    idx_map = {'Avg PM2.5':1, 'Min Temp':2, 'Max Temp':3, 'Avg RH':4}
-                    # Build wide-format pivot: each row is [day, dev1_val, dev2_val, ...]
+                    if col_name not in metric_mapping:
+                        print(f"⚠️ Skipping {col_name} - no mapping to DataFrame column")
+                        continue
+                    
+                    df_column = metric_mapping[col_name]
+                    if df_column not in prod_tsi_df.columns:
+                        print(f"⚠️ Skipping {col_name} - column {df_column} not found in data")
+                        continue
+                    
+                    # Get all unique timestamps with 15-minute granularity
+                    prod_tsi_df_copy = prod_tsi_df.copy()
+                    prod_tsi_df_copy['timestamp'] = pd.to_datetime(prod_tsi_df_copy['timestamp'], errors='coerce')
+                    
+                    # Limit chart data to recent days if configured (for better visualization)
+                    if TSI_CHART_MAX_DAYS > 0:
+                        max_date = prod_tsi_df_copy['timestamp'].max()
+                        min_chart_date = max_date - pd.Timedelta(days=TSI_CHART_MAX_DAYS)
+                        prod_tsi_df_copy = prod_tsi_df_copy[prod_tsi_df_copy['timestamp'] >= min_chart_date]
+                        print(f"📊 Limiting chart data to recent {TSI_CHART_MAX_DAYS} days: {min_chart_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
+                    
+                    # Apply 15-minute sampling if configured
+                    all_times = sorted(prod_tsi_df_copy['timestamp'].dropna().unique())
+                    if TSI_DATA_SAMPLING_MINUTES > 15:
+                        sampling_interval = TSI_DATA_SAMPLING_MINUTES // 15
+                        sampled_times = [all_times[i] for i in range(0, len(all_times), sampling_interval)]
+                        all_times = sampled_times
+                        print(f"📊 Using {TSI_DATA_SAMPLING_MINUTES}-minute sampling: {len(all_times)} data points")
+                    else:
+                        print(f"📊 Using all 15-minute data points: {len(all_times)} data points")
+                    
+                    # Filter data to sampled times
+                    filtered_df = prod_tsi_df_copy[prod_tsi_df_copy['timestamp'].isin(all_times)]
+                    
+                    # Create pivot table: rows = timestamp, columns = device, values = metric
+                    if col_name == 'Min Temp':
+                        # For min temp, we want the minimum value for each timestamp-device combination
+                        pivot = filtered_df.pivot_table(index='timestamp', columns='Device Name', values=df_column, aggfunc='min')
+                    elif col_name == 'Max Temp':
+                        # For max temp, we want the maximum value for each timestamp-device combination  
+                        pivot = filtered_df.pivot_table(index='timestamp', columns='Device Name', values=df_column, aggfunc='max')
+                    else:
+                        # For average metrics, use mean
+                        pivot = filtered_df.pivot_table(index='timestamp', columns='Device Name', values=df_column, aggfunc='mean')
+                    
+                    pivot = pivot.reindex(all_times)
+                    pivot.reset_index(inplace=True)
+                    
+                    # Get device names and format timestamps
+                    devices = [col for col in pivot.columns if col != 'timestamp']
+                    pivot['time_display'] = pivot['timestamp'].dt.strftime('%m-%d %H:%M')
+                    
+                    # Extract year for chart title
+                    current_year = pivot['timestamp'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
+                    
+                    # Skip if no devices with data
+                    if not devices:
+                        print(f"⚠️ Skipping {col_name} - no devices with data")
+                        continue
+                    
+                    # Create sheet data with time labels
+                    pivot_header = ['Time'] + devices
                     pivot_rows = []
-                    for day in days:
-                        row = [day]
+                    for _, row in pivot.iterrows():
+                        data_row = [row['time_display']]
                         for device in devices:
-                            val = ''
-                            for r in daily_summary.get(device, []):
-                                if r[0] == day:
-                                    val = r[idx_map[col_name]]
-                                    break
-                            row.append(val)
-                        pivot_rows.append(row)
+                            value = row[device] if device in row else ''
+                            if pd.isna(value):
+                                value = ''
+                            data_row.append(value)
+                        pivot_rows.append(data_row)
                     def safe_gs_value(x):
                         import pandas as pd
                         import numpy as np
@@ -1368,13 +1430,13 @@ if __name__ == "__main__":
                             return str(x)
                     pivot_header_safe = [safe_gs_value(v) for v in pivot_header]
                     pivot_rows_safe = [[safe_gs_value(v) for v in row] for row in pivot_rows]
-                    pivot_title = f"{col_name} Daily Data"
+                    pivot_title = f"{col_name} 15-Minute Trend Data"
                     
                     print(f"📊 Creating {pivot_title} sheet with {len(pivot_rows_safe)} data rows and {len(devices)} devices")
-                    print(f"📊 Days available: {len(days)}, Sample days: {days[:3] if len(days) >= 3 else days}")
+                    print(f"📊 Time points available: {len(pivot_rows_safe)}, Devices: {devices[:3] if len(devices) >= 3 else devices}")
                     
                     # Skip if no data
-                    if not days or not devices or not pivot_rows_safe:
+                    if not devices or not pivot_rows_safe:
                         print(f"⚠️ Skipping {pivot_title} - no data available")
                         continue
                     
@@ -1393,7 +1455,7 @@ if __name__ == "__main__":
                             "series": {"sourceRange": {"sources": [{
                                         "sheetId": pivot_id,
                                         "startRowIndex": 0,
-                                        "endRowIndex": len(days)+1,
+                                        "endRowIndex": len(pivot_rows_safe)+1,
                                         "startColumnIndex": i,
                                         "endColumnIndex": i+1
                             }]}},
@@ -1411,7 +1473,7 @@ if __name__ == "__main__":
                     domain = {"domain": {"sourceRange": {"sources": [{
                                 "sheetId": pivot_id,
                                 "startRowIndex": 1,
-                                "endRowIndex": len(days)+1,
+                                "endRowIndex": len(pivot_rows_safe)+1,
                                 "startColumnIndex": 0,
                                 "endColumnIndex": 1
                     }]}}}
@@ -1424,12 +1486,12 @@ if __name__ == "__main__":
                                 "addChart": {
                                     "chart": {
                                         "spec": {
-                                            "title": f"Daily {col_name} Trend - {current_year}",
+                                            "title": f"15-Minute {col_name} Trend - {current_year}",
                                             "basicChart": {
                                                 "chartType": chart_type,
                                                 "legendPosition": "BOTTOM_LEGEND",
                                                 "axis": [
-                                                    {"position": "BOTTOM_AXIS", "title": "Day"},
+                                                    {"position": "BOTTOM_AXIS", "title": "Date & Time"},
                                                     {"position": "LEFT_AXIS", "title": y_label}
                                                 ],
                                                 "domains": [domain],
@@ -1442,7 +1504,7 @@ if __name__ == "__main__":
                                                 "anchorCell": {
                                                     "sheetId": charts_id,
                                                     "rowIndex": chart_row_offset,
-                                                    "columnIndex": 0
+                                                    "columnIndex": chart_col_offset
                                                 },
                                                 "widthPixels": CHART_WIDTH,
                                                 "heightPixels": CHART_HEIGHT
@@ -1458,7 +1520,16 @@ if __name__ == "__main__":
                         print(f"✅ Created chart for {col_name} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
                     except Exception as chart_error:
                         print(f"❌ Failed to create chart for {col_name}: {chart_error}")
-                    chart_row_offset += 20  # Use a fixed offset to prevent overlap
+                    
+                    # Update chart positioning for next chart
+                    chart_count += 1
+                    if chart_count % charts_per_row == 0:
+                        # Move to next row
+                        chart_row_offset += 25  # Vertical spacing between rows
+                        chart_col_offset = 0  # Reset to first column
+                    else:
+                        # Move to next column in same row  
+                        chart_col_offset += 15  # Horizontal spacing to reach column Z (about 15 columns per chart)
 
                 # Add charts for WU data if available (PRODUCTION ONLY)
                 if fetch_wu and prod_wu_df is not None and not prod_wu_df.empty:
@@ -1667,7 +1738,7 @@ if __name__ == "__main__":
                                                 'anchorCell': {
                                                     'sheetId': charts_id,
                                                     'rowIndex': chart_row_offset,
-                                                    'columnIndex': 0
+                                                    'columnIndex': chart_col_offset
                                                 },
                                                 'widthPixels': CHART_WIDTH,
                                                 'heightPixels': CHART_HEIGHT
@@ -1682,7 +1753,16 @@ if __name__ == "__main__":
                             print(f"✅ Created WU {metric} chart (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
                         except Exception as chart_error:
                             print(f"❌ Failed to create WU {metric} chart: {chart_error}")
-                        chart_row_offset += 20  # Use a fixed offset to prevent overlap
+                        
+                        # Update chart positioning for next chart
+                        chart_count += 1
+                        if chart_count % charts_per_row == 0:
+                            # Move to next row
+                            chart_row_offset += 25  # Vertical spacing between rows
+                            chart_col_offset = 0  # Reset to first column
+                        else:
+                            # Move to next column in same row  
+                            chart_col_offset += 15  # Horizontal spacing to reach column Z (about 15 columns per chart)
 
                 # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
                 if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
@@ -1707,16 +1787,19 @@ if __name__ == "__main__":
                     
                     all_times = sorted(prod_tsi_df['timestamp'].dropna().unique())
                     
-                    # Apply data sampling for better chart spacing (optional)
-                    if TSI_DATA_SAMPLING_HOURS > 1:
-                        print(f"📊 Applying data sampling: showing every {TSI_DATA_SAMPLING_HOURS} hours for clearer visualization")
-                        # Filter to every Nth hour based on sampling setting
+                    # Apply data sampling for better chart spacing (using 15-minute intervals)
+                    if TSI_DATA_SAMPLING_MINUTES > 15:
+                        sampling_interval = TSI_DATA_SAMPLING_MINUTES // 15  # Convert minutes to 15-minute intervals
+                        print(f"📊 Applying data sampling: showing every {TSI_DATA_SAMPLING_MINUTES} minutes (every {sampling_interval} 15-min intervals) for visualization")
+                        # Filter to every Nth 15-minute interval based on sampling setting
                         sampled_times = []
                         for i, time in enumerate(all_times):
-                            if i % TSI_DATA_SAMPLING_HOURS == 0:
+                            if i % sampling_interval == 0:
                                 sampled_times.append(time)
                         all_times = sampled_times
                         print(f"📊 Data points reduced from {len(sorted(prod_tsi_df['timestamp'].dropna().unique()))} to {len(all_times)} for better spacing")
+                    else:
+                        print(f"📊 Using all 15-minute data points for detailed trend visualization ({len(all_times)} total points)")
                     for metric, y_label in tsi_metrics:
                         # Pivot: rows = timestamp, columns = device, values = metric (PRODUCTION data only)
                         pivot = prod_tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
@@ -1835,7 +1918,7 @@ if __name__ == "__main__":
                                                     "anchorCell": {
                                                         "sheetId": charts_id,
                                                         "rowIndex": chart_row_offset,
-                                                        "columnIndex": 0
+                                                        "columnIndex": chart_col_offset
                                                     },
                                                     "widthPixels": CHART_WIDTH,
                                                     "heightPixels": CHART_HEIGHT
@@ -1851,15 +1934,21 @@ if __name__ == "__main__":
                             print(f"✅ Created TSI time-series chart for {metric} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
                         except Exception as chart_error:
                             print(f"❌ Failed to create TSI time-series chart for {metric}: {chart_error}")
-                        chart_row_offset += 20
+                        
+                        # Update chart positioning for next chart
+                        chart_count += 1
+                        if chart_count % charts_per_row == 0:
+                            # Move to next row
+                            chart_row_offset += 25  # Vertical spacing between rows
+                            chart_col_offset = 0  # Reset to first column
+                        else:
+                            # Move to next column in same row  
+                            chart_col_offset += 15  # Horizontal spacing to reach column Z (about 15 columns per chart)
                 else:
                     print("⚠️ TSI time-series charts skipped:")
                     print(f"   - fetch_tsi: {fetch_tsi}")
                     print(f"   - prod_tsi_df is not None: {prod_tsi_df is not None}")
                     print(f"   - prod_tsi_df.empty: {prod_tsi_df.empty if prod_tsi_df is not None else 'N/A'}")
-            else:
-                print("❌ 'Production TSI Summary' sheet not found - charts will not be created")
-                print(f"📋 Available sheets: {[s['properties']['title'] for s in meta['sheets']]}")
         else:
             if not add_charts:
                 print("⏭️ Chart creation skipped by user choice")
