@@ -1,286 +1,194 @@
-#!/usr/bin/env python3
 """
-Automated Data Pull Script for Hot Durham Project
+Refactored Automated Data Pull Script for Hot Durham Project
 
-This script can be run on a schedule (e.g., via cron) to automatically pull
-data from Weather Underground and TSI sources, organize it, and sync to Google Drive.
+This script is designed to be run on a schedule (e.g., via cron) to automatically
+pull data from Weather Underground and TSI sources, organize it, and sync it to
+Google Drive. It is now fully integrated with the project's configuration system,
+making it more modular, maintainable, and easier to debug.
 
-Usage:
-    python automated_data_pull.py [--weekly|--bi-weekly|--monthly] [--wu-only|--tsi-only]
-    
-Examples:
-    python automated_data_pull.py --weekly          # Pull last week's data
-    python automated_data_pull.py --monthly --wu-only  # Pull last month's WU data only
+Key Improvements:
+- Centralized configuration management via `automated_data_pull_config.py`.
+- Modular design with functions for each distinct task (e.g., fetching, saving, logging).
+- Improved error handling and logging for better traceability.
+- Simplified command-line interface for easier execution.
 """
 
+import argparse
+import json
+import logging
 import os
 import sys
-import argparse
 from datetime import datetime, timedelta
-import json
 
-# Add the project root to the path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.join(project_root, 'src', 'core'))
-sys.path.append(os.path.join(project_root, 'src', 'data_collection'))
+# Add project root to Python path for module imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
+# Import configuration and core components
+from config.automated_data_pull_config import (
+    LOGGING_CONFIG, RAW_DATA_PATH, SHEET_METADATA_PATH, DEFAULT_PULL_TYPE, 
+    DEFAULT_FILE_FORMAT, ENABLED_SOURCES, GOOGLE_CREDS_PATH, GOOGLE_API_SCOPE, 
+    SHARE_EMAIL, SMTP_CONFIG, RECIPIENT_EMAILS
+)
+from src.alerts.alert_manager import AlertManager
+
+# Attempt to import core components with robust error handling
 try:
     from src.core.data_manager import DataManager
-except ImportError:
-    try:
-        from data_manager import DataManager
-    except ImportError:
-        DataManager = None
-
-try:
     from src.data_collection.faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
-except ImportError:
-    try:
-        from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
-    except ImportError:
-        fetch_wu_data = None
-        fetch_tsi_data = None
+    import gspread
+    from google.oauth2.service_account import Credentials as GCreds
+except ImportError as e:
+    logging.error(f"Failed to import a required module: {e}")
+    sys.exit(1)
+
+def setup_logging():
+    """Configures logging for the script based on centralized settings."""
+    logging.basicConfig(
+        level=LOGGING_CONFIG["level"],
+        format=LOGGING_CONFIG["format"],
+        filename=LOGGING_CONFIG["file"],
+        filemode='a'
+    )
+    # Add a handler to print to console as well
+    console = logging.StreamHandler()
+    console.setLevel(LOGGING_CONFIG["level"])
+    console.setFormatter(logging.Formatter(LOGGING_CONFIG["format"]))
+    logging.getLogger('').addHandler(console)
 
 def get_date_range(pull_type):
-    """Calculate start and end dates based on pull type"""
+    """Calculates the start and end dates for the data pull."""
     today = datetime.now()
-    
     if pull_type == 'daily':
-        # Yesterday's data
-        start_date = today - timedelta(days=1)
-        end_date = today - timedelta(days=1)
+        start_date = end_date = today - timedelta(days=1)
     elif pull_type == 'weekly':
-        # Last Monday to Sunday
-        days_since_monday = today.weekday()
-        start_date = today - timedelta(days=days_since_monday + 7)
+        start_of_week = today - timedelta(days=today.weekday())
+        start_date = start_of_week - timedelta(days=7)
         end_date = start_date + timedelta(days=6)
-    elif pull_type == 'bi_weekly':
-        # Last two weeks
-        start_date = today - timedelta(days=14)
-        end_date = today - timedelta(days=1)
     elif pull_type == 'monthly':
-        # Last month
         first_day_this_month = today.replace(day=1)
         end_date = first_day_this_month - timedelta(days=1)
         start_date = end_date.replace(day=1)
     else:
         raise ValueError(f"Unsupported pull type: {pull_type}")
-    
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
-def create_google_sheet(data_manager, wu_df, tsi_df, start_date, end_date, pull_type):
-    """Create a Google Sheet with the pulled data"""
+def fetch_data_source(source_name, fetch_function, start_date, end_date, data_manager, pull_type, alert_manager):
+    """Fetches and saves data from a single source (WU or TSI)."""
+    logging.info(f"Fetching {source_name} data from {start_date} to {end_date}...")
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials as GCreds
+        if source_name.lower() == 'tsi':
+            df, _ = fetch_function(start_date, end_date)
+        else:
+            df = fetch_function(start_date, end_date)
         
-        google_creds_path = os.path.join(project_root, 'creds', 'google_creds.json')
-        scope = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        creds = GCreds.from_service_account_file(google_creds_path, scopes=scope)
+        if df is not None and not df.empty:
+            logging.info(f"Successfully fetched {len(df)} records from {source_name}.")
+            file_path = data_manager.save_raw_data(
+                df, source_name.lower(), start_date, end_date, pull_type, DEFAULT_FILE_FORMAT
+            )
+            logging.info(f"Saved {source_name} data to {file_path}")
+            return df
+        else:
+            logging.warning(f"No data retrieved from {source_name}.")
+            alert_manager.send_alert(f"{source_name} Data Collection Warning", f"No data was retrieved for the period: {start_date} to {end_date}.")
+            return None
+    except Exception as e:
+        logging.error(f"Error fetching {source_name} data: {e}", exc_info=True)
+        alert_manager.send_alert(f"{source_name} Data Collection Failed", f"An error occurred while fetching data: {e}")
+        return None
+
+def create_google_sheet(wu_df, tsi_df, start_date, end_date, pull_type, alert_manager):
+    """Creates and populates a Google Sheet with the fetched data."""
+    logging.info("Creating Google Sheet...")
+    try:
+        creds = GCreds.from_service_account_file(GOOGLE_CREDS_PATH, scopes=GOOGLE_API_SCOPE)
         client = gspread.authorize(creds)
-        
-        # Create spreadsheet
-        sheet_name = f"Automated_{pull_type.title()}_Data_{start_date}_to_{end_date}_{datetime.now().strftime('%H%M%S')}"
+        sheet_name = f"Automated_{pull_type.title()}_Data_{start_date}_to_{end_date}"
         spreadsheet = client.create(sheet_name)
-        
-        # Add WU data if available
+
         if wu_df is not None and not wu_df.empty:
-            wu_ws = spreadsheet.sheet1
-            wu_ws.update_title("WU Data")
-            wu_headers = wu_df.columns.tolist()
-            wu_ws.update([wu_headers] + wu_df.values.tolist())
-        
-        # Add TSI data if available
+            ws = spreadsheet.sheet1
+            ws.update_title("WU Data")
+            ws.update([wu_df.columns.tolist()] + wu_df.values.tolist())
+
         if tsi_df is not None and not tsi_df.empty:
-            if wu_df is None or wu_df.empty:
-                tsi_ws = spreadsheet.sheet1
-                tsi_ws.update_title("TSI Data")
-            else:
-                tsi_ws = spreadsheet.add_worksheet(title="TSI Data", rows=len(tsi_df)+1, cols=len(tsi_df.columns))
-            
-            tsi_headers = tsi_df.columns.tolist()
-            tsi_ws.update([tsi_headers] + tsi_df.values.tolist())
-        
-        # Share with configured email
-        config_path = os.path.join(project_root, 'config', 'automation_config.json')
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-                if 'share_email' in config:
-                    try:
-                        spreadsheet.share(config['share_email'], perm_type='user', role='writer')
-                        print(f"📧 Shared with {config['share_email']}")
-                    except Exception as e:
-                        print(f"⚠️ Failed to share with {config['share_email']}: {e}")
-        
+            ws = spreadsheet.add_worksheet(title="TSI Data", rows=len(tsi_df) + 1, cols=len(tsi_df.columns))
+            ws.update([tsi_df.columns.tolist()] + tsi_df.values.tolist())
+
+        spreadsheet.share(SHARE_EMAIL, perm_type='user', role='writer')
+        logging.info(f"Shared Google Sheet with {SHARE_EMAIL}")
         return {
             'sheet_id': spreadsheet.id,
             'sheet_url': spreadsheet.url,
-            'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'date_range': f"{start_date} to {end_date}",
-            'pull_type': pull_type,
-            'data_sources': []
+            'created_at': datetime.now().isoformat(),
         }
-    
     except Exception as e:
-        print(f"⚠️ Failed to create Google Sheet: {e}")
+        logging.error(f"Failed to create or share Google Sheet: {e}", exc_info=True)
+        alert_manager.send_alert("Google Sheet Creation Failed", f"An error occurred while creating the Google Sheet: {e}")
         return None
 
+def save_sheet_metadata(sheet_info, pull_type, start_date, end_date):
+    """Saves metadata about the created Google Sheet to a JSON file."""
+    metadata_file = os.path.join(SHEET_METADATA_PATH, f"{pull_type}_{start_date}_to_{end_date}.json")
+    try:
+        with open(metadata_file, 'w') as f:
+            json.dump(sheet_info, f, indent=4)
+        logging.info(f"Saved sheet metadata to {metadata_file}")
+    except IOError as e:
+        logging.error(f"Failed to save sheet metadata: {e}", exc_info=True)
+
+def parse_arguments():
+    """Parses command-line arguments."""
+    parser = argparse.ArgumentParser(description="Automated Data Pull Script")
+    parser.add_argument("--pull_type", type=str, default=DEFAULT_PULL_TYPE, choices=['daily', 'weekly', 'monthly'], help="The type of data pull to perform.")
+    parser.add_argument("--no_sheets", action='store_true', help="Skip creating a Google Sheet.")
+    parser.add_argument("--no_sync", action='store_true', help="Skip syncing to Google Drive.")
+    return parser.parse_args()
+
 def main():
-    parser = argparse.ArgumentParser(description='Automated data pull for Hot Durham project')
-    parser.add_argument('--daily', action='store_true', help='Pull daily data (yesterday)')
-    parser.add_argument('--weekly', action='store_true', help='Pull weekly data (last Monday-Sunday)')
-    parser.add_argument('--bi-weekly', action='store_true', help='Pull bi-weekly data (last 2 weeks)')
-    parser.add_argument('--monthly', action='store_true', help='Pull monthly data (last month)')
-    parser.add_argument('--wu-only', action='store_true', help='Pull Weather Underground data only')
-    parser.add_argument('--tsi-only', action='store_true', help='Pull TSI data only')
-    parser.add_argument('--no-sheets', action='store_true', help='Skip Google Sheets creation')
-    parser.add_argument('--no-sync', action='store_true', help='Skip Google Drive sync')
-    
-    args = parser.parse_args()
-    
-    # Determine pull type
-    if args.daily:
-        pull_type = 'daily'
-    elif args.weekly:
-        pull_type = 'weekly'
-    elif args.bi_weekly:
-        pull_type = 'bi_weekly'
-    elif args.monthly:
-        pull_type = 'monthly'
-    else:
-        # Default to daily instead of weekly for higher accuracy
-        pull_type = 'daily'
-    
-    # Determine data sources
-    fetch_wu = not args.tsi_only
-    fetch_tsi = not args.wu_only
-    
-    print(f"🤖 Starting automated {pull_type} data pull...")
-    print(f"📊 Data sources: {'WU' if fetch_wu else ''}{' and ' if fetch_wu and fetch_tsi else ''}{'TSI' if fetch_tsi else ''}")
-    
-    # Get date range
-    start_date, end_date = get_date_range(pull_type)
-    print(f"📅 Date range: {start_date} to {end_date}")
-    
-    # Initialize data manager
-    if DataManager is not None:
-        data_manager = DataManager(project_root)
-    else:
-        print("⚠️ DataManager not available, skipping data management setup")
-        data_manager = None
-    
-    # Fetch data
-    wu_df = None
-    tsi_df = None
-    
-    if fetch_wu:
-        print("🌤️ Fetching Weather Underground data...")
-        try:
-            if fetch_wu_data is not None:
-                wu_df = fetch_wu_data(start_date, end_date)
-                if wu_df is not None and not wu_df.empty:
-                    print(f"✅ WU: {len(wu_df)} records fetched")
-                    # Save WU data
-                    if data_manager is not None:
-                        wu_path = data_manager.save_raw_data(
-                            data=wu_df,
-                            source='wu',
-                            start_date=start_date,
-                            end_date=end_date,
-                            pull_type=pull_type,
-                            file_format='csv'
-                        )
-                        print(f"📁 WU data saved to: {wu_path}")
-                    else:
-                        print("⚠️ data_manager not available, cannot save WU data")
-                else:
-                    print("⚠️ No WU data retrieved")
-            else:
-                wu_df = None
-                print("⚠️ fetch_wu_data not available")
-        except Exception as e:
-            print(f"❌ Error fetching WU data: {e}")
-    
-    if fetch_tsi:
-        print("🔬 Fetching TSI data...")
-        try:
-            if fetch_tsi_data is not None:
-                tsi_df, _ = fetch_tsi_data(start_date, end_date)
-                if tsi_df is not None and not tsi_df.empty:
-                    print(f"✅ TSI: {len(tsi_df)} records fetched")
-                    # Save TSI data
-                    if data_manager is not None:
-                        tsi_path = data_manager.save_raw_data(
-                            data=tsi_df,
-                            source='tsi',
-                            start_date=start_date,
-                            end_date=end_date,
-                            pull_type=pull_type,
-                            file_format='csv'
-                        )
-                        print(f"📁 TSI data saved to: {tsi_path}")
-                    else:
-                        print("⚠️ data_manager not available, cannot save TSI data")
-                else:
-                    print("⚠️ No TSI data retrieved")
-            else:
-                tsi_df = None
-                print("⚠️ fetch_tsi_data not available")
-        except Exception as e:
-            print(f"❌ Error fetching TSI data: {e}")
-    
-    # Create Google Sheet if data was retrieved and not disabled
-    sheet_info = None
-    if not args.no_sheets and ((wu_df is not None and not wu_df.empty) or (tsi_df is not None and not tsi_df.empty)):
-        print("📊 Creating Google Sheet...")
-        sheet_info = create_google_sheet(data_manager, wu_df, tsi_df, start_date, end_date, pull_type)
+    """Main function to orchestrate the data pull process."""
+    setup_logging()
+    args = parse_arguments()
+    alert_manager = AlertManager(
+        smtp_server=SMTP_CONFIG["server"],
+        smtp_port=SMTP_CONFIG["port"],
+        sender_email=SMTP_CONFIG["sender_email"],
+        sender_password=SMTP_CONFIG["sender_password"],
+        recipient_email=RECIPIENT_EMAILS[0]
+    )
+    logging.info(f"Starting {args.pull_type} data pull...")
+
+    try:
+        start_date, end_date = get_date_range(args.pull_type)
+        logging.info(f"Date range: {start_date} to {end_date}")
+    except ValueError as e:
+        logging.error(str(e), exc_info=True)
+        alert_manager.send_alert("Data Pull Failed", f"Invalid pull type specified: {args.pull_type}")
+        sys.exit(1)
+
+    data_manager = DataManager(PROJECT_ROOT)
+    wu_df, tsi_df = None, None
+
+    if ENABLED_SOURCES["wu"]:
+        wu_df = fetch_data_source("WU", fetch_wu_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
+    if ENABLED_SOURCES["tsi"]:
+        tsi_df = fetch_data_source("TSI", fetch_tsi_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
+
+    if not args.no_sheets and (wu_df is not None or tsi_df is not None):
+        sheet_info = create_google_sheet(wu_df, tsi_df, start_date, end_date, args.pull_type, alert_manager)
         if sheet_info:
-            if fetch_wu and wu_df is not None and not wu_df.empty:
-                sheet_info['data_sources'].append('Weather Underground')
-            if fetch_tsi and tsi_df is not None and not tsi_df.empty:
-                sheet_info['data_sources'].append('TSI')
-            
-            # Save sheet metadata
-            if data_manager is not None:
-                data_manager.save_sheet_metadata(sheet_info, start_date, end_date, pull_type)
-            else:
-                print("⚠️ data_manager not available, cannot save sheet metadata")
-            print(f"🔗 Google Sheet created: {sheet_info['sheet_url']}")
-    
-    # Sync to Google Drive if not disabled
+            save_sheet_metadata(sheet_info, args.pull_type, start_date, end_date)
+
     if not args.no_sync:
-        print("☁️ Syncing to Google Drive...")
         try:
-            if data_manager is not None:
-                data_manager.sync_to_drive()
-                print("✅ Google Drive sync completed!")
-            else:
-                print("⚠️ data_manager not available, cannot sync to drive")
+            data_manager.sync_to_drive()
+            logging.info("Successfully synced data to Google Drive.")
         except Exception as e:
-            print(f"⚠️ Google Drive sync failed: {e}")
-    
-    print(f"🎉 Automated {pull_type} data pull completed!")
-    
-    # Log the completion
-    log_entry = {
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'pull_type': pull_type,
-        'date_range': f"{start_date} to {end_date}",
-        'wu_records': len(wu_df) if wu_df is not None else 0,
-        'tsi_records': len(tsi_df) if tsi_df is not None else 0,
-        'sheet_created': sheet_info is not None,
-        'sheet_url': sheet_info['sheet_url'] if sheet_info else None
-    }
-    
-    # Save to automation log
-    if data_manager is not None:
-        data_manager.log_automation_run(log_entry)
-    else:
-        print("⚠️ data_manager not available, cannot log automation run")
+            logging.error(f"Google Drive sync failed: {e}", exc_info=True)
+            alert_manager.send_alert("Google Drive Sync Failed", f"An error occurred while syncing data to Google Drive: {e}")
+
+    logging.info(f"{args.pull_type.title()} data pull completed.")
 
 if __name__ == "__main__":
     main()
