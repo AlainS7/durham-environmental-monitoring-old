@@ -138,7 +138,7 @@ from data_manager import DataManager
 dm = DataManager("/Users/alainsoto/IdeaProjects/Hot Durham")
 
 # Save raw data with automatic organization
-file_path = dm.save_raw_data(
+
     data=dataframe,
     source='wu',  # or 'tsi'
     start_date='2025-05-01',

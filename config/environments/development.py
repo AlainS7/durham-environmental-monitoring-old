@@ -10,7 +10,7 @@ GOOGLE_SHEETS_ENABLED = True
 
 # Storage
 USE_DATABASE = True
-SAVE_RAW_DATA = True
+
 BACKUP_ENABLED = False
 
 # Test sensors

@@ -263,38 +263,7 @@ class DataManager:
         
         return wu_path, tsi_path
     
-    def bi_weekly_backup_pull(self):
-        """Perform bi-weekly backup pull with extended date range."""
-        self.logger.info("Starting bi-weekly backup data pull")
-        
-        # Calculate date range (last 14 days)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=14)
-        
-        start_str = start_date.strftime("%Y%m%d")
-        end_str = end_date.strftime("%Y%m%d")
-        
-        # Pull data with backup suffix
-        for data_type in ["wu", "tsi"]:
-            try:
-                paths = self.get_file_paths(data_type, start_str, end_str)
-                backup_path = paths["backup"].parent / f"backup_{paths['backup'].name}"
-                
-                if data_type == "wu":
-                    df = fetch_wu_data(start_str, end_str)
-                else:
-                    df, _ = fetch_tsi_data(start_str, end_str)
-                
-                if df is not None and not df.empty:
-                    df.to_csv(backup_path, index=False)
-                    self.logger.info(f"Backup {data_type} data saved to {backup_path}")
-                    
-                    # Upload backup to Drive
-                    if self.drive_service:
-                        self.upload_to_drive(backup_path, f"HotDurham/Backups/{data_type.upper()}")
-                        
-            except Exception as e:
-                self.logger.error(f"Error during {data_type} backup pull: {e}")
+    
     
     def cleanup_temp_files(self, days_old: int = 7):
         """Clean up temporary files older than specified days."""
@@ -706,61 +675,7 @@ class DataManager:
                 "type": "production"
             }
     
-    def save_sensor_data(self, sensor_id: str, data_type: str, df: pd.DataFrame, 
-                        start_date: str, end_date: str, file_format: str = "csv") -> Optional[Path]:
-        """Save sensor data to appropriate location based on test vs production status."""
-        if df is None or df.empty:
-            self.logger.warning(f"No data to save for sensor {sensor_id}")
-            return None
-        
-        try:
-            # Get sensor-specific file paths
-            paths = self.get_sensor_file_paths(sensor_id, data_type, start_date, end_date, file_format)
-            
-            # Log the routing decision
-            sensor_type = "TEST" if paths["type"] == "test" else "PRODUCTION"
-            self.logger.info(f"Routing {sensor_id} ({sensor_type}) data to: {paths['raw']}")
-            
-            # Ensure backup and temp directories exist for test sensors
-            if paths["type"] == "test":
-                paths["backup"].parent.mkdir(parents=True, exist_ok=True)
-                paths["temp"].parent.mkdir(parents=True, exist_ok=True)
-            
-            # Save data based on format
-            if file_format == "excel":
-                df.to_excel(paths["raw"], index=False)
-                df.to_excel(paths["backup"], index=False)
-            else:
-                df.to_csv(paths["raw"], index=False)
-                df.to_csv(paths["backup"], index=False)
-            
-            # Log the save operation
-            with open(paths["log"], 'a', encoding='utf-8') as log_file:
-                log_file.write(f"{datetime.now().isoformat()} - Saved {len(df)} records for sensor {sensor_id} to {paths['raw']}\n")
-            
-            self.logger.info(f"Sensor data saved successfully: {paths['raw']}")
-            
-            # Upload to appropriate Google Drive folder
-            if self.drive_service:
-                if paths["type"] == "test":
-                    # Use new organized test sensor folder structure
-                    drive_folder = self.test_config.get_drive_folder_path_with_date(
-                        sensor_id, 
-                        start_date.replace('-', ''), 
-                        "sensors"
-                    )
-                else:
-                    # Use existing production folder structure
-                    drive_folder = f"HotDurham/Production/RawData/{data_type.upper()}"
-                
-                self.logger.info(f"Uploading {sensor_id} data to Google Drive: {drive_folder}")
-                self.upload_to_drive(paths["raw"], drive_folder)
-            
-            return paths["raw"]
-            
-        except Exception as e:
-            self.logger.error(f"Error saving sensor data for {sensor_id}: {e}")
-            return None
+    
 
     def get_test_sensor_summary(self) -> Dict[str, Any]:
         """Get summary of test sensor configuration and data status."""
