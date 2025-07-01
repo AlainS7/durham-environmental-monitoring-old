@@ -4,6 +4,7 @@ Enhanced Google Drive Manager with Rate Limiting and Performance Improvements
 Implements the recommended improvements for the Hot Durham project.
 """
 
+import threading
 import time
 import asyncio
 from typing import Dict, List, Optional, Any
@@ -12,9 +13,13 @@ from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass
 import json
-import threading
 from queue import Queue, Empty
 import hashlib
+
+from config.base.paths import LOG_PATHS
+from config.google_drive_manager_config import (
+    RATE_LIMITING, PERFORMANCE, MONITORING, SHARE_EMAIL
+)
 
 # Optional imports for Google Drive
 try:
@@ -81,37 +86,12 @@ class RateLimitedGoogleDriveManager:
     
     def _load_config(self, config_file: str = None) -> Dict:
         """Load configuration with improved defaults."""
-        default_config = {
-            'rate_limiting': {
-                'requests_per_second': 10,
-                'burst_allowance': 20,
-                'backoff_factor': 2,
-                'max_retries': 3,
-                'chunk_size_mb': 5
-            },
-            'performance': {
-                'enable_chunked_upload': True,
-                'parallel_uploads': False,  # Start with False for stability
-                'cache_folder_ids': True,
-                'compress_large_files': False
-            },
-            'monitoring': {
-                'enable_performance_tracking': True,
-                'log_api_calls': True,
-                'alert_on_failures': True
-            }
+        return {
+            'rate_limiting': RATE_LIMITING,
+            'performance': PERFORMANCE,
+            'monitoring': MONITORING,
+            'share_email': SHARE_EMAIL,
         }
-        
-        if config_file and Path(config_file).exists():
-            try:
-                with open(config_file, 'r') as f:
-                    user_config = json.load(f)
-                # Merge configurations
-                default_config.update(user_config)
-            except Exception as e:
-                self.logger.warning(f"Could not load config file {config_file}: {e}")
-        
-        return default_config
     
     def _setup_logging(self) -> logging.Logger:
         """Set up enhanced logging system."""
@@ -119,8 +99,7 @@ class RateLimitedGoogleDriveManager:
         logger.setLevel(logging.INFO)
         
         if not logger.handlers:
-            # Create logs directory
-            log_dir = self.project_root / "logs" / "system"
+            log_dir = Path(LOG_PATHS["system"])
             log_dir.mkdir(parents=True, exist_ok=True)
             
             # File handler
@@ -323,7 +302,10 @@ class RateLimitedGoogleDriveManager:
                 fields='id'
             ).execute()
             
-            return file.get('id') is not None
+            file_id = file.get('id')
+            if file_id:
+                self._share_file(file_id)
+            return file_id is not None
         
         except Exception as e:
             self.logger.error(f"Simple upload error: {e}")
@@ -359,11 +341,32 @@ class RateLimitedGoogleDriveManager:
                 # Rate limiting between chunks
                 time.sleep(0.1)
             
-            return response.get('id') is not None
+            file_id = response.get('id')
+            if file_id:
+                self._share_file(file_id)
+            return file_id is not None
         
         except Exception as e:
             self.logger.error(f"Chunked upload error: {e}")
             return False
+
+    def _share_file(self, file_id: str):
+        """Share a file with the configured email address."""
+        try:
+            share_email = self.config.get('share_email', 'hotdurham@gmail.com')
+            permission = {
+                'type': 'user',
+                'role': 'writer',
+                'emailAddress': share_email
+            }
+            self.drive_service.permissions().create(
+                fileId=file_id,
+                body=permission,
+                fields='id'
+            ).execute()
+            self.logger.info(f"Shared file {file_id} with {share_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to share file {file_id}: {e}")
     
     def _file_already_uploaded(self, local_path: Path, folder_id: str) -> bool:
         """Check if file already exists in Drive and is identical."""

@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+import pandas as pd
 from datetime import datetime, timedelta
 
 # Add project root to Python path for module imports
@@ -28,9 +29,12 @@ sys.path.insert(0, PROJECT_ROOT)
 from config.automated_data_pull_config import (
     LOGGING_CONFIG, RAW_DATA_PATH, SHEET_METADATA_PATH, DEFAULT_PULL_TYPE, 
     DEFAULT_FILE_FORMAT, ENABLED_SOURCES, GOOGLE_CREDS_PATH, GOOGLE_API_SCOPE, 
-    SHARE_EMAIL, SMTP_CONFIG, RECIPIENT_EMAILS
+    SHARE_EMAIL
 )
+from config.alert_manager_config import SMTP_CONFIG, RECIPIENT_EMAILS
 from src.alerts.alert_manager import AlertManager
+from src.visualization.generate_charts import create_time_series_plot
+from src.reporting.pdf_generator import create_pdf_report
 
 # Attempt to import core components with robust error handling
 try:
@@ -104,7 +108,7 @@ def create_google_sheet(wu_df, tsi_df, start_date, end_date, pull_type, alert_ma
     try:
         creds = GCreds.from_service_account_file(GOOGLE_CREDS_PATH, scopes=GOOGLE_API_SCOPE)
         client = gspread.authorize(creds)
-        sheet_name = f"Automated_{pull_type.title()}_Data_{start_date}_to_{end_date}"
+        sheet_name = f"Hot Durham Data - {start_date} to {end_date}"
         spreadsheet = client.create(sheet_name)
 
         if wu_df is not None and not wu_df.empty:
@@ -114,10 +118,20 @@ def create_google_sheet(wu_df, tsi_df, start_date, end_date, pull_type, alert_ma
 
         if tsi_df is not None and not tsi_df.empty:
             ws = spreadsheet.add_worksheet(title="TSI Data", rows=len(tsi_df) + 1, cols=len(tsi_df.columns))
+            # Convert all non-serializable columns to strings before upload
+            for col in tsi_df.columns:
+                if any(isinstance(i, (dict, list)) for i in tsi_df[col]):
+                    tsi_df[col] = tsi_df[col].astype(str)
+                elif pd.api.types.is_datetime64_any_dtype(tsi_df[col]):
+                    tsi_df[col] = tsi_df[col].astype(str)
             ws.update([tsi_df.columns.tolist()] + tsi_df.values.tolist())
 
-        spreadsheet.share(SHARE_EMAIL, perm_type='user', role='writer')
-        logging.info(f"Shared Google Sheet with {SHARE_EMAIL}")
+        try:
+            spreadsheet.share(SHARE_EMAIL, perm_type='user', role='writer')
+            logging.info(f"Shared Google Sheet with {SHARE_EMAIL}")
+        except Exception as e:
+            logging.error(f"Could not share Google Sheet. It may be flagged. Error: {e}")
+
         return {
             'sheet_id': spreadsheet.id,
             'sheet_url': spreadsheet.url,
@@ -144,6 +158,7 @@ def parse_arguments():
     parser.add_argument("--pull_type", type=str, default=DEFAULT_PULL_TYPE, choices=['daily', 'weekly', 'monthly'], help="The type of data pull to perform.")
     parser.add_argument("--no_sheets", action='store_true', help="Skip creating a Google Sheet.")
     parser.add_argument("--no_sync", action='store_true', help="Skip syncing to Google Drive.")
+    parser.add_argument("--generate-report", action='store_true', help="Generate a PDF report with charts.")
     return parser.parse_args()
 
 def main():
@@ -172,13 +187,61 @@ def main():
 
     if ENABLED_SOURCES["wu"]:
         wu_df = fetch_data_source("WU", fetch_wu_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
+        if wu_df is not None and not wu_df.empty:
+            logging.info(f"WU DataFrame columns: {wu_df.columns.tolist()}")
+            logging.info(f"WU DataFrame head:\n{wu_df.head()}")
     if ENABLED_SOURCES["tsi"]:
         tsi_df = fetch_data_source("TSI", fetch_tsi_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
+        if tsi_df is not None and not tsi_df.empty:
+            logging.info(f"TSI DataFrame columns: {tsi_df.columns.tolist()}")
+            logging.info(f"TSI DataFrame head:\n{tsi_df.head()}")
 
     if not args.no_sheets and (wu_df is not None or tsi_df is not None):
         sheet_info = create_google_sheet(wu_df, tsi_df, start_date, end_date, args.pull_type, alert_manager)
         if sheet_info:
             save_sheet_metadata(sheet_info, args.pull_type, start_date, end_date)
+
+    if args.generate_report and (wu_df is not None or tsi_df is not None):
+        logging.info("Generating PDF report...")
+        try:
+            reports_dir = os.path.join(PROJECT_ROOT, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            chart_path = os.path.join(reports_dir, f"{args.pull_type}_{start_date}_to_{end_date}_chart.png")
+            pdf_path = os.path.join(reports_dir, f"{args.pull_type}_{start_date}_to_{end_date}_report.pdf")
+            template_path = "templates/report_template.html"
+
+            report_df = tsi_df if tsi_df is not None else wu_df
+
+            if report_df is not None and not report_df.empty and 'timestamp' in report_df.columns and 'mcpm2x5' in report_df.columns:
+                create_time_series_plot(
+                    data=report_df,
+                    x_col='timestamp',
+                    y_col='mcpm2x5',
+                    title=f'PM2.5 Readings ({start_date} to {end_date})',
+                    x_label='Timestamp',
+                    y_label='PM2.5 Concentration (mcpm2x5)',
+                    file_path=chart_path
+                )
+                logging.info(f"Chart saved to {chart_path}")
+
+                template_data = {
+                    "title": f"Hot Durham {args.pull_type.title()} Report",
+                    "date_range": f"{start_date} to {end_date}",
+                    "table_html": report_df.to_html(index=False, classes='table table-striped')
+                }
+
+                create_pdf_report(
+                    template_path=template_path,
+                    context=template_data,
+                    output_path=pdf_path
+                )
+                logging.info(f"PDF report saved to {pdf_path}")
+            else:
+                logging.warning("Could not generate report: DataFrame is empty or missing required columns ('timestamp', 'pm25').")
+
+        except Exception as e:
+            logging.error(f"Failed to generate PDF report: {e}", exc_info=True)
+            alert_manager.send_alert("PDF Report Generation Failed", f"An error occurred while generating the PDF report: {e}")
 
     if not args.no_sync:
         try:

@@ -31,10 +31,10 @@ DATA_PATHS = {
 # Defines paths for different types of logs, helping to separate concerns and
 # making it easier to debug and monitor the application.
 LOG_PATHS = {
-    "application": os.path.join(PROJECT_ROOT, "logs", "application"),
-    "system": os.path.join(PROJECT_ROOT, "logs", "system"),
-    "scheduler": os.path.join(PROJECT_ROOT, "logs", "scheduler"),
-    "archive": os.path.join(PROJECT_ROOT, "logs", "archive"),
+    "application": os.path.join(PROJECT_ROOT, "temp", "logs", "application"),
+    "system": os.path.join(PROJECT_ROOT, "temp", "logs", "system"),
+    "scheduler": os.path.join(PROJECT_ROOT, "temp", "logs", "scheduler"),
+    "archive": os.path.join(PROJECT_ROOT, "temp", "logs", "archive"),
 }
 
 # --- Backup Paths ---

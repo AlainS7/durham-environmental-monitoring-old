@@ -14,7 +14,7 @@ import os
 # It is recommended to use environment variables for sensitive information.
 SMTP_CONFIG = {
     "server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
-    "port": int(os.environ.get("SMTP_PORT", 587)),
+    "port": int(os.environ.get("SMTP_PORT", 465)),
     "sender_email": os.environ.get("SENDER_EMAIL", "your_email@example.com"),
     "sender_password": os.environ.get("SENDER_PASSWORD", "your_password"),
 }

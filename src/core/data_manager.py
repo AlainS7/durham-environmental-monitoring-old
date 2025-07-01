@@ -393,7 +393,7 @@ class DataManager:
                         for file_path in week_folder.glob("*.csv"):
                             # Only sync files from last month
                             file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
-                            if (datetime.now() - file_time).days <= 30:
+                            if (datetime.now() - file_time).days <= 7:
                                 if use_improved_structure:
                                     drive_folder = get_production_path('raw', data_type.upper())
                                 else:
