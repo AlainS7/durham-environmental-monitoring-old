@@ -77,8 +77,8 @@ def get_date_range(pull_type):
         raise ValueError(f"Unsupported pull type: {pull_type}")
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
-def fetch_data_source(source_name, fetch_function, start_date, end_date, data_manager, pull_type, alert_manager):
-    """Fetches and saves data from a single source (WU or TSI)."""
+def fetch_data_source(source_name, fetch_function, start_date, end_date, alert_manager):
+    """Fetches data from a single source (WU or TSI) and returns it as a DataFrame."""
     logging.info(f"Fetching {source_name} data from {start_date} to {end_date}...")
     try:
         if source_name.lower() == 'tsi':
@@ -88,10 +88,6 @@ def fetch_data_source(source_name, fetch_function, start_date, end_date, data_ma
         
         if df is not None and not df.empty:
             logging.info(f"Successfully fetched {len(df)} records from {source_name}.")
-            file_path = data_manager.save_raw_data(
-                df, source_name.lower(), start_date, end_date, pull_type, DEFAULT_FILE_FORMAT
-            )
-            logging.info(f"Saved {source_name} data to {file_path}")
             return df
         else:
             logging.warning(f"No data retrieved from {source_name}.")
@@ -157,44 +153,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Automated Data Pull Script")
     parser.add_argument("--pull_type", type=str, default=DEFAULT_PULL_TYPE, choices=['daily', 'weekly', 'monthly'], help="The type of data pull to perform.")
     parser.add_argument("--no_sheets", action='store_true', help="Skip creating a Google Sheet.")
-    parser.add_argument("--no_sync", action='store_true', help="Skip syncing to Google Drive.")
     parser.add_argument("--generate-report", action='store_true', help="Generate a PDF report with charts.")
     return parser.parse_args()
 
-def main():
-    """Main function to orchestrate the data pull process."""
-    setup_logging()
-    args = parse_arguments()
-    alert_manager = AlertManager(
-        smtp_server=SMTP_CONFIG["server"],
-        smtp_port=SMTP_CONFIG["port"],
-        sender_email=SMTP_CONFIG["sender_email"],
-        sender_password=SMTP_CONFIG["sender_password"],
-        recipient_email=RECIPIENT_EMAILS[0]
-    )
-    logging.info(f"Starting {args.pull_type} data pull...")
-
-    try:
-        start_date, end_date = get_date_range(args.pull_type)
-        logging.info(f"Date range: {start_date} to {end_date}")
-    except ValueError as e:
-        logging.error(str(e), exc_info=True)
-        alert_manager.send_alert("Data Pull Failed", f"Invalid pull type specified: {args.pull_type}")
-        sys.exit(1)
-
-    data_manager = DataManager(PROJECT_ROOT)
-    wu_df, tsi_df = None, None
-
-    if ENABLED_SOURCES["wu"]:
-        wu_df = fetch_data_source("WU", fetch_wu_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
-        if wu_df is not None and not wu_df.empty:
-            logging.info(f"WU DataFrame columns: {wu_df.columns.tolist()}")
-            logging.info(f"WU DataFrame head:\n{wu_df.head()}")
-    if ENABLED_SOURCES["tsi"]:
-        tsi_df = fetch_data_source("TSI", fetch_tsi_data, start_date, end_date, data_manager, args.pull_type, alert_manager)
-        if tsi_df is not None and not tsi_df.empty:
-            logging.info(f"TSI DataFrame columns: {tsi_df.columns.tolist()}")
-            logging.info(f"TSI DataFrame head:\n{tsi_df.head()}")
+def main():    """Main function to orchestrate the data pull process."""    setup_logging()    args = parse_arguments()    alert_manager = AlertManager(        smtp_server=SMTP_CONFIG["server"],        smtp_port=SMTP_CONFIG["port"],        sender_email=SMTP_CONFIG["sender_email"],        sender_password=SMTP_CONFIG["sender_password"],        recipient_email=RECIPIENT_EMAILS[0]    )    logging.info(f"Starting {args.pull_type} data pull...")    try:        start_date, end_date = get_date_range(args.pull_type)        logging.info(f"Date range: {start_date} to {end_date}")    except ValueError as e:        logging.error(str(e), exc_info=True)        alert_manager.send_alert("Data Pull Failed", f"Invalid pull type specified: {args.pull_type}")        sys.exit(1)    wu_df, tsi_df = None, None    if ENABLED_SOURCES["wu"]:        wu_df = fetch_data_source("WU", fetch_wu_data, start_date, end_date, alert_manager)        if wu_df is not None and not wu_df.empty:            logging.info(f"WU DataFrame columns: {wu_df.columns.tolist()}")            logging.info(f"WU DataFrame head:\n{wu_df.head()}")    if ENABLED_SOURCES["tsi"]:        tsi_df = fetch_data_source("TSI", fetch_tsi_data, start_date, end_date, alert_manager)        if tsi_df is not None and not tsi_df.empty:            logging.info(f"TSI DataFrame columns: {tsi_df.columns.tolist()}")            logging.info(f"TSI DataFrame head:\n{tsi_df.head()}")
 
     if not args.no_sheets and (wu_df is not None or tsi_df is not None):
         sheet_info = create_google_sheet(wu_df, tsi_df, start_date, end_date, args.pull_type, alert_manager)
@@ -243,13 +205,7 @@ def main():
             logging.error(f"Failed to generate PDF report: {e}", exc_info=True)
             alert_manager.send_alert("PDF Report Generation Failed", f"An error occurred while generating the PDF report: {e}")
 
-    if not args.no_sync:
-        try:
-            data_manager.sync_to_drive()
-            logging.info("Successfully synced data to Google Drive.")
-        except Exception as e:
-            logging.error(f"Google Drive sync failed: {e}", exc_info=True)
-            alert_manager.send_alert("Google Drive Sync Failed", f"An error occurred while syncing data to Google Drive: {e}")
+    
 
     logging.info(f"{args.pull_type.title()} data pull completed.")
 

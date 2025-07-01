@@ -161,69 +161,7 @@ class DataManager:
             "temp": self.base_dir / "temp" / filename
         }
     
-    def pull_and_store_data(self, data_type: str, start_date: str, end_date: str, 
-                           file_format: str = "csv") -> Optional[Path]:
-        """Pull data from API and store in organized structure."""
-        self.logger.info(f"Starting {data_type.upper()} data pull for {start_date} to {end_date}")
-        
-        try:
-            # Dynamically import data fetching functions to avoid circular imports
-            import sys
-            from pathlib import Path
-            sys.path.append(str(Path(__file__).parent.parent / "data_collection"))
-            
-            # Fetch data based on type
-            if data_type == "wu":
-                try:
-                    from faster_wu_tsi_to_sheets_async import fetch_wu_data
-                    df = fetch_wu_data(start_date, end_date)
-                except ImportError:
-                    self.logger.error("Cannot import fetch_wu_data function")
-                    return None
-            elif data_type == "tsi":
-                try:
-                    from faster_wu_tsi_to_sheets_async import fetch_tsi_data
-                    df, _ = fetch_tsi_data(start_date, end_date)
-                except ImportError:
-                    self.logger.error("Cannot import fetch_tsi_data function")
-                    return None
-            else:
-                self.logger.error(f"Unknown data type: {data_type}")
-                return None
-            
-            if df is None or df.empty:
-                self.logger.warning(f"No {data_type.upper()} data retrieved")
-                return None
-            
-            # Get file paths
-            paths = self.get_file_paths(data_type, start_date, end_date, file_format)
-            
-            # Save data to various locations
-            if file_format == "excel":
-                df.to_excel(paths["raw"], index=False)
-                df.to_excel(paths["backup"], index=False)
-            else:
-                df.to_csv(paths["raw"], index=False)
-                df.to_csv(paths["backup"], index=False)
-            
-            self.logger.info(f"Data saved to {paths['raw']}")
-            
-            # Upload to Google Drive if available using improved folder structure
-            if self.drive_service:
-                try:
-                    from config.improved_google_drive_config import get_production_path
-                    # Use improved folder structure
-                    drive_folder = get_production_path('raw', data_type.upper())
-                    self.upload_to_drive(paths["raw"], drive_folder, priority=1)  # High priority for production data
-                except ImportError:
-                    # Fallback to legacy folder structure
-                    self.upload_to_drive(paths["raw"], f"HotDurham/Production/RawData/{data_type.upper()}")
-            
-            return paths["raw"]
-            
-        except Exception as e:
-            self.logger.error(f"Error during {data_type} data pull: {e}")
-            return None
+    
     
     def upload_to_drive(self, local_path: Path, drive_folder: str, priority: int = 2) -> bool:
         """Upload a file to Google Drive using enhanced manager with rate limiting."""
@@ -370,47 +308,7 @@ class DataManager:
                     file_path.unlink()
                     self.logger.info(f"Cleaned up temp file: {file_path.name}")
     
-    def sync_to_google_drive(self):
-        """Sync all important data to Google Drive using improved folder structure."""
-        if not self.drive_service:
-            self.logger.warning("Google Drive service not available for sync")
-            return
-        
-        self.logger.info("Starting Google Drive sync with improved folder structure")
-        
-        try:
-            from config.improved_google_drive_config import get_production_path, get_archive_path
-            use_improved_structure = True
-        except ImportError:
-            self.logger.warning("Improved folder structure not available, using legacy structure")
-            use_improved_structure = False
-        
-        # Sync recent raw data
-        for data_type in ["wu", "tsi"]:
-            for year_folder in (self.base_dir / "raw_pulls" / data_type).glob("*"):
-                if year_folder.is_dir():
-                    for week_folder in year_folder.glob("week_*"):
-                        for file_path in week_folder.glob("*.csv"):
-                            # Only sync files from last month
-                            file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
-                            if (datetime.now() - file_time).days <= 7:
-                                if use_improved_structure:
-                                    drive_folder = get_production_path('raw', data_type.upper())
-                                else:
-                                    drive_folder = f"HotDurham/Production/RawData/{data_type.upper()}/{year_folder.name}"
-                                self.upload_to_drive(file_path, drive_folder, priority=2)
-        
-        # Sync processed data
-        for summary_type in ["weekly_summaries", "monthly_summaries", "annual_summaries"]:
-            summary_dir = self.base_dir / "processed" / summary_type
-            for file_path in summary_dir.glob("*.csv"):
-                if use_improved_structure:
-                    drive_folder = get_production_path('processed')
-                else:
-                    drive_folder = f"HotDurham/Production/Processed/{summary_type}"
-                self.upload_to_drive(file_path, drive_folder, priority=3)
-        
-        self.logger.info("Google Drive sync completed")
+    
     
     def schedule_automatic_pulls(self):
         """Set up scheduled automatic data pulls."""
@@ -665,71 +563,7 @@ class DataManager:
         
         return summary
 
-    def save_raw_data(self, data: pd.DataFrame, source: str, start_date: str, end_date: str, 
-                     pull_type: str, file_format: str = 'csv') -> str:
-        """
-        Save raw data to organized folder structure.
-        
-        Args:
-            data: DataFrame to save
-            source: 'wu' or 'tsi'
-            start_date: Start date string
-            end_date: End date string
-            pull_type: Type of pull (weekly, bi-weekly, manual, etc.)
-            file_format: File format ('csv', 'excel')
-            
-        Returns:
-            Path to saved file
-        """
-        try:
-            # Get current date info for folder organization
-            current_date = datetime.now()
-            year = current_date.year
-            week_num = current_date.isocalendar()[1]
-            
-            # Create year-specific folder if needed
-            year_folder = self.raw_data_path / source / str(year)
-            year_folder.mkdir(parents=True, exist_ok=True)
-            
-            # Generate filename with timestamp and type
-            timestamp = current_date.strftime('%Y%m%d_%H%M%S')
-            filename = f"{source.upper()}_{start_date}_to_{end_date}_{pull_type}_{timestamp}.{file_format}"
-            
-            file_path = year_folder / filename
-            
-            # Save the data
-            if file_format.lower() == 'csv':
-                data.to_csv(file_path, index=False)
-            elif file_format.lower() == 'excel':
-                data.to_excel(file_path, index=False, engine='openpyxl')
-            else:
-                raise ValueError(f"Unsupported file format: {file_format}")
-            
-            # Log the operation
-            self.logger.info(f"Saved {source.upper()} raw data to {file_path}")
-            
-            # Save metadata
-            metadata = {
-                'source': source,
-                'start_date': start_date,
-                'end_date': end_date,
-                'pull_type': pull_type,
-                'file_format': file_format,
-                'rows': len(data),
-                'columns': list(data.columns),
-                'created_date': timestamp,
-                'file_size_bytes': file_path.stat().st_size if file_path.exists() else 0
-            }
-            
-            metadata_path = file_path.with_suffix(f'.{file_format}.metadata.json')
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
-            
-            return str(file_path)
-            
-        except Exception as e:
-            self.logger.error(f"Error saving {source} raw data: {e}")
-            return None
+    
     
     def save_sheet_metadata(self, sheet_info: dict, start_date: str, end_date: str, pull_type: str):
         """
