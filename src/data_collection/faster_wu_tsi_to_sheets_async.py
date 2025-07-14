@@ -1,5 +1,16 @@
-import sys
+import asyncio
+import json
 import os
+import sys
+import time
+from datetime import datetime, timedelta
+
+import httpx
+import nest_asyncio
+import pandas as pd
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from tqdm import tqdm
 
 # Add project root to path FIRST, before importing from src
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -9,63 +20,29 @@ sys.path.insert(0, os.path.join(project_root, 'config'))
 
 # Now we can import the data manager and test sensor config
 try:
-    from data_manager import DataManager
+    from test_sensors_config import TestSensorConfig
 except ImportError:
     try:
-        from src.core.data_manager import DataManager
-    except ImportError:
-        DataManager = None
-
-try:
-    from test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
-except ImportError:
-    try:
-        from config.test_sensors_config import TestSensorConfig, is_test_sensor, get_data_path, get_log_path
+        from config.test_sensors_config import TestSensorConfig
     except ImportError:
         TestSensorConfig = None
-        is_test_sensor = None
-        get_data_path = None
-        get_log_path = None
 
-# Import enhanced utilities
-try:
-    from src.utils.enhanced_logging import HotDurhamLogger
-    from src.validation.data_validator import SensorDataValidator
-    from src.database.db_manager import HotDurhamDB
-    from src.utils.error_handler import ErrorHandler
-    from src.config.config_manager import ConfigManager
-    from src.monitoring.performance_monitor import PerformanceMonitor
-    ENHANCED_FEATURES_AVAILABLE = True
-except ImportError:
-    ENHANCED_FEATURES_AVAILABLE = False
-    print("💡 Enhanced features not available - using basic functionality")
+# Load environment variables from .env file
+load_dotenv()
 
-import json
-import pandas as pd
-from datetime import datetime, timedelta
-import re
-import requests
-from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import nest_asyncio
-import asyncio
-import httpx
-import time
-import select
+# Database connection
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
 
-# Google Sheets
-import gspread
-from google.oauth2.service_account import Credentials as GCreds
-from googleapiclient.discovery import build
+if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
+    print("❌ ERROR: Database environment variables not set. Please create a .env file with DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, and DB_NAME.")
+    sys.exit(1)
 
-# Could add support for OneDrive upload here
-try:
-    import msal
-except ImportError:
-    msal = None
-
-# Import data management system
-# Already imported above
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+engine = create_engine(DATABASE_URL)
 
 nest_asyncio.apply()
 
@@ -90,17 +67,11 @@ def read_or_fallback(prompt, default=None):
         return val if val else (default if default is not None else "")
 
 # Use robust file path gathering for creds
-# project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
-google_creds_abs = os.path.join(project_root, 'creds', 'google_creds.json')
 wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
 if not os.path.exists(ts_creds_abs):
     print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
-    input("Press Enter to exit...")
-    sys.exit(1)
-if not os.path.exists(google_creds_abs):
-    print(f"❌ ERROR: Google credentials not found at {google_creds_abs}. Please upload or place your google_creds.json in the creds/ folder.")
     input("Press Enter to exit...")
     sys.exit(1)
 if not os.path.exists(wu_api_key_abs):
@@ -108,19 +79,17 @@ if not os.path.exists(wu_api_key_abs):
     input("Press Enter to exit...")
     sys.exit(1)
 
-
-
-def create_gspread_client():
-    scope = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
-    creds = GCreds.from_service_account_file(google_creds_abs, scopes=scope)
-    return gspread.authorize(creds)
-
-def create_gspread_client_v2():
-    scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-    return GCreds.from_service_account_file(google_creds_abs, scopes=scope)
+def insert_data_to_db(df, table_name):
+    """Inserts a DataFrame into the specified database table."""
+    if df is None or df.empty:
+        print(f"No data to insert into {table_name}.")
+        return
+    try:
+        print(f"Inserting {len(df)} rows into {table_name}...")
+        df.to_sql(table_name, engine, if_exists='append', index=False)
+        print(f"✅ Successfully inserted data into {table_name}.")
+    except Exception as e:
+        print(f"❌ ERROR inserting data into {table_name}: {e}")
 
 def fetch_wu_data(start_date_str, end_date_str):
     with open(wu_api_key_abs) as f:
@@ -151,7 +120,6 @@ def fetch_wu_data(start_date_str, end_date_str):
         for attempt_num in range(1, max_attempts + 1):
             response = None
             try:
-                # print(f"DEBUG: WU API Request (httpx) to {url} with params {{'stationId': '{stationId}', 'date': '{date}'}} using timeout={client.timeout} (Attempt: {attempt_num})")
                 response = client.get(url, params=params)
 
                 if response.status_code == 200:
@@ -179,7 +147,6 @@ def fetch_wu_data(start_date_str, end_date_str):
                             ]
                             processed_rows.append(row)
                         if not processed_rows:
-                            # print(f"No observations found for {stationId} on {date}.")
                             return []
                         return processed_rows
                     except json.JSONDecodeError:
@@ -339,7 +306,6 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
         from src.utils.tsi_date_manager import TSIDateRangeManager
     except ImportError:
         # Fallback for direct path import
-        import sys
         from pathlib import Path
         sys.path.append(str(Path(__file__).parent.parent / "utils"))
         try:
@@ -348,16 +314,13 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
             print("⚠️ Warning: TSI date manager not available, using basic date handling")
             TSIDateRangeManager = None
     
-    # Check and adjust date range for TSI API limitation
-    original_start, original_end = start_date, end_date
-    
     if TSIDateRangeManager is not None:
         days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
         days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
         
         if not TSIDateRangeManager.is_within_limit(start_date, end_date):
             print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, exceeds TSI's 90-day historical limit")
-            print(f"   TSI API Error: 'start_date cannot be more than 90 days in the past'")
+            print("   TSI API Error: 'start_date cannot be more than 90 days in the past'")
             print("   Options:")
             print("   1. Use most recent valid date range")
             print("   2. Skip TSI data collection") 
@@ -491,13 +454,13 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
         if test_wu_rows:
             test_data['wu'] = pd.DataFrame(test_wu_rows)
             print(f"🧪 Separated {len(test_wu_rows)} WU test sensor records from {len(separation_stats['wu_test_sensors'])} sensors")
-            if len(separation_stats['wu_test_sensors']) <= 5:  # Show sensor IDs if not too many
+            if len(separation_stats['wu_test_sensors']) <= 5:
                 print(f"   Test sensors: {', '.join(sorted(separation_stats['wu_test_sensors']))}")
         
         if prod_wu_rows:
             prod_data['wu'] = pd.DataFrame(prod_wu_rows)
             print(f"🏭 Separated {len(prod_wu_rows)} WU production sensor records from {len(separation_stats['wu_prod_sensors'])} sensors")
-            if len(separation_stats['wu_prod_sensors']) <= 5:  # Show sensor IDs if not too many
+            if len(separation_stats['wu_prod_sensors']) <= 5:
                 print(f"   Production sensors: {', '.join(sorted(separation_stats['wu_prod_sensors']))}")
         
         if separation_stats['wu_unknown_count'] > 0:
@@ -567,13 +530,13 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
         if test_tsi_rows:
             test_data['tsi'] = pd.DataFrame(test_tsi_rows)
             print(f"🧪 Separated {len(test_tsi_rows)} TSI test sensor records from {len(separation_stats['tsi_test_sensors'])} sensors")
-            if len(separation_stats['tsi_test_sensors']) <= 5:  # Show sensor IDs if not too many
+            if len(separation_stats['tsi_test_sensors']) <= 5:
                 print(f"   Test sensors: {', '.join(sorted(separation_stats['tsi_test_sensors']))}")
         
         if prod_tsi_rows:
             prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
             print(f"🏭 Separated {len(prod_tsi_rows)} TSI production sensor records from {len(separation_stats['tsi_prod_sensors'])} sensors")
-            if len(separation_stats['tsi_prod_sensors']) <= 5:  # Show sensor IDs if not too many
+            if len(separation_stats['tsi_prod_sensors']) <= 5:
                 print(f"   Production sensors: {', '.join(sorted(separation_stats['tsi_prod_sensors']))}")
         
         if separation_stats['tsi_unknown_count'] > 0:
@@ -584,7 +547,7 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
     total_prod_records = separation_stats['wu_prod_count'] + separation_stats['tsi_prod_count']
     total_unknown_records = separation_stats['wu_unknown_count'] + separation_stats['tsi_unknown_count']
     
-    print(f"\n📊 Data Separation Summary:")
+    print("\n📊 Data Separation Summary:")
     print(f"   🧪 Test sensors: {total_test_records} records from {len(separation_stats['wu_test_sensors']) + len(separation_stats['tsi_test_sensors'])} sensors")
     print(f"   🏭 Production sensors: {total_prod_records} records from {len(separation_stats['wu_prod_sensors']) + len(separation_stats['tsi_prod_sensors'])} sensors")
     if total_unknown_records > 0:
@@ -600,1102 +563,56 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
     
     return test_data, prod_data
 
-
-
-# ========== CHART CONFIGURATION ==========
-# CHART IMPROVEMENTS:
-# 1. Set ENABLE_OUTLIER_REMOVAL = False to disable outlier removal completely
-# 2. Adjust CHART_WIDTH and CHART_HEIGHT to change chart dimensions
-# 3. Modify outlier detection method in remove_outliers() function ('iqr' or 'zscore')
-# 4. Set ENABLE_DISCONNECTED_POINTS = True to show data points without connecting lines
-# 5. Set TSI_DATA_SAMPLING_MINUTES = 15 to show every 15 minutes for detailed trends
-
-ENABLE_OUTLIER_REMOVAL = True  # Set to False to disable outlier removal
-CHART_WIDTH = 2400  # Increased chart width for better spacing (was 1800)
-CHART_HEIGHT = 400  # Slightly increased height for better proportions (was 400)
-ENABLE_DISCONNECTED_POINTS = True  # Set to True to show data points without connecting lines
-
-# TSI-specific chart configuration for better spacing
-TSI_DATA_SAMPLING_MINUTES = 15  # Show every 15 minutes for detailed trends (15=every 15min, 30=every 30min, 60=every hour, 120=every 2 hours)
-TSI_CHART_MAX_DAYS = 7  # Limit chart data to recent days for better visualization (set to 0 for all data)
-
-def apply_hard_caps_only(df, column):
+def main():
     """
-    Apply hard caps to remove extreme outliers regardless of station type.
-    These are absolute physical limits that no sensor should exceed.
+    Main function to fetch data from TSI and WU, then upload to database.
     """
-    if column not in df.columns:
-        return df
-    
-    # Define strict hard caps for extreme outliers
-    hard_caps = {
-        'PM 2.5': (0, 30),      # PM2.5 hard cap at 30 µg/m³ (more aggressive to catch 59)
-        'PM 10': (0, 60),       # PM10 hard cap
-        'tempAvg': (-30, 55),   # Temperature hard caps
-        'T (C)': (-30, 55),     # Temperature hard caps
-        'humidityAvg': (0, 100), # Humidity hard cap at 100%
-        'RH (%)': (0, 100),     # RH hard cap at 100%
-        'windspeedAvg': (0, 35), # Wind speed hard cap at 35 km/h (very generous to preserve Duke-Kestrel-01)
-        'precipTotal': (0, 75),  # Precipitation hard cap
-        'solarRadiationHigh': (0, 1200), # Solar radiation hard cap
-        'dewptAvg': (-30, 40),   # Dew point hard caps
-        'heatindexAvg': (-25, 65) # Heat index hard caps
-    }
-    
-    # Find matching hard cap
-    lower_cap, upper_cap = None, None
-    matched_key = None
-    for key, (low, high) in hard_caps.items():
-        if key in column:
-            lower_cap, upper_cap = low, high
-            matched_key = key
-            break
-    
-    if lower_cap is not None and upper_cap is not None:
-        numeric_data = pd.to_numeric(df[column], errors='coerce')
-        before_count = len(df)
-        
-        # Check for extreme values before applying caps
-        extreme_values = numeric_data[(numeric_data < lower_cap) | (numeric_data > upper_cap)].dropna()
-        if len(extreme_values) > 0:
-            print(f"   🚨 EXTREME VALUES DETECTED in {column} (matched key: {matched_key}):")
-            print(f"      Bounds: [{lower_cap}, {upper_cap}]")
-            print(f"      Extreme values: {extreme_values.unique()[:10]}")  # Show up to 10 unique extreme values
-        
-        # Apply hard caps
-        hard_cap_mask = (numeric_data >= lower_cap) & (numeric_data <= upper_cap)
-        filtered_df = df[hard_cap_mask.fillna(True)]
-        
-        if len(filtered_df) != before_count:
-            removed_count = before_count - len(filtered_df)
-            outliers = df[~hard_cap_mask.fillna(True)]
-            outlier_values = outliers[column].dropna().unique()[:5]
-            print(f"   🚫 Hard caps for {column}: [{lower_cap}, {upper_cap}] - Removed {removed_count} extreme outliers")
-            print(f"   🚫 Extreme outlier values removed: {outlier_values}")
-        else:
-            print(f"   ✅ Hard caps for {column}: [{lower_cap}, {upper_cap}] - No extreme outliers found")
-        
-        return filtered_df
-    else:
-        print(f"   ⚠️ No hard caps defined for column: {column}")
-    
-    return df
+    print("Starting data collection process...")
 
-def remove_outliers(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
-    """
-    Remove outliers from a DataFrame column using hard caps first, then statistical methods.
-    
-    Args:
-        df: DataFrame containing the data
-        column: Column name to remove outliers from
-        method: 'iqr' for Interquartile Range or 'zscore' for Z-score method
-        z_threshold: Z-score threshold for outlier detection (default: 3)
-        iqr_multiplier: IQR multiplier for outlier detection (default: 1.5)
-    
-    Returns:
-        DataFrame with outliers removed
-    """
-    if not ENABLE_OUTLIER_REMOVAL:
-        return df
-    
-    if column not in df.columns:
-        return df
-    
-    # ALWAYS apply hard caps first, regardless of station type
-    df = apply_hard_caps_only(df, column)
-    
-    # For Duke-Kestrel-01, only apply hard caps, skip statistical outlier removal
-    if 'stationID' in df.columns:
-        kestrel_only = (df['stationID'] == 'KNCDURHA590').all()
-        if kestrel_only:
-            print(f"   📊 Applied hard caps only to Duke-Kestrel-01 {column} (skipping statistical outlier removal)")
-            return df
-        
-        # If mixed data, do per-station outlier removal
-        if 'KNCDURHA590' in df['stationID'].values:
-            return remove_outliers_per_station(df, column, method, z_threshold, iqr_multiplier)
-    elif 'Station Name' in df.columns:
-        kestrel_only = (df['Station Name'] == 'Duke-Kestrel-01').all()
-        if kestrel_only:
-            print(f"   📊 Applied hard caps only to Duke-Kestrel-01 {column} (skipping statistical outlier removal)")
-            return df
-        
-        # If mixed data, do per-station outlier removal
-        if 'Duke-Kestrel-01' in df['Station Name'].values:
-            return remove_outliers_per_station(df, column, method, z_threshold, iqr_multiplier)
-    
-    # Convert to numeric, replacing non-numeric values with NaN
-    numeric_data = pd.to_numeric(df[column], errors='coerce')
-    
-    # Apply logical bounds first to catch obvious outliers
-    outlier_mask = apply_logical_bounds(numeric_data, column)
-    
-    if method == 'iqr':
-        # Interquartile Range method with tighter bounds for better outlier detection
-        Q1 = numeric_data.quantile(0.25)
-        Q3 = numeric_data.quantile(0.75)
-        IQR = Q3 - Q1
-        # Use more aggressive outlier detection for PM2.5 and wind speed
-        if 'PM' in column or 'windspeed' in column:
-            iqr_multiplier = 1.2  # Tighter bounds for these metrics
-        lower_bound = Q1 - iqr_multiplier * IQR
-        upper_bound = Q3 + iqr_multiplier * IQR
-        statistical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
-        outlier_mask = outlier_mask & statistical_mask
-    elif method == 'zscore':
-        # Z-score method with tighter threshold for PM and wind
-        if 'PM' in column or 'windspeed' in column:
-            z_threshold = 2.5  # Tighter threshold for these metrics
-        mean = numeric_data.mean()
-        std = numeric_data.std()
-        z_scores = abs((numeric_data - mean) / std)
-        statistical_mask = z_scores <= z_threshold
-        outlier_mask = outlier_mask & statistical_mask
-    else:
-        # Invalid method, just use logical bounds
-        pass
-    
-    # Filter out outliers
-    filtered_df = df[outlier_mask.fillna(True)]  # Keep NaN values
-    
-    if len(filtered_df) != len(df):
-        removed_count = len(df) - len(filtered_df)
-        print(f"   📊 Outlier removal: Removed {removed_count} outliers from {column} using {method} method with logical bounds")
-        # Show some example outliers that were removed
-        outliers = df[~outlier_mask.fillna(True)]
-        if len(outliers) > 0:
-            outlier_values = outliers[column].dropna().unique()[:5]  # Show up to 5 example values
-            print(f"   📊 Example outlier values removed: {outlier_values}")
-    
-    return filtered_df
+    # 1. GET USER INPUT FOR DATE RANGE
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    start_date_def = yesterday.strftime("%Y-%m-%d")
+    end_date_def = yesterday.strftime("%Y-%m-%d")
 
-def apply_logical_bounds(numeric_data, column):
-    """
-    Apply logical bounds to catch obvious outliers based on the type of measurement.
-    These are more lenient than hard caps but still catch unreasonable values.
-    
-    Args:
-        numeric_data: Pandas Series with numeric data
-        column: Column name to determine appropriate bounds
-    
-    Returns:
-        Boolean mask where True means the value is within logical bounds
-    """
-    # Define logical bounds for different types of measurements (more lenient than hard caps)
-    bounds = {
-        'PM 2.5': (0, 25),      # PM2.5 logical bound (even stricter to catch 59)
-        'PM 10': (0, 50),       # PM10 logical bound
-        'tempAvg': (-25, 50),   # Temperature in Celsius (reasonable for Durham, NC)
-        'T (C)': (-25, 50),     # Temperature in Celsius
-        'humidityAvg': (0, 100), # Humidity capped at 100% (reverted per user request)
-        'RH (%)': (0, 100),     # Relative humidity capped at 100%
-        'windspeedAvg': (0, 30), # Wind speed in km/h - updated to be more lenient for Duke-Kestrel-01
-        'precipTotal': (0, 60),  # Precipitation in mm - 60mm in an hour would be extreme
-        'solarRadiationHigh': (0, 1400), # Solar radiation W/m²
-        'dewptAvg': (-25, 35),   # Dew point in Celsius
-        'heatindexAvg': (-20, 60) # Heat index in Celsius
-    }
-    
-    # Find matching bound
-    lower_bound, upper_bound = None, None
-    for key, (low, high) in bounds.items():
-        if key in column:
-            lower_bound, upper_bound = low, high
-            break
-    
-    if lower_bound is not None and upper_bound is not None:
-        logical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
-        # Count how many values are outside logical bounds
-        outside_bounds = (~logical_mask).sum()
-        if outside_bounds > 0:
-            print(f"   📊 Logical bounds for {column}: [{lower_bound}, {upper_bound}] - {outside_bounds} values outside bounds")
-        return logical_mask
-    else:
-        # No specific bounds defined, allow all values
-        return pd.Series([True] * len(numeric_data), index=numeric_data.index)
+    start_date = read_or_fallback("Enter start date (YYYY-MM-DD)", start_date_def)
+    end_date = read_or_fallback("Enter end date (YYYY-MM-DD)", end_date_def)
 
-def remove_outliers_per_station(df, column, method='iqr', z_threshold=3, iqr_multiplier=1.5):
-    """
-    Remove outliers separately for each station to avoid cross-station contamination.
-    Applies hard caps first, then statistical outlier removal.
-    
-    Args:
-        df: DataFrame containing the data
-        column: Column name to remove outliers from
-        method: 'iqr' for Interquartile Range or 'zscore' for Z-score method
-        z_threshold: Z-score threshold for outlier detection (default: 3)
-        iqr_multiplier: IQR multiplier for outlier detection (default: 1.5)
-    
-    Returns:
-        DataFrame with outliers removed per station
-    """
-    # Apply hard caps to all stations first
-    df = apply_hard_caps_only(df, column)
-    
-    station_col = 'stationID' if 'stationID' in df.columns else 'Station Name'
-    filtered_dfs = []
-    
-    for station, station_df in df.groupby(station_col):
-        # For Duke-Kestrel-01, only apply hard caps (already done above), skip statistical outlier removal
-        if station in ['KNCDURHA590', 'Duke-Kestrel-01']:
-            print(f"   📊 Applied hard caps only to {station} {column} (skipping statistical outlier removal)")
-            filtered_dfs.append(station_df)
-            continue
-        
-        # Apply statistical outlier removal to other stations
-        station_df_copy = station_df.copy()
-        numeric_data = pd.to_numeric(station_df_copy[column], errors='coerce')
-        
-        if len(numeric_data.dropna()) < 5:  # Need at least 5 data points for outlier detection
-            filtered_dfs.append(station_df_copy)
-            continue
-        
-        # Apply logical bounds first
-        outlier_mask = apply_logical_bounds(numeric_data, column)
-        
-        if method == 'iqr':
-            # Interquartile Range method with adjusted multipliers
-            Q1 = numeric_data.quantile(0.25)
-            Q3 = numeric_data.quantile(0.75)
-            IQR = Q3 - Q1
-            if IQR == 0:  # All values are the same
-                filtered_dfs.append(station_df_copy)
-                continue
-            # Use more aggressive outlier detection for PM2.5 and wind speed
-            if 'PM' in column or 'windspeed' in column:
-                iqr_multiplier = 1.0  # Even tighter bounds for these metrics
-            lower_bound = Q1 - iqr_multiplier * IQR
-            upper_bound = Q3 + iqr_multiplier * IQR
-            statistical_mask = (numeric_data >= lower_bound) & (numeric_data <= upper_bound)
-            outlier_mask = outlier_mask & statistical_mask
-        elif method == 'zscore':
-            # Z-score method with adjusted thresholds
-            if 'PM' in column or 'windspeed' in column:
-                z_threshold = 2.0  # Even tighter threshold for these metrics
-            mean = numeric_data.mean()
-            std = numeric_data.std()
-            if std == 0:  # All values are the same
-                filtered_dfs.append(station_df_copy)
-                continue
-            z_scores = abs((numeric_data - mean) / std)
-            statistical_mask = z_scores <= z_threshold
-            outlier_mask = outlier_mask & statistical_mask
-        else:
-            # Invalid method, just use logical bounds
-            pass
-        
-        # Filter out outliers for this station
-        filtered_station_df = station_df_copy[outlier_mask.fillna(True)]
-        
-        if len(filtered_station_df) != len(station_df_copy):
-            removed_count = len(station_df_copy) - len(filtered_station_df)
-            print(f"   📊 Outlier removal for {station}: Removed {removed_count} outliers from {column} using {method} method with logical bounds")
-            # Show some example outliers that were removed for this station
-            outliers = station_df_copy[~outlier_mask.fillna(True)]
-            if len(outliers) > 0:
-                outlier_values = outliers[column].dropna().unique()[:3]  # Show up to 3 example values
-                print(f"   📊 Example outlier values removed from {station}: {outlier_values}")
-        
-        filtered_dfs.append(filtered_station_df)
-    
-    return pd.concat(filtered_dfs, ignore_index=True)
+    # 2. FETCH DATA
+    print("\nFetching Weather Underground data...")
+    wu_df = fetch_wu_data(start_date, end_date)
+    print(f"Found {len(wu_df)} records from Weather Underground.")
 
-def get_chart_dimensions():
-    """
-    Get chart dimensions for Google Sheets charts.
-    
-    Returns:
-        dict: Chart dimensions configuration
-    """
-    return {
-        'width': CHART_WIDTH,
-        'height': CHART_HEIGHT
-    }
+    print("\nFetching TSI data...")
+    tsi_df, _ = fetch_tsi_data(start_date, end_date)
+    print(f"Found {len(tsi_df)} records from TSI.")
 
-def generate_data_quality_report(tsi_df=None, wu_df=None, start_date=None, end_date=None):
-    """
-    Generate a comprehensive data quality report including outliers, missing data, and sensor anomalies.
-    
-    Args:
-        tsi_df: TSI DataFrame
-        wu_df: WU DataFrame  
-        start_date: Start date string
-        end_date: End date string
-    
-    Returns:
-        dict: Data quality report
-    """
-    report = {
-        'summary': {
-            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'date_range': f"{start_date} to {end_date}" if start_date and end_date else "Unknown",
-            'total_issues': 0
-        },
-        'tsi_quality': {},
-        'wu_quality': {},
-        'recommendations': []
-    }
-    
-    # TSI Data Quality Analysis
-    if tsi_df is not None and not tsi_df.empty:
-        print("📊 Analyzing TSI data quality...")
-        tsi_report = {
-            'total_records': len(tsi_df),
-            'devices': list(tsi_df['Device Name'].unique()) if 'Device Name' in tsi_df.columns else [],
-            'outliers_removed': {},
-            'missing_data': {},
-            'sensor_anomalies': []
-        }
-        
-        # Check for outliers in key metrics
-        for metric in ['PM 2.5', 'T (C)', 'RH (%)']:
-            if metric in tsi_df.columns:
-                numeric_data = pd.to_numeric(tsi_df[metric], errors='coerce')
-                total_values = len(numeric_data.dropna())
-                
-                # Apply same hard caps as in processing
-                if metric == 'PM 2.5':
-                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 30)].dropna()
-                elif metric == 'T (C)':
-                    outliers = numeric_data[(numeric_data < -30) | (numeric_data > 55)].dropna()
-                elif metric == 'RH (%)':
-                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 100)].dropna()
-                else:
-                    continue
-                
-                outlier_count = len(outliers)
-                if outlier_count > 0:
-                    tsi_report['outliers_removed'][metric] = {
-                        'count': outlier_count,
-                        'percentage': round(outlier_count / total_values * 100, 2) if total_values > 0 else 0,
-                        'extreme_values': list(outliers.unique()[:10])  # Top 10 extreme values
-                    }
-                    report['summary']['total_issues'] += outlier_count
-                
-                # Check for missing data
-                missing_count = tsi_df[metric].isna().sum()
-                if missing_count > 0:
-                    tsi_report['missing_data'][metric] = {
-                        'count': missing_count,
-                        'percentage': round(missing_count / len(tsi_df) * 100, 2)
-                    }
-        
-        # Check for sensor anomalies (devices with suspicious patterns)
-        for device in tsi_report['devices']:
-            device_data = tsi_df[tsi_df['Device Name'] == device]
-            
-            # Check for stuck sensors (all values the same)
-            for metric in ['PM 2.5', 'T (C)', 'RH (%)']:
-                if metric in device_data.columns:
-                    unique_values = device_data[metric].dropna().nunique()
-                    total_values = device_data[metric].dropna().count()
-                    if total_values > 10 and unique_values == 1:
-                        tsi_report['sensor_anomalies'].append({
-                            'device': device,
-                            'metric': metric,
-                            'issue': 'stuck_sensor',
-                            'description': f'All {total_values} values are identical'
-                        })
-                        report['summary']['total_issues'] += 1
-        
-        report['tsi_quality'] = tsi_report
-    
-    # WU Data Quality Analysis
-    if wu_df is not None and not wu_df.empty:
-        print("📊 Analyzing WU data quality...")
-        wu_report = {
-            'total_records': len(wu_df),
-            'stations': list(wu_df['stationID'].unique()) if 'stationID' in wu_df.columns else [],
-            'outliers_removed': {},
-            'missing_data': {},
-            'sensor_anomalies': []
-        }
-        
-        # Check for outliers in key metrics
-        for metric in ['tempAvg', 'humidityAvg', 'windspeedAvg']:
-            if metric in wu_df.columns:
-                numeric_data = pd.to_numeric(wu_df[metric], errors='coerce')
-                total_values = len(numeric_data.dropna())
-                
-                # Apply same hard caps as in processing
-                if metric == 'tempAvg':
-                    outliers = numeric_data[(numeric_data < -30) | (numeric_data > 55)].dropna()
-                elif metric == 'humidityAvg':
-                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 100)].dropna()
-                elif metric == 'windspeedAvg':
-                    outliers = numeric_data[(numeric_data < 0) | (numeric_data > 15)].dropna()
-                else:
-                    continue
-                
-                outlier_count = len(outliers)
-                if outlier_count > 0:
-                    wu_report['outliers_removed'][metric] = {
-                        'count': outlier_count,
-                        'percentage': round(outlier_count / total_values * 100, 2) if total_values > 0 else 0,
-                        'extreme_values': list(outliers.unique()[:10])  # Top 10 extreme values
-                    }
-                    report['summary']['total_issues'] += outlier_count
-                
-                # Check for missing data
-                missing_count = wu_df[metric].isna().sum()
-                if missing_count > 0:
-                    wu_report['missing_data'][metric] = {
-                        'count': missing_count,
-                        'percentage': round(missing_count / len(wu_df) * 100, 2)
-                    }
-        
-        # Check for sensor anomalies (stations with suspicious patterns)  
-        for station in wu_report['stations']:
-            station_data = wu_df[wu_df['stationID'] == station]
-            
-            # Check for stuck sensors
-            for metric in ['tempAvg', 'humidityAvg', 'windspeedAvg']:
-                if metric in station_data.columns:
-                    unique_values = station_data[metric].dropna().nunique()
-                    total_values = station_data[metric].dropna().count()
-                    if total_values > 10 and unique_values == 1:
-                        wu_report['sensor_anomalies'].append({
-                            'station': station,
-                            'metric': metric,
-                            'issue': 'stuck_sensor',
-                            'description': f'All {total_values} values are identical'
-                        })
-                        report['summary']['total_issues'] += 1
-        
-        report['wu_quality'] = wu_report
-    
-    # Generate recommendations
-    total_issues = report['summary']['total_issues']
-    if total_issues == 0:
-        report['recommendations'].append("✅ No data quality issues detected!")
-    else:
-        if total_issues > 100:
-            report['recommendations'].append("⚠️ High number of data quality issues detected - consider reviewing sensor calibration")
-        
-        # Check for specific issues
-        tsi_outliers = sum(len(v['extreme_values']) for v in report.get('tsi_quality', {}).get('outliers_removed', {}).values())
-        wu_outliers = sum(len(v['extreme_values']) for v in report.get('wu_quality', {}).get('outliers_removed', {}).values())
-        
-        if tsi_outliers > 0:
-            report['recommendations'].append(f"🔧 TSI sensors had {tsi_outliers} extreme outlier types - check sensor placement and calibration")
-        if wu_outliers > 0:
-            report['recommendations'].append(f"🔧 WU sensors had {wu_outliers} extreme outlier types - check station maintenance")
-    
-    return report
-
-def print_data_quality_report(report):
-    """Print a formatted data quality report to console."""
-    print("\n" + "="*80)
-    print("📊 DATA QUALITY REPORT")
-    print("="*80)
-    print(f"Generated: {report['summary']['generated_at']}")
-    print(f"Date Range: {report['summary']['date_range']}")
-    print(f"Total Issues Found: {report['summary']['total_issues']}")
-    
-    # TSI Quality Report
-    if report['tsi_quality']:
-        tsi = report['tsi_quality']
-        print(f"\n🔬 TSI DATA QUALITY:")
-        print(f"   Total Records: {tsi['total_records']}")
-        print(f"   Devices: {len(tsi['devices'])} ({', '.join(tsi['devices'][:5])}{'...' if len(tsi['devices']) > 5 else ''})")
-        
-        if tsi['outliers_removed']:
-            print(f"   🚫 Outliers Removed:")
-            for metric, data in tsi['outliers_removed'].items():
-                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
-                if data['extreme_values']:
-                    print(f"         Extreme values: {data['extreme_values']}")
-        
-        if tsi['missing_data']:
-            print(f"   ❓ Missing Data:")
-            for metric, data in tsi['missing_data'].items():
-                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
-        
-        if tsi['sensor_anomalies']:
-            print(f"   ⚠️ Sensor Anomalies:")
-            for anomaly in tsi['sensor_anomalies']:
-                print(f"      {anomaly['device']} - {anomaly['metric']}: {anomaly['description']}")
-    
-    # WU Quality Report
-    if report['wu_quality']:
-        wu = report['wu_quality']
-        print(f"\n🌤️ WU DATA QUALITY:")
-        print(f"   Total Records: {wu['total_records']}")
-        print(f"   Stations: {len(wu['stations'])} ({', '.join(wu['stations'][:5])}{'...' if len(wu['stations']) > 5 else ''})")
-        
-        if wu['outliers_removed']:
-            print(f"   🚫 Outliers Removed:")
-            for metric, data in wu['outliers_removed'].items():
-                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
-                if data['extreme_values']:
-                    print(f"         Extreme values: {data['extreme_values']}")
-        
-        if wu['missing_data']:
-            print(f"   ❓ Missing Data:")
-            for metric, data in wu['missing_data'].items():
-                print(f"      {metric}: {data['count']} values ({data['percentage']}%)")
-        
-        if wu['sensor_anomalies']:
-            print(f"   ⚠️ Sensor Anomalies:")
-            for anomaly in wu['sensor_anomalies']:
-                print(f"      {anomaly['station']} - {anomaly['metric']}: {anomaly['description']}")
-    
-    # Recommendations
-    print(f"\n💡 RECOMMENDATIONS:")
-    for rec in report['recommendations']:
-        print(f"   {rec}")
-    
-    print("="*80)
-
-
-                                        print(f"   🚨 Station {station_name} ({station_id}) has extreme windspeed: {station_extreme.unique()}")
-                        
-                        for metric, _ in wu_metrics:
-                            if metric in prod_wu_df.columns:
-                                # Debug: Check Duke-Kestrel-01 data before outlier removal
-                                if metric == 'windspeedAvg':
-                                    kestrel_before = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
-                                    print(f"   📊 Duke-Kestrel-01 records before {metric} outlier removal: {kestrel_before}")
-                                
-                                prod_wu_df = remove_outliers(prod_wu_df, metric, method='iqr')
-                                
-                                # Debug: Check Duke-Kestrel-01 data after outlier removal
-                                if metric == 'windspeedAvg':
-                                    kestrel_after = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
-                                    print(f"   📊 Duke-Kestrel-01 records after {metric} outlier removal: {kestrel_after}")
-                                    if kestrel_after < kestrel_before:
-                                        print(f"   🚨 WARNING: {kestrel_before - kestrel_after} Duke-Kestrel-01 records removed during {metric} outlier removal!")
-                    
-                    # Final debug: Check what stations remain after all outlier removal
-                    if 'stationID' in prod_wu_df.columns:
-                        final_stations = prod_wu_df['stationID'].unique()
-                        print(f"   📊 Final station IDs after outlier removal: {final_stations}")
-                        final_kestrel_records = len(prod_wu_df[prod_wu_df['stationID'] == 'KNCDURHA590'])
-                        print(f"   📊 Duke-Kestrel-01 (KNCDURHA590) records after all outlier removal: {final_kestrel_records}")
-                    
-                    # Debug MS-03 precipitation issue specifically
-                    if 'precipTotal' in prod_wu_df.columns:
-                        ms03_precip = prod_wu_df[prod_wu_df['Station Name'] == 'Duke-MS-03']['precipTotal']
-                        if len(ms03_precip) > 0:
-                            non_zero_count = (ms03_precip > 0).sum()
-                            total_count = len(ms03_precip)
-                            unique_values = sorted(ms03_precip.unique())
-                            print(f"🔍 MS-03 Precipitation Debug:")
-                            print(f"   📊 Total records: {total_count}")
-                            print(f"   📊 Non-zero records: {non_zero_count}")
-                            print(f"   📊 Unique values: {unique_values[:10]}...")  # Show first 10 unique values
-                            if len(unique_values) == 1 and unique_values[0] == 0:
-                                print(f"   ⚠️ WARNING: ALL MS-03 precipitation values are 0 - possible sensor/data issue!")
-                    
-                    # Get unique timestamps for the time axis (keep hourly frequency)
-                    all_times = sorted(prod_wu_df['obsTimeUtc'].unique())
-                    
-                    for metric, y_label in wu_metrics:
-                        # Skip if metric column doesn't exist
-                        if metric not in prod_wu_df.columns:
-                            continue
-                            
-                        # Create pivot table with timestamps as index and stations as columns (hourly data)
-                        pivot = prod_wu_df.pivot_table(index='obsTimeUtc', columns='Station Name', values=metric, aggfunc='mean')
-                        pivot = pivot.reindex(all_times)  # Ensure all times are present
-                        pivot.reset_index(inplace=True)
-                        
-                        # Extract year for chart title and format timestamps for display (day-month only)
-                        year = pivot['obsTimeUtc'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
-                        pivot['time_display'] = pivot['obsTimeUtc'].dt.strftime('%m-%d')
-                        
-                        # Skip if there's no data (all NaN values except timestamp column)
-                        data_columns = [col for col in pivot.columns if col not in ['obsTimeUtc', 'time_display']]
-                        if not data_columns or pivot[data_columns].isna().all().all():
-                            continue
-                        
-                        # Filter out columns (stations) that have ALL NaN values for this metric
-                        # But be more lenient - keep stations with at least some valid data
-                        stations_with_data = []
-                        for col in data_columns:
-                            non_null_count = pivot[col].count()  # Count non-NaN values
-                            total_count = len(pivot)
-                            if non_null_count > 0:  # Keep stations with any valid data
-                                stations_with_data.append(col)
-                                # Extra debug for Duke-Kestrel-01
-                                if col == 'Duke-Kestrel-01':
-                                    print(f"   📊 Duke-Kestrel-01 {metric}: {non_null_count}/{total_count} non-null values in pivot table")
-                        
-                        # Use stations with data instead of all data columns
-                        actual_station_names = stations_with_data
-                        
-                        # Convert to safe format for Google Sheets
-                        def safe_gs_value(x):
-                            import pandas as pd
-                            import numpy as np
-                            if isinstance(x, (pd.Timestamp,)):
-                                return x.strftime('%m-%d')
-                            if isinstance(x, float):
-                                if pd.isna(x) or x == float('inf') or x == float('-inf'):
-                                    return ''
-                                return x  # Keep numeric values as numbers
-                            if isinstance(x, (int, np.integer)):
-                                return x  # Keep integers as numbers
-                            if x is None:
-                                return ''
-                            # Try to convert string representations of numbers to float
-                            try:
-                                float_val = float(x)
-                                return float_val
-                            except (ValueError, TypeError):
-                                return str(x)
-                        
-                        title = f"WU {metric} Data"
-                        try:
-                            old = spreadsheet.worksheet(title)
-                            spreadsheet.del_worksheet(old)
-                        except:
-                            pass
-                        
-                        # Get actual station columns from pivot table (some stations might not have data for this metric)
-                        # actual_station_names = [col for col in pivot.columns if col not in ['obsTimeUtc', 'time_display']]
-                        # Use the filtered list from above that excludes all-NaN columns
-                        
-                        print(f"📊 WU {metric} chart - Stations with data: {actual_station_names}")
-                        if 'Duke-Kestrel-01' not in actual_station_names:
-                            print(f"⚠️ Duke-Kestrel-01 missing from {metric} data!")
-                            # Check if Duke-Kestrel-01 has any non-null values for this metric
-                            kestrel_data = prod_wu_df[prod_wu_df['Station Name'] == 'Duke-Kestrel-01'][metric].dropna()
-                            print(f"   📊 Duke-Kestrel-01 {metric} records: {len(kestrel_data)} non-null values in source data")
-                        else:
-                            print(f"✅ Duke-Kestrel-01 successfully included in {metric} chart!")
-                        
-                        ws = spreadsheet.add_worksheet(title=title, rows=len(pivot)+1, cols=len(actual_station_names)+1)
-                        # Convert pivot to safe format, use time_display for x-axis labels
-                        pivot_safe = pivot.fillna('')
-                        pivot_safe['time_display'] = pivot_safe['time_display'].apply(safe_gs_value)
-                        for col in pivot_safe.columns:
-                            if col not in ['obsTimeUtc', 'time_display']:
-                                pivot_safe[col] = pivot_safe[col].apply(safe_gs_value)
-                        
-                        # Create sheet data with day-month labels but keep all hourly data points
-                        sheet_data = []
-                        for _, row in pivot_safe.iterrows():
-                            sheet_row = [row['time_display']] + [row[station] for station in actual_station_names]
-                            sheet_data.append(sheet_row)
-                        
-                        ws.update([['Date'] + actual_station_names] + sheet_data)
-                        meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                        pivot_id = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == title)
-                        # Build series with optional disconnected points styling
-                        series = []
-                        for i, _ in enumerate(actual_station_names, start=1):
-                            series_config = {
-                                'series': {
-                                    'sourceRange': {
-                                        'sources': [{
-                                            'sheetId': pivot_id,
-                                            'startRowIndex': 0,
-                                            'endRowIndex': len(all_times)+1,
-                                            'startColumnIndex': i,
-                                            'endColumnIndex': i+1
-                                        }]
-                                    }
-                                },
-                                'targetAxis': 'LEFT_AXIS'
-                            }
-                            # Add disconnected points style if enabled
-                            if ENABLE_DISCONNECTED_POINTS:
-                                # For disconnected points, use SCATTER chart type instead of line style
-                                series_config['pointStyle'] = {'shape': 'CIRCLE', 'size': 5}
-                            else:
-                                # Default connected line chart
-                                series_config['lineStyle'] = {'type': 'SOLID'}
-                                # Explicitly set point style to match other graphs
-                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
-                            series.append(series_config)
-                        domain = {
-                            'domain': {
-                                'sourceRange': {
-                                    'sources': [{
-                                        'sheetId': pivot_id,
-                                        'startRowIndex': 1,  # Corrected from 0
-                                        'endRowIndex': len(all_times)+1,
-                                        'startColumnIndex': 0,
-                                        'endColumnIndex': 1
-                                    }]
-                                }
-                            }
-                        }
-                        # Use SCATTER chart type for disconnected points, LINE for connected
-                        chart_type = "SCATTER" if ENABLE_DISCONNECTED_POINTS else "LINE"
-                        
-                        chart = {
-                            'requests': [{
-                                'addChart': {
-                                    'chart': {
-                                        'spec': {
-                                            'title': f'WU {metric} - {year}',
-                                            'basicChart': {
-                                                'chartType': chart_type,
-                                                'legendPosition': 'BOTTOM_LEGEND',
-                                                'axis': [
-                                                    {'position': 'BOTTOM_AXIS', 'title': 'Date'},
-                                                    {'position': 'LEFT_AXIS', 'title': y_label}
-                                                ],
-                                                'domains': [domain],
-                                                'series': series,
-                                                'headerCount': 1
-                                            }
-                                        },
-                                        'position': {
-                                            'overlayPosition': {
-                                                'anchorCell': {
-                                                    'sheetId': charts_id,
-                                                    'rowIndex': chart_row_offset,
-                                                    'columnIndex': chart_col_offset
-                                                },
-                                                'widthPixels': CHART_WIDTH,
-                                                'heightPixels': CHART_HEIGHT
-                                            }
-                                        }
-                                    }
-                                }
-                            }]
-                        }
-                        try:
-                            result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                            print(f"✅ Created WU {metric} chart (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
-                        except Exception as chart_error:
-                            print(f"❌ Failed to create WU {metric} chart: {chart_error}")
-                        
-                        # Update chart positioning for next chart
-                        chart_count += 1
-                        if chart_count % charts_per_row == 0:
-                            # Move to next row
-                            chart_row_offset += 25  # Vertical spacing between rows
-                            chart_col_offset = 0  # Reset to first column
-                        else:
-                            # Move to next column in same row  
-                            chart_col_offset += 15  # Horizontal spacing to reach column Z (about 15 columns per chart)
-
-                # --- NEW: Add full time-series (hourly) sheets and charts for TSI (PRODUCTION ONLY) ---
-                if fetch_tsi and prod_tsi_df is not None and not prod_tsi_df.empty:
-                    print("🎯 Starting TSI time-series chart creation...")
-                    # Prepare TSI time-series pivot tables and charts using PRODUCTION data only
-                    tsi_metrics = [
-                        ('PM 2.5', 'PM2.5 (µg/m³)'),
-                        ('T (C)', 'Temperature (C)'),
-                        ('RH (%)', 'Humidity (%)'),
-                        ('PM 10', 'PM10 (µg/m³)')
-                    ]
-                    # Get all unique device names and all unique timestamps from PRODUCTION data
-                    prod_tsi_df['timestamp'] = pd.to_datetime(prod_tsi_df['timestamp'], errors='coerce')
-                    device_names = sorted(prod_tsi_df['Device Name'].unique())
-                    
-                    # Apply outlier removal to TSI time-series data if enabled
-                    if ENABLE_OUTLIER_REMOVAL:
-                        print(f"📊 Applying outlier removal to TSI time-series data...")
-                        for metric, _ in tsi_metrics:
-                            if metric in prod_tsi_df.columns:
-                                prod_tsi_df = remove_outliers(prod_tsi_df, metric, method='iqr')
-                    
-                    all_times = sorted(prod_tsi_df['timestamp'].dropna().unique())
-                    
-                    # Apply data sampling for better chart spacing (using 15-minute intervals)
-                    if TSI_DATA_SAMPLING_MINUTES > 15:
-                        sampling_interval = TSI_DATA_SAMPLING_MINUTES // 15  # Convert minutes to 15-minute intervals
-                        print(f"📊 Applying data sampling: showing every {TSI_DATA_SAMPLING_MINUTES} minutes (every {sampling_interval} 15-min intervals) for visualization")
-                        # Filter to every Nth 15-minute interval based on sampling setting
-                        sampled_times = []
-                        for i, time in enumerate(all_times):
-                            if i % sampling_interval == 0:
-                                sampled_times.append(time)
-                        all_times = sampled_times
-                        print(f"📊 Data points reduced from {len(sorted(prod_tsi_df['timestamp'].dropna().unique()))} to {len(all_times)} for better spacing")
-                    else:
-                        print(f"📊 Using all 15-minute data points for detailed trend visualization ({len(all_times)} total points)")
-                    for metric, y_label in tsi_metrics:
-                        # Pivot: rows = timestamp, columns = device, values = metric (PRODUCTION data only)
-                        pivot = prod_tsi_df.pivot_table(index='timestamp', columns='Device Name', values=metric, aggfunc='mean')
-                        pivot = pivot.reindex(all_times)  # Ensure all times are present
-                        pivot.reset_index(inplace=True)
-                        
-                        # Extract year for chart title and preserve hourly data
-                        year = pivot['timestamp'].dt.year.iloc[0] if len(pivot) > 0 else datetime.now().year
-                        # Keep the timestamp as datetime for proper chart display
-                        # Google Sheets will automatically format the datetime on the axis
-
-                        # Skip if there's no data (all NaN values except timestamp column)
-                        data_columns = [col for col in pivot.columns if col != 'timestamp']
-                        if not data_columns or pivot[data_columns].isna().all().all():
-                            continue
-                        
-                        # Filter device names to only include those with data for this metric
-                        devices_with_data = []
-                        for device in device_names:
-                            if device in pivot.columns and pivot[device].count() > 0:
-                                devices_with_data.append(device)
-                        
-                        print(f"📊 TSI {metric} chart - Devices with data: {devices_with_data}")
-                        
-                        if not devices_with_data:
-                            print(f"⚠️ No devices have data for {metric}, skipping chart creation")
-                            continue
-                        sheet_title = f"TSI {metric} Time Series"
-                        try:
-                            old = spreadsheet.worksheet(sheet_title)
-                            spreadsheet.del_worksheet(old)
-                        except:
-                            pass
-                        ws = spreadsheet.add_worksheet(title=sheet_title, rows=len(pivot)+1, cols=len(devices_with_data)+1)
-                        
-                        # Create sheet data with hourly timestamps
-                        sheet_data = []
-                        for _, row in pivot.iterrows():
-                            # Use the timestamp for data - convert datetime to string for Google Sheets
-                            timestamp_str = row['timestamp'].strftime('%m-%d %H:%M')
-                            sheet_row = [timestamp_str]
-                            for device in devices_with_data:
-                                value = row[device] if device in row else ''
-                                # Convert NaN to empty string for Google Sheets
-                                if str(value).lower() in ['nan', 'none'] or value is None:
-                                    value = ''
-                                sheet_row.append(value)
-                            sheet_data.append(sheet_row)
-                        
-                        ws.update([['Time'] + devices_with_data] + sheet_data)
-                        # Add chart for this metric
-                        meta_p = sheets_api.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                        sheet_id_pivot = next(s['properties']['sheetId'] for s in meta_p['sheets'] if s['properties']['title'] == sheet_title)
-                        
-                        # Build series with optional disconnected points styling
-                        series = []
-                        for i, device in enumerate(devices_with_data, start=1):
-                            # Extract just the device name without parenthetical info (e.g., "BS-01" from "BS-01 (Eno)")
-                            # clean_device_name = device.split(' (')[0] if ' (' in device else device, does not work yet
-
-                            series_config = {
-                                "series": {"sourceRange": {"sources": [{
-                                    "sheetId": sheet_id_pivot,
-                                    "startRowIndex": 0,
-                                    "endRowIndex": len(pivot)+1,
-                                    "startColumnIndex": i,
-                                    "endColumnIndex": i+1
-                                }]}},
-                                "targetAxis": "LEFT_AXIS"
-                            }
-                            # Add disconnected points style if enabled
-                            if ENABLE_DISCONNECTED_POINTS:
-                                # For disconnected points, we use SCATTER chart type instead of line styles
-                                # This will be handled at the chart level, not series level
-                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
-                            else:
-                                # Default connected line chart
-                                series_config["lineStyle"] = {"type": "SOLID"}
-                                # Explicitly set point style to match other graphs
-                                series_config["pointStyle"] = {"shape": "CIRCLE", "size": 5}
-                            series.append(series_config)
-                        domain = {"domain": {"sourceRange": {"sources": [{
-                            "sheetId": sheet_id_pivot,
-                            "startRowIndex": 1,
-                            "endRowIndex": len(pivot)+1,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 1
-                        }]}}}
-                        # Use SCATTER chart type for disconnected points, LINE for connected
-                        chart_type = "SCATTER" if ENABLE_DISCONNECTED_POINTS else "LINE"
-                        
-                        chart = {
-                            "requests": [
-                                {
-                                    "addChart": {
-                                        "chart": {
-                                            "spec": {
-                                                "title": f"TSI {metric} - {year}",
-                                                "basicChart": {
-                                                    "chartType": chart_type,
-                                                    "legendPosition": "BOTTOM_LEGEND",
-                                                    "axis": [
-                                                        {
-                                                            "position": "BOTTOM_AXIS", 
-                                                            "title": "Date & Time"
-                                                        },
-                                                        {"position": "LEFT_AXIS", "title": y_label}
-                                                    ],
-                                                    "domains": [domain],
-                                                    "series": series,
-                                                    "headerCount": 1,
-                                                    "interpolateNulls": False  # Don't connect points across gaps
-                                                }
-                                            },
-                                            "position": {
-                                                "overlayPosition": {
-                                                    "anchorCell": {
-                                                        "sheetId": charts_id,
-                                                        "rowIndex": chart_row_offset,
-                                                        "columnIndex": chart_col_offset
-                                                    },
-                                                    "widthPixels": CHART_WIDTH,
-                                                    "heightPixels": CHART_HEIGHT
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                        try:
-                            result = sheets_api.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=chart).execute()
-                            print(f"✅ Created TSI time-series chart for {metric} (ID: {result.get('replies', [{}])[0].get('addChart', {}).get('chart', {}).get('chartId', 'unknown')})")
-                        except Exception as chart_error:
-                            print(f"❌ Failed to create TSI time-series chart for {metric}: {chart_error}")
-                        
-                        # Update chart positioning for next chart
-                        chart_count += 1
-                        if chart_count % charts_per_row == 0:
-                            # Move to next row
-                            chart_row_offset += 25  # Vertical spacing between rows
-                            chart_col_offset = 0  # Reset to first column
-                        else:
-                            # Move to next column in same row  
-                            chart_col_offset += 15  # Horizontal spacing to reach column Z (about 15 columns per chart)
-                else:
-                    print("⚠️ TSI time-series charts skipped:")
-                    print(f"   - fetch_tsi: {fetch_tsi}")
-                    print(f"   - prod_tsi_df is not None: {prod_tsi_df is not None}")
-                    print(f"   - prod_tsi_df.empty: {prod_tsi_df.empty if prod_tsi_df is not None else 'N/A'}")
-        else:
-            if not add_charts:
-                print("⏭️ Chart creation skipped by user choice")
-            if spreadsheet is None:
-                print("❌ No spreadsheet available for chart creation")
-
-    print("✅ All data processing and Google Sheet export complete!")
-    
-    # Generate and display data quality report
-    print("📊 Generating data quality report...")
-    quality_report = generate_data_quality_report(
-        tsi_df=tsi_df if fetch_tsi else None,
-        wu_df=wu_df if fetch_wu else None, 
-        start_date=start_date,
-        end_date=end_date
-    )
-    print_data_quality_report(quality_report)
-    
-    # Add summary about test sensor exclusion
-    print("\n" + "="*60)
-    print("📊 GOOGLE SHEETS SUMMARY")
-    print("="*60)
-    if spreadsheet is not None:
-        print("✅ Google Sheet created successfully with PRODUCTION data only")
-        print("🔗 Sheet URL:", spreadsheet.url)
-        print("📋 Sheet Contents:")
-        print("   ✅ Production TSI sensor data (test sensors excluded)")
-        print("   ✅ Production WU sensor data (test sensors excluded)")
-        print("   ✅ Production-only charts and summaries")
-        print("   🧪 Test sensor data excluded from all sheets and charts")
-        
-        if test_wu_count > 0 or test_tsi_count > 0:
-            print(f"\n📊 Excluded from Google Sheets:")
-            if test_wu_count > 0:
-                print(f"   🧪 {test_wu_count} test WU sensor records")
-            if test_tsi_count > 0:
-                print(f"   🧪 {test_tsi_count} test TSI sensor records")
-            print("   💾 Test data saved separately for internal analysis")
-    else:
-        print("⚠️ No Google Sheet created - no production data available")
-    print("="*60)
-    
-    # Save data using the data manager for organized storage
-    print("💾 Saving data with organized folder structure...")
-    if fetch_wu and wu_df is not None and not wu_df.empty:
-        wu_saved_path = data_manager.save_raw_data(
-            data=wu_df,
-            source='wu',
-            start_date=start_date,
-            end_date=end_date,
-            pull_type=pull_type,
-            file_format=file_format if file_format else 'csv'
-        )
-        print(f"📁 WU data saved to: {wu_saved_path}")
-    
-    if fetch_tsi and tsi_df is not None and not tsi_df.empty:
-        tsi_saved_path = data_manager.save_raw_data(
-            data=tsi_df,
-            source='tsi',
-            start_date=start_date,
-            end_date=end_date,
-            pull_type=pull_type,
-            file_format=file_format if file_format else 'csv'
-        )
-        print(f"📁 TSI data saved to: {tsi_saved_path}")
-    
-    # Save Google Sheet info for tracking
-    if spreadsheet is not None:
-        sheet_info = {
-            'sheet_id': sheet_id,
-            'sheet_url': spreadsheet.url,
-            'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'date_range': f"{start_date} to {end_date}",
-            'pull_type': pull_type,
-            'data_sources': []
-        }
-        if fetch_wu:
-            sheet_info['data_sources'].append('Weather Underground')
-        if fetch_tsi:
-            sheet_info['data_sources'].append('TSI')
-        
-        data_manager.save_sheet_metadata(sheet_info, start_date, end_date, pull_type)
-        print(f"📋 Google Sheet metadata saved")
-    
-    # Sync to Google Drive if enabled
-    if sync_to_drive:
-        print("☁️ Syncing data to Google Drive...")
+    # 3. SEPARATE DATA (IF NEEDED)
+    prod_wu_df = wu_df
+    prod_tsi_df = tsi_df
+    if TestSensorConfig:
         try:
-            data_manager.sync_to_drive()
-            print("✅ Google Drive sync completed successfully!")
+            test_config = TestSensorConfig()
+            if 'is_test_sensor' in dir(test_config):
+                test_data, prod_data = separate_sensor_data_by_type(wu_df, tsi_df, test_config)
+                prod_wu_df = prod_data.get('wu')
+                prod_tsi_df = prod_data.get('tsi')
+            else:
+                print("TestSensorConfig does not have 'is_test_sensor' method. Skipping data separation.")
+
         except Exception as e:
-            print(f"⚠️ Google Drive sync failed: {e}")
-            print("Data is still saved locally in the organized folder structure.")
+            print(f"Could not separate test/prod data: {e}")
     else:
-        print("⏭️ Google Drive sync skipped by user choice")
-    
-    # Legacy local download support (for backward compatibility)
-    if local_download and download_dir and download_dir != "data":
-        print(f"📦 Also saving to legacy download directory: {download_dir}")
-        if download_dir is not None:
-            os.makedirs(download_dir, exist_ok=True)
-            if fetch_wu and wu_df is not None and not wu_df.empty:
-                wu_path = os.path.join(download_dir, f"WU_{start_date}_to_{end_date}.{file_format if file_format else 'csv'}")
-                if file_format == 'excel':
-                    wu_df.to_excel(wu_path, index=False)
-                else:
-                    wu_df.to_csv(wu_path, index=False)
-                print(f"WU data also saved to {wu_path}")
-            if fetch_tsi and tsi_df is not None and not tsi_df.empty:
-                tsi_path = os.path.join(download_dir, f"TSI_{start_date}_to_{end_date}.{file_format if file_format else 'csv'}")
-                if file_format == 'excel':
-                    tsi_df.to_excel(tsi_path, index=False)
-                else:
-                    
-                print(f"TSI data also saved to {tsi_path}")
-    
-    if upload_onedrive and msal is not None:
-        print("OneDrive upload not implemented in this script. Please use a separate tool or script for OneDrive uploads.")
-    
-    # Final summary with Google Sheet URL
-    print("\n" + "="*60)
-    print("🎉 DATA PROCESSING COMPLETE!")
-    print("="*60)
-    
-    if spreadsheet is not None:
-        print("🔗 Google Sheet URL:", spreadsheet.url)
-        print("📊 Google Sheet contains production sensor data only")
-        if sync_to_drive:
-            print("☁️ Data has been synced to Google Drive")
-        else:
-            print("💾 Data saved locally only (Google Drive sync skipped)")
-    else:
-        print("⚠️ No Google Sheet was created")
-        if sync_to_drive:
-            print("☁️ Local data has been synced to Google Drive")
-        else:
-            print("💾 Data saved locally only")
-    
-    print("="*60)
+        print("TestSensorConfig not available. Skipping data separation.")
+
+
+    # 4. INSERT DATA INTO DATABASE
+    print("\nUploading data to PostgreSQL...")
+    insert_data_to_db(prod_wu_df, 'wu_data')
+    insert_data_to_db(prod_tsi_df, 'tsi_data')
+
+    print("\nData collection and upload process finished.")
+
+
+if __name__ == '__main__':
+    main()
