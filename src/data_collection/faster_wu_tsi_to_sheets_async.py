@@ -11,6 +11,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from tqdm import tqdm
+from google.cloud import secretmanager
 
 # Add project root to path FIRST, before importing from src
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -30,16 +31,45 @@ except ImportError:
 # Load environment variables from .env file
 load_dotenv()
 
-# Database connection
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+def get_secret(project_id, secret_id, version_id="latest"):
+    """Fetches a secret from Google Secret Manager."""
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        print(f"❌ ERROR: Could not access secret {secret_id} in project {project_id}. Error: {e}")
+        return None
 
-if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
-    print("❌ ERROR: Database environment variables not set. Please create a .env file with DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, and DB_NAME.")
+# Database connection using Google Secret Manager
+PROJECT_ID = os.getenv("PROJECT_ID")
+DB_CREDS_SECRET_ID = os.getenv("DB_CREDS_SECRET_ID")
+
+if not all([PROJECT_ID, DB_CREDS_SECRET_ID]):
+    print("❌ ERROR: Environment variables PROJECT_ID and DB_CREDS_SECRET_ID must be set.")
     sys.exit(1)
+
+db_creds_json = get_secret(PROJECT_ID, DB_CREDS_SECRET_ID)
+if not db_creds_json:
+    sys.exit(1)
+
+try:
+    db_creds = json.loads(db_creds_json)
+    DB_USER = db_creds.get("DB_USER")
+    DB_PASSWORD = db_creds.get("DB_PASSWORD")
+    DB_HOST = db_creds.get("DB_HOST")
+    DB_PORT = db_creds.get("DB_PORT")
+    DB_NAME = db_creds.get("DB_NAME")
+
+    if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
+        print("❌ ERROR: The secret JSON is missing one or more required database credential keys (DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME).")
+        sys.exit(1)
+
+except json.JSONDecodeError:
+    print("❌ ERROR: Failed to decode the secret JSON from Secret Manager.")
+    sys.exit(1)
+
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 engine = create_engine(DATABASE_URL)
