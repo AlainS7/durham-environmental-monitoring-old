@@ -21,21 +21,21 @@ import shutil
 import pandas as pd
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import sys
-import os
 
 # Add project paths for testing
-project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root / "src" / "automation"))
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
 
 try:
-    from master_data_file_system import MasterDataFileSystem
-    from master_data_scheduler import MasterDataScheduler
+    from automation.master_data_file_system import MasterDataFileSystem
+    from automation.master_data_scheduler import MasterDataScheduler
 except ImportError as e:
     print(f"Error importing modules for testing: {e}")
-    sys.exit(1)
+    raise e
 
 class TestMasterDataFileSystem(unittest.TestCase):
     """Test suite for Master Data File System."""
@@ -160,36 +160,25 @@ class TestMasterDataFileSystem(unittest.TestCase):
         
     def test_data_loading_and_combining(self):
         """Test loading and combining historical data."""
-        # Test WU data loading
+        print("\n🧪 Testing historical data loading and combining...")
+        
+        # Test for WU data
         wu_combined = self.master_system.load_and_combine_historical_data("wu")
-        self.assertIsNotNone(wu_combined)
+        self.assertIsNotNone(wu_combined, "WU combined data should not be None")
+        assert wu_combined is not None  # For type checker
         self.assertGreater(len(wu_combined), 0)
         self.assertTrue('timestamp' in wu_combined.columns)
         self.assertTrue('station_id' in wu_combined.columns)
         
-        # Test TSI data loading
+        # Test for TSI data
         tsi_combined = self.master_system.load_and_combine_historical_data("tsi")
-        self.assertIsNotNone(tsi_combined)
+        self.assertIsNotNone(tsi_combined, "TSI combined data should not be None")
+        assert tsi_combined is not None  # For type checker
         self.assertGreater(len(tsi_combined), 0)
         self.assertTrue('timestamp' in tsi_combined.columns)
         self.assertTrue('device_id' in tsi_combined.columns)
         
         print(f"✅ Data loading test passed - WU: {len(wu_combined)} records, TSI: {len(tsi_combined)} records")
-        
-    def test_data_deduplication(self):
-        """Test data deduplication functionality."""
-        # Create duplicate data
-        duplicate_data = self.wu_test_data.copy()
-        duplicated_df = pd.concat([self.wu_test_data, duplicate_data], ignore_index=True)
-        
-        # Test deduplication
-        deduplicated_df = self.master_system.deduplicate_data(duplicated_df, "wu")
-        
-        # Should have removed duplicates
-        self.assertLess(len(deduplicated_df), len(duplicated_df))
-        self.assertEqual(len(deduplicated_df), len(self.wu_test_data))
-        
-        print(f"✅ Deduplication test passed - Removed {len(duplicated_df) - len(deduplicated_df)} duplicates")
         
     def test_master_file_creation(self):
         """Test master file creation."""

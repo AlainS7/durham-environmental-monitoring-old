@@ -11,7 +11,6 @@ making it clear which sensors should have their data stored separately from prod
 
 from pathlib import Path
 from typing import List, Dict, Optional, Any
-import os
 import json
 
 # Path to the JSON file that stores the list of test sensors
