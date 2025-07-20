@@ -5,6 +5,9 @@ import logging
 from google.cloud import secretmanager
 from dotenv import load_dotenv
 
+# Import to configure logging for the entire application
+import src.utils.logging_setup
+
 # Load environment variables from .env file for local development
 load_dotenv()
 
@@ -29,6 +32,12 @@ class Config:
         self.wu_api_key = self._get_json_secret(self.wu_api_key_secret_id)
 
         self._validate_secrets()
+
+        # Define paths to sensor configuration files
+        self.sensor_config_paths = {
+            'production': os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'environments', 'production.json'),
+            'test': os.path.join(os.path.dirname(__file__), '..', '..', 'test_data', 'test_sensors.json')
+        }
 
         # Database URL
         self.database_url = self._build_database_url()
