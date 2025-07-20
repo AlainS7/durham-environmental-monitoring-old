@@ -1,0 +1,8 @@
+# Linters and formatters
+flake8
+black
+
+# Testing framework and plugins
+pytest
+pytest-asyncio
+pytest-mock
