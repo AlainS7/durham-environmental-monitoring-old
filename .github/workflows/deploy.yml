@@ -16,20 +16,15 @@ jobs:
   build-and-deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Authenticate to Google Cloud
-      id: auth
       uses: 'google-github-actions/auth@v2'
       with:
-        workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-        service_account: 'github-actions-deployer@durham-weather-466502.iam.gserviceaccount.com'
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
     - name: Set up Cloud SDK
       uses: 'google-github-actions/setup-gcloud@v2'
