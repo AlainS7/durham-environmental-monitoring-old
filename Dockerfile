@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Command to run the application
-CMD ["python", "scripts/automated_data_pull.py"]
+CMD ["python", "src/faster_wu_tsi_to_sheets.py"]

@@ -9,24 +9,15 @@ import httpx
 import nest_asyncio
 import pandas as pd
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from tqdm import tqdm
 from google.cloud import secretmanager
 
-# Add project root to path FIRST, before importing from src
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, project_root)
-sys.path.insert(0, os.path.join(project_root, 'src', 'core'))
-sys.path.insert(0, os.path.join(project_root, 'config'))
-
-# Now we can import the data manager and test sensor config
-try:
-    from test_sensors_config import TestSensorConfig
-except ImportError:
-    try:
-        from config.test_sensors_config import TestSensorConfig
-    except ImportError:
-        TestSensorConfig = None
+# Use relative imports for local modules
+from ...config.test_sensors_config import TestSensorConfig
+from ...config.wu_stations_config import get_wu_stations
+from ...config.tsi_stations_config import get_tsi_devices
+from ..utils.tsi_date_manager import TSIDateRangeManager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -97,6 +88,7 @@ def read_or_fallback(prompt, default=None):
         return val if val else (default if default is not None else "")
 
 # Use robust file path gathering for creds
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
 wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
@@ -110,29 +102,75 @@ if not os.path.exists(wu_api_key_abs):
     sys.exit(1)
 
 def insert_data_to_db(df, table_name):
-    """Inserts a DataFrame into the specified database table."""
+    """
+    Inserts a DataFrame into the specified database table, ignoring duplicates
+    based on the table's primary key.
+    """
     if df is None or df.empty:
         print(f"No data to insert into {table_name}.")
         return
+
+    # Define the primary key columns for each table
+    pk_columns = {
+        'wu_data': ['stationID', 'obsTimeUtc'],
+        'tsi_data': ['device_id', 'timestamp']  # Corrected primary key
+    }
+
+    if table_name not in pk_columns:
+        print(f"No duplicate prevention strategy for {table_name}. Appending data.")
+        try:
+            df.to_sql(table_name, engine, if_exists='append', index=False)
+            print(f"✅ Successfully appended data into {table_name}.")
+        except Exception as e:
+            print(f"❌ ERROR inserting data into {table_name}: {e}")
+        return
+
+    temp_table_name = f"temp_{table_name}"
+    
     try:
-        print(f"Inserting {len(df)} rows into {table_name}...")
-        df.to_sql(table_name, engine, if_exists='append', index=False)
-        print(f"✅ Successfully inserted data into {table_name}.")
+        # Step 1: Write all new data to a temporary table
+        print(f"Writing {len(df)} rows to temporary table {temp_table_name}...")
+        df.to_sql(temp_table_name, engine, if_exists='replace', index=False)
+
+        # Step 2: Construct a SQL query to insert only the new rows from the temp table
+        pk_cols_str = ", ".join(pk_columns[table_name])
+        all_cols_str = ", ".join([f'"{c}"' for c in df.columns])
+        
+        sql = f"""
+        INSERT INTO {table_name} ({all_cols_str})
+        SELECT {all_cols_str}
+        FROM {temp_table_name}
+        ON CONFLICT ({pk_cols_str}) DO NOTHING;
+        """
+        
+        # Step 3: Execute the SQL to insert the data
+        with engine.connect() as connection:
+            trans = connection.begin()
+            try:
+                result = connection.execute(text(sql))
+                trans.commit()
+                print(f"✅ Successfully inserted {result.rowcount} new rows into {table_name}, ignoring duplicates.")
+            except Exception as e:
+                trans.rollback()
+                raise e
+
     except Exception as e:
         print(f"❌ ERROR inserting data into {table_name}: {e}")
+    finally:
+        # Step 4: Drop the temporary table to clean up
+        with engine.connect() as connection:
+            trans = connection.begin()
+            try:
+                connection.execute(text(f"DROP TABLE IF EXISTS {temp_table_name};"))
+                trans.commit()
+            except Exception as e:
+                trans.rollback()
+                print(f"❌ ERROR dropping temp table {temp_table_name}: {e}")
 
 def fetch_wu_data(start_date_str, end_date_str):
     with open(wu_api_key_abs) as f:
         wu_key = json.load(f)['test_api_key']
-    stations = [
-        {"name": "Duke-MS-01", "stationId": "KNCDURHA548"},
-        {"name": "Duke-MS-02", "stationId": "KNCDURHA549"},
-        {"name": "Duke-MS-03", "stationId": "KNCDURHA209"},
-        {"name": "Duke-MS-05", "stationId": "KNCDURHA551"},
-        {"name": "Duke-MS-06", "stationId": "KNCDURHA555"},
-        {"name": "Duke-MS-07", "stationId": "KNCDURHA556"},
-        {"name": "Duke-Kestrel-01", "stationId": "KNCDURHA590"}
-    ]
+    stations = get_wu_stations()
 
     def get_station_data_and_process(client, stationId, date, key, max_attempts=4):
         base_url = "https://api.weather.com/v2"
@@ -331,19 +369,6 @@ async def fetch_all_devices(devices, start_date_iso, end_date_iso, headers, per_
     return results
 
 def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
-    # Import TSI date range manager
-    try:
-        from src.utils.tsi_date_manager import TSIDateRangeManager
-    except ImportError:
-        # Fallback for direct path import
-        from pathlib import Path
-        sys.path.append(str(Path(__file__).parent.parent / "utils"))
-        try:
-            from tsi_date_manager import TSIDateRangeManager
-        except ImportError:
-            print("⚠️ Warning: TSI date manager not available, using basic date handling")
-            TSIDateRangeManager = None
-    
     if TSIDateRangeManager is not None:
         days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
         days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
@@ -401,7 +426,29 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     if not devices_json or not isinstance(devices_json, list):
         print("No TSI devices found.")
         return pd.DataFrame(), {}
-    selected_devices = devices_json
+    
+    # Filter devices based on the configuration file
+    configured_device_ids = get_tsi_devices()
+    if configured_device_ids and "placeholder_device_1" in configured_device_ids:
+        print("⚠️ WARNING: Using placeholder TSI device IDs. Please update config/tsi_stations_config.py with your actual device IDs.")
+
+    if configured_device_ids:
+        all_devices_from_api = {d['device_id']: d for d in devices_json}
+        selected_devices = [all_devices_from_api[dev_id] for dev_id in configured_device_ids if dev_id in all_devices_from_api]
+        
+        found_ids = {d['device_id'] for d in selected_devices}
+        not_found_ids = set(configured_device_ids) - found_ids
+        if not_found_ids:
+            print(f"⚠️ WARNING: The following configured TSI device IDs were not found in your account: {', '.join(not_found_ids)}")
+        
+        if not selected_devices:
+            print("❌ ERROR: None of the configured TSI devices were found. Aborting TSI data fetch.")
+            return pd.DataFrame(), {}
+        print(f"✅ Found {len(selected_devices)} configured TSI devices to process.")
+    else:
+        selected_devices = devices_json
+        print(f"✅ No specific TSI devices configured. Processing all {len(selected_devices)} devices found in account.")
+
     start_date_iso = to_iso8601(start_date)
     end_date_iso = to_iso8601(end_date)
     results = asyncio.run(fetch_all_devices(selected_devices, start_date_iso, end_date_iso, headers, per_device))
@@ -417,7 +464,7 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
     combined_df = pd.concat(all_rows, ignore_index=True)
     return combined_df, per_device_dfs
 
-def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
+def separate_sensor_data_by_type(wu_df, tsi_df):
     """
     Enhanced sensor data separation with improved error handling and logging.
     
@@ -427,11 +474,20 @@ def separate_sensor_data_by_type(wu_df, tsi_df, test_config):
     Args:
         wu_df: Weather Underground DataFrame
         tsi_df: TSI sensor DataFrame  
-        test_config: TestSensorConfig instance
         
     Returns:
         tuple: (test_data, prod_data) dictionaries with separated DataFrames
     """
+    # Initialize TestSensorConfig
+    try:
+        test_config = TestSensorConfig()
+        if 'is_test_sensor' not in dir(test_config):
+            print("⚠️ TestSensorConfig is missing 'is_test_sensor' method. Cannot separate test/prod data.")
+            return {'wu': None, 'tsi': None}, {'wu': wu_df, 'tsi': tsi_df}
+    except Exception as e:
+        print(f"⚠️ Could not initialize TestSensorConfig: {e}. Cannot separate test/prod data.")
+        return {'wu': None, 'tsi': None}, {'wu': wu_df, 'tsi': tsi_df}
+
     # Initialize return dictionaries with proper typing
     test_data: dict = {'wu': None, 'tsi': None}
     prod_data: dict = {'wu': None, 'tsi': None}
@@ -618,22 +674,10 @@ def main():
     print(f"Found {len(tsi_df)} records from TSI.")
 
     # 3. SEPARATE DATA (IF NEEDED)
-    prod_wu_df = wu_df
-    prod_tsi_df = tsi_df
-    if TestSensorConfig:
-        try:
-            test_config = TestSensorConfig()
-            if 'is_test_sensor' in dir(test_config):
-                test_data, prod_data = separate_sensor_data_by_type(wu_df, tsi_df, test_config)
-                prod_wu_df = prod_data.get('wu')
-                prod_tsi_df = prod_data.get('tsi')
-            else:
-                print("TestSensorConfig does not have 'is_test_sensor' method. Skipping data separation.")
-
-        except Exception as e:
-            print(f"Could not separate test/prod data: {e}")
-    else:
-        print("TestSensorConfig not available. Skipping data separation.")
+    print("\nSeparating test and production data...")
+    test_data, prod_data = separate_sensor_data_by_type(wu_df, tsi_df)
+    prod_wu_df = prod_data.get('wu')
+    prod_tsi_df = prod_data.get('tsi')
 
 
     # 4. INSERT DATA INTO DATABASE
