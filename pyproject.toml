@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsi-data-uploader"
+version = "0.1.0"
+description = "A service to collect and upload TSI and Weather Underground sensor data."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "httpx==0.27.0",
+    "pandas==2.2.2",
+    "SQLAlchemy==2.0.30",
+    "psycopg2-binary==2.9.9",
+    "google-cloud-secret-manager==2.20.0",
+    "python-dotenv==1.0.1",
+    "tqdm==4.66.4",
+    "nest-asyncio==1.6.0",
+    "google-cloud-logging==3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "flake8",
+    "pip-tools",
+]
+
+[project.scripts]
+run-data-collection = "data_collection.faster_wu_tsi_to_sheets_async:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = {find = {where = ["src"]}}
