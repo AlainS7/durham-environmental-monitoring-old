@@ -1,11 +1,10 @@
 """
 Database integration for Hot Durham project
 """
-import psycopg2
 import pandas as pd
 import json
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 class HotDurhamDB:
     """Database manager for PostgreSQL on Google Cloud SQL"""
@@ -22,44 +21,35 @@ class HotDurhamDB:
         self.conn_string = f"postgresql://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}"
         self.engine = create_engine(self.conn_string)
         self._init_database()
-    
-    def _get_connection(self):
-        return psycopg2.connect(
-            dbname=self.db_name,
-            user=self.db_user,
-            password=self.db_pass,
-            host=self.db_host,
-            port=self.db_port
-        )
 
     def _init_database(self):
-        """Initialize database tables"""
-        with self._get_connection() as conn:
-            with conn.cursor() as cur:
-                # WU data table from DBeaver script
-                cur.execute("""
+        """Initialize database tables using SQLAlchemy Engine."""
+        with self.engine.connect() as connection:
+            with connection.begin():  # Automatically commits or rolls back
+                # WU data table from DBeaver script, with lowercase column names
+                connection.execute(text("""
                     CREATE TABLE IF NOT EXISTS wu_data (
-                        stationID VARCHAR(255) NOT NULL,
-                        obsTimeUtc TIMESTAMPTZ NOT NULL,
-                        tempAvg REAL,
-                        humidityAvg REAL,
-                        solarRadiationHigh REAL,
-                        precipRate REAL,
-                        precipTotal REAL,
-                        winddirAvg REAL,
-                        windspeedAvg REAL,
-                        windgustAvg REAL,
-                        pressureMax REAL,
-                        pressureMin REAL,
-                        pressureTrend REAL,
-                        heatindexAvg REAL,
-                        dewptAvg REAL,
-                        PRIMARY KEY (stationID, obsTimeUtc)
+                        stationid VARCHAR(255) NOT NULL,
+                        obstimeutc TIMESTAMPTZ NOT NULL,
+                        tempavg REAL,
+                        humidityavg REAL,
+                        solarradiationhigh REAL,
+                        preciprate REAL,
+                        preciptotal REAL,
+                        winddiravg REAL,
+                        windspeedavg REAL,
+                        windgustavg REAL,
+                        pressuremax REAL,
+                        pressuremin REAL,
+                        pressuretrend REAL,
+                        heatindexavg REAL,
+                        dewptavg REAL,
+                        PRIMARY KEY (stationid, obstimeutc)
                     )
-                """)
+                """))
                 
-                # TSI data table from DBeaver script
-                cur.execute("""
+                # TSI data table from DBeaver script, with lowercase column names
+                connection.execute(text("""
                     CREATE TABLE IF NOT EXISTS tsi_data (
                         device_id VARCHAR(255) NOT NULL,
                         reading_time TIMESTAMPTZ NOT NULL,
@@ -89,10 +79,10 @@ class HotDurhamDB:
                         rh_offset REAL,
                         PRIMARY KEY (device_id, reading_time)
                     )
-                """)
+                """))
                 
                 # Data collection log (useful for monitoring)
-                cur.execute("""
+                connection.execute(text("""
                     CREATE TABLE IF NOT EXISTS collection_log (
                         id SERIAL PRIMARY KEY,
                         collection_date DATE,
@@ -102,24 +92,23 @@ class HotDurhamDB:
                         duration_seconds REAL,
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
-                """)
+                """))
                 
                 # Metadata collection (useful for monitoring)
-                cur.execute("""
+                connection.execute(text("""
                     CREATE TABLE IF NOT EXISTS collection_metadata (
                         id SERIAL PRIMARY KEY,
                         collection_type TEXT,
                         metadata_json JSONB,
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
-                """)
+                """))
                 
-                # Create indexes
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_tsi_reading_time ON tsi_data(reading_time)")
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_tsi_device_id ON tsi_data(device_id)")
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_wu_obsTimeUtc ON wu_data(obsTimeUtc)")
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_wu_stationID ON wu_data(stationID)")
-            conn.commit()
+                # Create indexes with lowercase column names
+                connection.execute(text("CREATE INDEX IF NOT EXISTS idx_tsi_reading_time ON tsi_data(reading_time)"))
+                connection.execute(text("CREATE INDEX IF NOT EXISTS idx_tsi_device_id ON tsi_data(device_id)"))
+                connection.execute(text("CREATE INDEX IF NOT EXISTS idx_wu_obstimeutc ON wu_data(obstimeutc)"))
+                connection.execute(text("CREATE INDEX IF NOT EXISTS idx_wu_stationid ON wu_data(stationid)"))
     
     def insert_tsi_data(self, df: pd.DataFrame):
         """Insert TSI data into database"""
@@ -136,32 +125,36 @@ class HotDurhamDB:
             timestamp_col = 'reading_time'
         elif source.lower() == 'wu':
             table_name = 'wu_data'
-            timestamp_col = 'obsTimeUtc'
+            timestamp_col = 'obstimeutc'
         else:
             raise ValueError("Invalid source specified. Must be 'tsi' or 'wu'.")
 
-        query = f"""
+        query = text(f"""
             SELECT * FROM {table_name} 
             WHERE {timestamp_col} >= NOW() - INTERVAL '{hours} hours'
             ORDER BY {timestamp_col} DESC
-        """
-        with self._get_connection() as conn:
-            return pd.read_sql_query(query, conn)
+        """)
+        return pd.read_sql_query(query, self.engine)
     
     def log_collection(self, source: str, records: int, errors: int, duration: float):
         """Log data collection event"""
-        with self._get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO collection_log 
-                    (collection_date, source, records_collected, errors_count, duration_seconds)
-                    VALUES (CURRENT_DATE, %s, %s, %s, %s)
-                """, (source, records, errors, duration))
-            conn.commit()
+        query = text("""
+            INSERT INTO collection_log 
+            (collection_date, source, records_collected, errors_count, duration_seconds)
+            VALUES (CURRENT_DATE, :source, :records, :errors, :duration)
+        """)
+        with self.engine.connect() as connection:
+            with connection.begin():
+                connection.execute(query, {
+                    "source": source, 
+                    "records": records, 
+                    "errors": errors, 
+                    "duration": duration
+                })
     
     def get_collection_stats(self, days: int = 7) -> pd.DataFrame:
         """Get collection statistics"""
-        query = f"""
+        query = text(f"""
             SELECT 
                 collection_date,
                 source,
@@ -172,17 +165,18 @@ class HotDurhamDB:
             WHERE collection_date >= CURRENT_DATE - INTERVAL '{days} days'
             GROUP BY collection_date, source
             ORDER BY collection_date DESC
-        """
-        
-        with self._get_connection() as conn:
-            return pd.read_sql_query(query, conn)
+        """)
+        return pd.read_sql_query(query, self.engine)
     
     def store_collection_metadata(self, collection_type: str, metadata: dict):
         """Store collection metadata"""
-        with self._get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO collection_metadata (collection_type, metadata_json)
-                    VALUES (%s, %s)
-                """, (collection_type, json.dumps(metadata)))
-            conn.commit()
+        query = text("""
+            INSERT INTO collection_metadata (collection_type, metadata_json)
+            VALUES (:collection_type, :metadata_json)
+        """)
+        with self.engine.connect() as connection:
+            with connection.begin():
+                connection.execute(query, {
+                    "collection_type": collection_type,
+                    "metadata_json": json.dumps(metadata)
+                })

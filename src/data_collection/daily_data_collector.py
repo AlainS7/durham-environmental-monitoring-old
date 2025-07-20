@@ -30,6 +30,76 @@ engine = create_engine(app_config.database_url)
 
 nest_asyncio.apply()
 
+def clean_and_transform_tsi_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cleans and transforms the raw TSI DataFrame to match the database schema.
+    """
+    if df.empty:
+        return df
+
+    # Define the schema columns
+    schema_columns = [
+        'device_id', 'reading_time', 'device_name', 'latitude', 'longitude',
+        'temperature', 'rh', 'p_bar', 'co2', 'co', 'so2', 'o3', 'no2',
+        'pm_1', 'pm_2_5', 'pm_4', 'pm_10', 'nc_pt5', 'nc_1', 'nc_2_5',
+        'nc_4', 'nc_10', 'aqi', 'pm_offset', 't_offset', 'rh_offset'
+    ]
+
+    # Create a new DataFrame to hold the transformed data
+    transformed_df = pd.DataFrame()
+
+    # Rename columns from API names to schema names
+    rename_map = {
+        'timestamp': 'reading_time',
+        'temp_c': 'temperature',
+        'rh_percent': 'rh',
+        'baro_inhg': 'p_bar',
+        'co2_ppm': 'co2',
+        'co_ppm': 'co',
+        'so2_ppb': 'so2',
+        'o3_ppb': 'o3',
+        'no2_ppb': 'no2',
+        'mcpm1x0': 'pm_1',
+        'mcpm2x5': 'pm_2_5',
+        'mcpm4x0': 'pm_4',
+        'mcpm10': 'pm_10',
+        'ncpm0x5': 'nc_pt5',
+        'ncpm1x0': 'nc_1',
+        'ncpm2x5': 'nc_2_5',
+        'ncpm4x0': 'nc_4',
+        'ncpm10': 'nc_10',
+        'mcpm2x5_aqi': 'aqi'
+    }
+    df.rename(columns=rename_map, inplace=True)
+
+    # Extract nested data from 'metadata' column
+    if 'metadata' in df.columns:
+        # Ensure metadata is a dict, not a string
+        def to_dict(x):
+            if isinstance(x, str):
+                try: return json.loads(x)
+                except (json.JSONDecodeError, TypeError): return {}
+            return x if isinstance(x, dict) else {}
+
+        meta_series = df['metadata'].apply(to_dict)
+        df['latitude'] = meta_series.apply(lambda x: x.get('location', {}).get('latitude'))
+        df['longitude'] = meta_series.apply(lambda x: x.get('location', {}).get('longitude'))
+
+    # Ensure all schema columns exist, fill missing with None (or np.nan)
+    for col in schema_columns:
+        if col not in df.columns:
+            df[col] = None
+
+    # Select and reorder columns to match the schema
+    transformed_df = df[schema_columns]
+
+    # Convert all numeric columns to numeric types, coercing errors
+    for col in transformed_df.columns:
+        if col not in ['device_id', 'reading_time', 'device_name']:
+            transformed_df[col] = pd.to_numeric(transformed_df[col], errors='coerce')
+
+    return transformed_df
+
 def read_or_fallback(prompt, default=None):
     # This function is for interactive use and will not be used in the automated script.
     # It remains for potential local debugging.
@@ -63,8 +133,8 @@ def insert_data_to_db(df, table_name):
 
     # Define the primary key columns for each table
     pk_columns = {
-        'wu_data': ['stationID', 'obsTimeUtc'],
-        'tsi_data': ['device_id', 'timestamp']  # Corrected primary key
+        'wu_data': ['stationid', 'obstimeutc'],
+        'tsi_data': ['device_id', 'reading_time']
     }
 
     if table_name not in pk_columns:
@@ -86,11 +156,14 @@ def insert_data_to_db(df, table_name):
         pk_cols_str = ", ".join([f'"{c}"' for c in pk_columns[table_name]])
         all_cols_str = ", ".join([f'"{c}"' for c in df.columns])
         
+        # Use lowercase for ON CONFLICT target columns
+        pk_cols_conflict = ", ".join(pk_columns[table_name])
+
         sql = f"""
         INSERT INTO {table_name} ({all_cols_str})
         SELECT {all_cols_str}
         FROM {temp_table_name}
-        ON CONFLICT ({pk_cols_str}) DO NOTHING;
+        ON CONFLICT ({pk_cols_conflict}) DO NOTHING;
         """
         
         # Step 3: Execute the SQL to insert the data
@@ -191,7 +264,8 @@ def fetch_wu_data(start_date_str, end_date_str):
     df = pd.DataFrame(all_rows, columns=columns)
 
     if not df.empty:
-        df['obsTimeUtc'] = df['obsTimeUtc'].astype(str)
+        df.columns = [c.lower() for c in df.columns] # Lowercase all column names
+        df['obstimeutc'] = df['obstimeutc'].astype(str)
         # Replace problematic values safely
         df = df.replace({float('inf'): '', float('-inf'): ''})
         df = df.fillna('')
@@ -279,7 +353,8 @@ async def fetch_wu_data_async(start_date_str, end_date_str):
     
     df = pd.DataFrame(all_rows, columns=columns)
     if not df.empty:
-        df['obsTimeUtc'] = df['obsTimeUtc'].astype(str)
+        df.columns = [c.lower() for c in df.columns] # Lowercase all column names
+        df['obstimeutc'] = df['obstimeutc'].astype(str)
         df = df.replace({float('inf'): '', float('-inf'): ''})
         df = df.fillna('')
     else:
@@ -668,7 +743,9 @@ async def run_collection_process(start_date_str, end_date_str, tsi_end_date_str,
         logging.warning("No data returned from Weather Underground.")
 
     if tsi_df is not None and not tsi_df.empty:
-        logging.info(f"Found {len(tsi_df)} records from TSI.")
+        logging.info(f"Found {len(tsi_df)} raw records from TSI. Cleaning and transforming...")
+        tsi_df = clean_and_transform_tsi_data(tsi_df)
+        logging.info(f"Successfully transformed {len(tsi_df)} TSI records.")
     else:
         logging.warning("No data returned from TSI.")
 
