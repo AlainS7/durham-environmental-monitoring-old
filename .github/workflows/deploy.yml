@@ -9,7 +9,7 @@ env:
   PROJECT_ID: "durham-weather-466502"
   GAR_LOCATION: "us-east1"
   GAR_REPOSITORY: "weather-data-images"
-  SERVICE_NAME: "weather-data-uploader"
+  JOB_NAME: "weather-data-uploader"
   REGION: "us-east1"
 
 jobs:
@@ -42,17 +42,16 @@ jobs:
 
     - name: Build Docker image
       run: |
-        docker build --tag "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" .
+        docker build --tag "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.JOB_NAME }}:${{ github.sha }}" .
 
     - name: Push Docker image to Artifact Registry
       run: |
-        docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+        docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.JOB_NAME }}:${{ github.sha }}"
 
-    - name: Deploy to Cloud Run
+    - name: Deploy to Cloud Run as a Job
       run: |
-        gcloud run deploy ${{ env.SERVICE_NAME }} \
-          --image "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" \
+        gcloud run jobs deploy ${{ env.JOB_NAME }} \
+          --image "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.JOB_NAME }}:${{ github.sha }}" \
           --region ${{ env.REGION }} \
-          --platform "managed" \
           --set-env-vars="PROJECT_ID=${{ env.PROJECT_ID }},DB_CREDS_SECRET_ID=prod-db-credentials,TSI_CREDS_SECRET_ID=tsi_creds,WU_API_KEY_SECRET_ID=wu_api_key" \
           --quiet
