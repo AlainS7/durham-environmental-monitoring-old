@@ -35,7 +35,7 @@ dev = [
 ]
 
 [project.scripts]
-run-data-collection = "data_collection.faster_wu_tsi_to_sheets_async:main"
+run-data-collection = "src.data_collection.daily_data_collector:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

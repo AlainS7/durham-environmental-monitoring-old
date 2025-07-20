@@ -18,16 +18,15 @@ import sys
 import argparse
 from datetime import datetime, timedelta
 import json
+import asyncio
 
 # Add the project root to the path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.join(project_root, 'src', 'core'))
-sys.path.append(os.path.join(project_root, 'src', 'data_collection'))
+sys.path.insert(0, project_root)
 
-from data_manager import DataManager
-
-# Import the data fetching functions from the main script  
-from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
+# Import the data fetching functions from the main script
+from src.core.data_manager import DataManager
+from src.data_collection.daily_data_collector import fetch_wu_data_async, fetch_tsi_data_async
 
 def get_date_range(pull_type):
     """Calculate start and end dates based on pull type"""
@@ -157,7 +156,7 @@ def main():
     if fetch_wu:
         print("🌤️ Fetching Weather Underground data...")
         try:
-            wu_df = fetch_wu_data(start_date, end_date)
+            wu_df = asyncio.run(fetch_wu_data_async(start_date, end_date))
             if wu_df is not None and not wu_df.empty:
                 print(f"✅ WU: {len(wu_df)} records fetched")
                 # Save WU data
@@ -178,7 +177,8 @@ def main():
     if fetch_tsi:
         print("🔬 Fetching TSI data...")
         try:
-            tsi_df, _ = fetch_tsi_data(start_date, end_date)
+            # Run the async function using asyncio
+            tsi_df, _ = asyncio.run(fetch_tsi_data_async(start_date, end_date))
             if tsi_df is not None and not tsi_df.empty:
                 print(f"✅ TSI: {len(tsi_df)} records fetched")
                 # Save TSI data

@@ -7,6 +7,7 @@ import sys
 import time
 import nest_asyncio
 import logging
+import argparse
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
@@ -655,15 +656,26 @@ async def main():
     Main async function to fetch data from TSI and WU, then upload to database.
     This version is non-interactive and concurrent, designed for automated execution.
     """
+    parser = argparse.ArgumentParser(description="Fetch weather data for a specified date range.")
+    parser.add_argument('--start-date', help="Start date in YYYY-MM-DD format.")
+    parser.add_argument('--end-date', help="End date in YYYY-MM-DD format.")
+    parser.add_argument('--dry-run', action='store_true', help="Fetch data and print a summary without saving to the database.")
+    args = parser.parse_args()
+
     logging.info("Starting data collection process...")
 
-    # 1. SET DATE RANGE AUTOMATICALLY
-    # This service will always fetch data for the previous day.
-    today = datetime.now()
-    yesterday = today - timedelta(days=1)
-    start_date = yesterday.strftime("%Y-%m-%d")
-    end_date = yesterday.strftime("%Y-%m-%d")
-    logging.info(f"Automatically setting date range to: {start_date} to {end_date}")
+    # 1. SET DATE RANGE
+    if args.start_date and args.end_date:
+        start_date = args.start_date
+        end_date = args.end_date
+        logging.info(f"Using manually specified date range: {start_date} to {end_date}")
+    else:
+        # This service will always fetch data for the previous day.
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        start_date = yesterday.strftime("%Y-%m-%d")
+        end_date = yesterday.strftime("%Y-%m-%d")
+        logging.info(f"Automatically setting date range to previous day: {start_date} to {end_date}")
 
     # 2. FETCH DATA CONCURRENTLY
     logging.info("Starting concurrent data fetch for Weather Underground and TSI...")
@@ -690,6 +702,32 @@ async def main():
     prod_wu_df = prod_data.get('wu')
     prod_tsi_df = prod_data.get('tsi')
 
+    # If --dry-run is specified, print summaries and exit before DB insertion
+    if args.dry_run:
+        logging.info("--- DRY RUN MODE ENABLED ---")
+        
+        if prod_wu_df is not None and not prod_wu_df.empty:
+            logging.info("--- WU Production Data Summary ---")
+            logging.info(f"Shape: {prod_wu_df.shape}")
+            logging.info("Head:\n" + prod_wu_df.head().to_string())
+            dry_run_path_wu = "wu_dry_run_output.csv"
+            prod_wu_df.to_csv(dry_run_path_wu, index=False)
+            logging.info(f"Full WU production data saved to '{dry_run_path_wu}'")
+        else:
+            logging.info("No WU production data to display.")
+
+        if prod_tsi_df is not None and not prod_tsi_df.empty:
+            logging.info("--- TSI Production Data Summary ---")
+            logging.info(f"Shape: {prod_tsi_df.shape}")
+            logging.info("Head:\n" + prod_tsi_df.head().to_string())
+            dry_run_path_tsi = "tsi_dry_run_output.csv"
+            prod_tsi_df.to_csv(dry_run_path_tsi, index=False)
+            logging.info(f"Full TSI production data saved to '{dry_run_path_tsi}'")
+        else:
+            logging.info("No TSI production data to display.")
+            
+        logging.info("Dry run finished. Exiting before database insertion.")
+        return # Exit before writing to DB
 
     # 4. INSERT DATA INTO DATABASE
     logging.info("Uploading data to PostgreSQL...")

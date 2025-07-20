@@ -9,12 +9,14 @@ import os
 import sys
 import json
 import pandas as pd
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-import time
-import re
+from typing import Dict, Any
+import gspread
+from google.oauth2.service_account import Credentials as GCreds
+from googleapiclient.discovery import build
+
 
 # Add project root to path for imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -22,13 +24,9 @@ sys.path.insert(0, project_root)
 
 # Import existing data management infrastructure
 from src.core.data_manager import DataManager
-
 # Google Sheets and Drive integration
-import gspread
-from google.oauth2.service_account import Credentials as GCreds
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import io
+from src.data_collection.daily_data_collector import fetch_wu_data, fetch_tsi_data_async
+
 
 class DailySheetsSystem:
     """
@@ -216,8 +214,6 @@ class DailySheetsSystem:
         
         try:
             # Import data fetching functions
-            sys.path.append(str(self.project_root / "src" / "data_collection"))
-            from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
             
             # Fetch WU data
             self.logger.info("Fetching Weather Underground data...")
@@ -230,7 +226,7 @@ class DailySheetsSystem:
             
             # Fetch TSI data
             self.logger.info("Fetching TSI data...")
-            tsi_df, tsi_per_device = fetch_tsi_data(start_date_str, end_date_str)
+            tsi_df, tsi_per_device = await fetch_tsi_data_async(start_date_str, end_date_str)
             if tsi_df is not None and not tsi_df.empty:
                 data['tsi'] = tsi_df
                 data['tsi_per_device'] = tsi_per_device
@@ -691,7 +687,7 @@ class DailySheetsSystem:
             sheet_info = self.create_daily_sheet(target_date, replace_existing)
             
             if sheet_info:
-                self.logger.info(f"✅ Daily sheet created successfully!")
+                self.logger.info("✅ Daily sheet created successfully!")
                 self.logger.info(f"📊 Sheet ID: {sheet_info['sheet_id']}")
                 self.logger.info(f"🔗 Sheet URL: {sheet_info['sheet_url']}")
                 self.logger.info(f"📂 Data Sources: {', '.join(sheet_info['data_sources'])}")

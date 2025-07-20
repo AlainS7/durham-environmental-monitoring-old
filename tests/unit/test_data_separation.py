@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 from unittest.mock import MagicMock
-from data_collection.faster_wu_tsi_to_sheets_async import separate_sensor_data_by_type
+from src.data_collection.daily_data_collector import separate_sensor_data_by_type
 
 @pytest.fixture
 def mock_test_sensor_config(mocker):
@@ -17,8 +17,8 @@ def mock_test_sensor_config(mocker):
     mock_config_instance.is_test_sensor.side_effect = lambda sensor_id: sensor_id in test_sensor_ids
     
     # Use mocker to patch the TestSensorConfig class in the module where it's used.
-    # The path should not include `src`.
-    mocker.patch('data_collection.faster_wu_tsi_to_sheets_async.TestSensorConfig', return_value=mock_config_instance)
+    # The path should now point to the new module name.
+    mocker.patch('src.data_collection.daily_data_collector.TestSensorConfig', return_value=mock_config_instance)
     
     return mock_config_instance
 
