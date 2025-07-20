@@ -1,13 +1,12 @@
 import asyncio
+import httpx
+import pandas as pd
 import json
 import os
 import sys
 import time
-from datetime import datetime, timedelta
-
-import httpx
 import nest_asyncio
-import pandas as pd
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
@@ -36,9 +35,11 @@ def get_secret(project_id, secret_id, version_id="latest"):
 # Database connection using Google Secret Manager
 PROJECT_ID = os.getenv("PROJECT_ID")
 DB_CREDS_SECRET_ID = os.getenv("DB_CREDS_SECRET_ID")
+TSI_CREDS_SECRET_ID = os.getenv("TSI_CREDS_SECRET_ID")
+WU_API_KEY_SECRET_ID = os.getenv("WU_API_KEY_SECRET_ID")
 
-if not all([PROJECT_ID, DB_CREDS_SECRET_ID]):
-    print("❌ ERROR: Environment variables PROJECT_ID and DB_CREDS_SECRET_ID must be set.")
+if not all([PROJECT_ID, DB_CREDS_SECRET_ID, TSI_CREDS_SECRET_ID, WU_API_KEY_SECRET_ID]):
+    print("❌ ERROR: Environment variables PROJECT_ID, DB_CREDS_SECRET_ID, TSI_CREDS_SECRET_ID, and WU_API_KEY_SECRET_ID must be set.")
     sys.exit(1)
 
 db_creds_json = get_secret(PROJECT_ID, DB_CREDS_SECRET_ID)
@@ -87,19 +88,19 @@ def read_or_fallback(prompt, default=None):
         val = input(f"{prompt} [{default}]: ") if default else input(prompt)
         return val if val else (default if default is not None else "")
 
-# Use robust file path gathering for creds
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
-wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
+# Remove obsolete file path logic
+# project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+# ts_creds_abs = os.path.join(project_root, 'creds', 'tsi_creds.json')
+# wu_api_key_abs = os.path.join(project_root, 'creds', 'wu_api_key.json')
 
-if not os.path.exists(ts_creds_abs):
-    print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
-    input("Press Enter to exit...")
-    sys.exit(1)
-if not os.path.exists(wu_api_key_abs):
-    print(f"❌ ERROR: WU API key not found at {wu_api_key_abs}. Please upload or place your wu_api_key.json in the creds/ folder.")
-    input("Press Enter to exit...")
-    sys.exit(1)
+# if not os.path.exists(ts_creds_abs):
+#     print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
+#     input("Press Enter to exit...")
+#     sys.exit(1)
+# if not os.path.exists(wu_api_key_abs):
+#     print(f"❌ ERROR: WU API key not found at {wu_api_key_abs}. Please upload or place your wu_api_key.json in the creds/ folder.")
+#     input("Press Enter to exit...")
+#     sys.exit(1)
 
 def insert_data_to_db(df, table_name):
     """
@@ -120,7 +121,6 @@ def insert_data_to_db(df, table_name):
         print(f"No duplicate prevention strategy for {table_name}. Appending data.")
         try:
             df.to_sql(table_name, engine, if_exists='append', index=False)
-            print(f"✅ Successfully appended data into {table_name}.")
         except Exception as e:
             print(f"❌ ERROR inserting data into {table_name}: {e}")
         return
@@ -133,7 +133,7 @@ def insert_data_to_db(df, table_name):
         df.to_sql(temp_table_name, engine, if_exists='replace', index=False)
 
         # Step 2: Construct a SQL query to insert only the new rows from the temp table
-        pk_cols_str = ", ".join(pk_columns[table_name])
+        pk_cols_str = ", ".join([f'"{c}"' for c in pk_columns[table_name]])
         all_cols_str = ", ".join([f'"{c}"' for c in df.columns])
         
         sql = f"""
@@ -146,13 +146,9 @@ def insert_data_to_db(df, table_name):
         # Step 3: Execute the SQL to insert the data
         with engine.connect() as connection:
             trans = connection.begin()
-            try:
-                result = connection.execute(text(sql))
-                trans.commit()
-                print(f"✅ Successfully inserted {result.rowcount} new rows into {table_name}, ignoring duplicates.")
-            except Exception as e:
-                trans.rollback()
-                raise e
+            result = connection.execute(text(sql))
+            trans.commit()
+        print(f"✅ Successfully inserted/updated {result.rowcount} rows in {table_name}.")
 
     except Exception as e:
         print(f"❌ ERROR inserting data into {table_name}: {e}")
@@ -160,16 +156,23 @@ def insert_data_to_db(df, table_name):
         # Step 4: Drop the temporary table to clean up
         with engine.connect() as connection:
             trans = connection.begin()
-            try:
-                connection.execute(text(f"DROP TABLE IF EXISTS {temp_table_name};"))
-                trans.commit()
-            except Exception as e:
-                trans.rollback()
-                print(f"❌ ERROR dropping temp table {temp_table_name}: {e}")
+            connection.execute(text(f"DROP TABLE IF EXISTS {temp_table_name};"))
+            trans.commit()
 
 def fetch_wu_data(start_date_str, end_date_str):
-    with open(wu_api_key_abs) as f:
-        wu_key = json.load(f)['test_api_key']
+    wu_api_key_json = get_secret(PROJECT_ID, WU_API_KEY_SECRET_ID)
+    if not wu_api_key_json:
+        print("❌ ERROR: Could not fetch WU API key from Secret Manager.")
+        return pd.DataFrame()
+    try:
+        wu_key = json.loads(wu_api_key_json).get('test_api_key')
+        if not wu_key:
+            print("❌ ERROR: 'test_api_key' not found in the WU API key secret JSON.")
+            return pd.DataFrame()
+    except json.JSONDecodeError:
+        print("❌ ERROR: Failed to decode the WU API key JSON from Secret Manager.")
+        return pd.DataFrame()
+
     stations = get_wu_stations()
 
     def get_station_data_and_process(client, stationId, date, key, max_attempts=4):
@@ -193,42 +196,19 @@ def fetch_wu_data(start_date_str, end_date_str):
                 if response.status_code == 200:
                     try:
                         data = response.json()
-                        processed_rows = []
-                        for obs in data.get('observations', []):
-                            obs_time = pd.to_datetime(obs.get('obsTimeUtc'), errors='coerce').round('h')
-                            row = [
-                                obs.get('stationID'),
-                                obs_time,
-                                obs.get('metric', {}).get('tempAvg'),
-                                obs.get('humidityAvg'),
-                                obs.get('solarRadiationHigh'),
-                                obs.get('metric', {}).get('precipRate'),
-                                obs.get('metric', {}).get('precipTotal'),
-                                obs.get('winddirAvg'),
-                                obs.get('metric', {}).get('windspeedAvg'),
-                                obs.get('metric', {}).get('windgustAvg'),
-                                obs.get('metric', {}).get('pressureMax'),
-                                obs.get('metric', {}).get('pressureMin'),
-                                obs.get('metric', {}).get('pressureTrend'),
-                                obs.get('metric', {}).get('heatindexAvg'),
-                                obs.get('metric', {}).get('dewptAvg')
-                            ]
-                            processed_rows.append(row)
-                        if not processed_rows:
-                            return []
-                        return processed_rows
+                        return data.get('observations', [])
                     except json.JSONDecodeError:
-                        print(f"JSONDecodeError for {stationId} on {date}. Response: {response.text[:200]}")
+                        print(f"Attempt {attempt_num}/{max_attempts} failed for {stationId} on {date} due to JSON decode error.")
                     except Exception as e:
-                        print(f"Error processing data for {stationId} on {date}: {e}")
+                        print(f"Attempt {attempt_num}/{max_attempts} failed during processing for {stationId} on {date}: {e}")
                 elif response.status_code == 204:
                     print(f"No content (204) for {stationId} on {date}. Assuming no data.")
                     return []
                 else:
-                    print(f"Attempt {attempt_num}/{max_attempts} received non-200 response (httpx) for {stationId} on {date}: {response.status_code} {response.text[:200]}")
+                    print(f"Attempt {attempt_num}/{max_attempts} received non-200 response for {stationId} on {date}: {response.status_code} {response.text[:200]}")
 
             except httpx.TimeoutException:
-                print(f"Attempt {attempt_num}/{max_attempts} timed out (httpx) for {stationId} on {date}.")
+                print(f"Attempt {attempt_num}/{max_attempts} timed out for {stationId} on {date}.")
             except httpx.RequestError as e:
                 print(f"Attempt {attempt_num}/{max_attempts} failed for {stationId} on {date} with httpx.RequestError: {e}")
             except Exception as e:
@@ -374,13 +354,7 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
         days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
         
         if not TSIDateRangeManager.is_within_limit(start_date, end_date):
-            print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, exceeds TSI's 90-day historical limit")
-            print("   TSI API Error: 'start_date cannot be more than 90 days in the past'")
-            print("   Options:")
-            print("   1. Use most recent valid date range")
-            print("   2. Skip TSI data collection") 
-            print("   3. Split into multiple API calls (advanced)")
-            
+            print(f"⚠️ WARNING: Start date {start_date} is {days_back} days back, which exceeds TSI's 90-day historical limit.")
             # For automated systems, default to most recent data
             adjusted_start, adjusted_end, was_adjusted = TSIDateRangeManager.adjust_date_range_for_tsi(
                 start_date, end_date, prefer_recent=True
@@ -390,7 +364,7 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
                 start_date, end_date = adjusted_start, adjusted_end
                 new_days_back = TSIDateRangeManager.get_days_back_from_start(start_date)
                 new_days_span = TSIDateRangeManager.get_days_difference(start_date, end_date)
-                print(f"   🔄 Automatically adjusted to: {start_date} to {end_date}")
+                print(f"   🔄 Automatically adjusted date range to: {start_date} to {end_date}")
                 print(f"   📊 New range: {new_days_span} days span, starting {new_days_back} days back")
         else:
             print(f"✅ TSI date range valid: {start_date} to {end_date}")
@@ -399,11 +373,19 @@ def fetch_tsi_data(start_date, end_date, combine_mode='yes', per_device=False):
         print(f"⚠️ Using basic date handling: {start_date} to {end_date}")
     
     
-    if not os.path.exists(ts_creds_abs):
-        print(f"❌ ERROR: TSI credentials not found at {ts_creds_abs}. Please upload or place your tsi_creds.json in the creds/ folder.")
+    tsi_creds_json = get_secret(PROJECT_ID, TSI_CREDS_SECRET_ID)
+    if not tsi_creds_json:
+        print("❌ ERROR: Could not fetch TSI credentials from Secret Manager.")
         return pd.DataFrame(), {}
-    with open(ts_creds_abs) as f:
-        tsi_creds = json.load(f)
+    try:
+        tsi_creds = json.loads(tsi_creds_json)
+        if 'key' not in tsi_creds or 'secret' not in tsi_creds:
+            print("❌ ERROR: 'key' or 'secret' not found in the TSI creds secret JSON.")
+            return pd.DataFrame(), {}
+    except json.JSONDecodeError:
+        print("❌ ERROR: Failed to decode the TSI creds JSON from Secret Manager.")
+        return pd.DataFrame(), {}
+
     auth_resp = httpx.post(
         'https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken',
         params={'grant_type': 'client_credentials'},
@@ -568,65 +550,66 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
         if not available_id_fields:
             print("⚠️ No recognizable TSI sensor ID fields found in data")
             print(f"   Available columns: {', '.join(tsi_df.columns.tolist())}")
+            prod_data['tsi'] = tsi_df.copy() # Assume all are production if no ID
         else:
             print(f"🔍 Using TSI ID fields: {', '.join(available_id_fields)}")
         
-        for idx, row in tsi_df.iterrows():
-            try:
-                # Extract all possible sensor identifiers
-                sensor_ids = set()
-                for field in available_id_fields:
-                    field_value = str(row.get(field, '')).strip()
-                    if field_value and field_value.lower() not in ['nan', 'none', '']:
-                        sensor_ids.add(field_value)
-                
-                # Skip if no valid sensor IDs found
-                if not sensor_ids:
+            for idx, row in tsi_df.iterrows():
+                try:
+                    # Extract all possible sensor identifiers
+                    sensor_ids = set()
+                    for field in available_id_fields:
+                        field_value = str(row.get(field, '')).strip()
+                        if field_value and field_value.lower() not in ['nan', 'none', '']:
+                            sensor_ids.add(field_value)
+                    
+                    # Skip if no valid sensor IDs found
+                    if not sensor_ids:
+                        separation_stats['tsi_unknown_count'] += 1
+                        continue
+                    
+                    # Check if any of the identifiers match test sensors
+                    is_test_sensor = any(test_config.is_test_sensor(sensor_id) for sensor_id in sensor_ids)
+                    
+                    # Get the primary sensor ID for tracking (prefer device_id, then device_name)
+                    primary_id = None
+                    for field in ['device_id', 'device_name', 'Device Name']:
+                        if field in row and str(row[field]).strip():
+                            primary_id = str(row[field]).strip()
+                            break
+                    if not primary_id:
+                        primary_id = next(iter(sensor_ids)) if sensor_ids else 'unknown'
+                    
+                    # Classify sensor
+                    if is_test_sensor:
+                        test_tsi_rows.append(row)
+                        separation_stats['tsi_test_count'] += 1
+                        separation_stats['tsi_test_sensors'].add(primary_id)
+                    else:
+                        prod_tsi_rows.append(row)
+                        separation_stats['tsi_prod_count'] += 1
+                        separation_stats['tsi_prod_sensors'].add(primary_id)
+                        
+                except Exception as e:
+                    print(f"⚠️ Error processing TSI row {idx}: {e}")
                     separation_stats['tsi_unknown_count'] += 1
                     continue
-                
-                # Check if any of the identifiers match test sensors
-                is_test_sensor = any(test_config.is_test_sensor(sensor_id) for sensor_id in sensor_ids)
-                
-                # Get the primary sensor ID for tracking (prefer device_id, then device_name)
-                primary_id = None
-                for field in ['device_id', 'device_name', 'Device Name']:
-                    if field in row and str(row[field]).strip():
-                        primary_id = str(row[field]).strip()
-                        break
-                if not primary_id:
-                    primary_id = next(iter(sensor_ids)) if sensor_ids else 'unknown'
-                
-                # Classify sensor
-                if is_test_sensor:
-                    test_tsi_rows.append(row)
-                    separation_stats['tsi_test_count'] += 1
-                    separation_stats['tsi_test_sensors'].add(primary_id)
-                else:
-                    prod_tsi_rows.append(row)
-                    separation_stats['tsi_prod_count'] += 1
-                    separation_stats['tsi_prod_sensors'].add(primary_id)
-                    
-            except Exception as e:
-                print(f"⚠️ Error processing TSI row {idx}: {e}")
-                separation_stats['tsi_unknown_count'] += 1
-                continue
-        
-        # Create DataFrames if we have data
-        if test_tsi_rows:
-            test_data['tsi'] = pd.DataFrame(test_tsi_rows)
-            print(f"🧪 Separated {len(test_tsi_rows)} TSI test sensor records from {len(separation_stats['tsi_test_sensors'])} sensors")
-            if len(separation_stats['tsi_test_sensors']) <= 5:
-                print(f"   Test sensors: {', '.join(sorted(separation_stats['tsi_test_sensors']))}")
-        
-        if prod_tsi_rows:
-            prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
-            print(f"🏭 Separated {len(prod_tsi_rows)} TSI production sensor records from {len(separation_stats['tsi_prod_sensors'])} sensors")
-            if len(separation_stats['tsi_prod_sensors']) <= 5:
-                print(f"   Production sensors: {', '.join(sorted(separation_stats['tsi_prod_sensors']))}")
-        
-        if separation_stats['tsi_unknown_count'] > 0:
-            print(f"⚠️ Skipped {separation_stats['tsi_unknown_count']} TSI records with missing/invalid sensor IDs")
+            
+            # Create DataFrames if we have data
+            if test_tsi_rows:
+                test_data['tsi'] = pd.DataFrame(test_tsi_rows)
+                print(f"🧪 Separated {len(test_tsi_rows)} TSI test sensor records from {len(separation_stats['tsi_test_sensors'])} sensors")
+                if len(separation_stats['tsi_test_sensors']) <= 5:
+                    print(f"   Test sensors: {', '.join(sorted(separation_stats['tsi_test_sensors']))}")
+            
+            if prod_tsi_rows:
+                prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
+                print(f"🏭 Separated {len(prod_tsi_rows)} TSI production sensor records from {len(separation_stats['tsi_prod_sensors'])} sensors")
+                if len(separation_stats['tsi_prod_sensors']) <= 5:
+                    print(f"   Production sensors: {', '.join(sorted(separation_stats['tsi_prod_sensors']))}")
+            
+            if separation_stats['tsi_unknown_count'] > 0:
+                print(f"⚠️ Skipped {separation_stats['tsi_unknown_count']} TSI records with missing/invalid sensor IDs")
     
     # Print separation summary
     total_test_records = separation_stats['wu_test_count'] + separation_stats['tsi_test_count']
@@ -640,11 +623,11 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
         print(f"   ⚠️ Unknown/invalid: {total_unknown_records} records")
     
     # Validate separation results
-    if total_test_records == 0 and total_prod_records == 0:
-        print("⚠️ Warning: No valid sensor data was separated. Check sensor ID configurations.")
-    elif total_test_records == 0:
+    if total_test_records == 0 and total_prod_records == 0 and ( (wu_df is not None and not wu_df.empty) or (tsi_df is not None and not tsi_df.empty) ):
+        print("⚠️ Warning: No valid sensor data was separated. Check sensor ID configurations and data quality.")
+    elif total_test_records == 0 and total_prod_records > 0:
         print("💡 Info: No test sensor data found. All data classified as production.")
-    elif total_prod_records == 0:
+    elif total_prod_records == 0 and total_test_records > 0:
         print("💡 Info: No production sensor data found. All data classified as test.")
     
     return test_data, prod_data
@@ -652,17 +635,17 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
 def main():
     """
     Main function to fetch data from TSI and WU, then upload to database.
+    This version is non-interactive, designed for automated execution.
     """
     print("Starting data collection process...")
 
-    # 1. GET USER INPUT FOR DATE RANGE
+    # 1. SET DATE RANGE AUTOMATICALLY
+    # This service will always fetch data for the previous day.
     today = datetime.now()
     yesterday = today - timedelta(days=1)
-    start_date_def = yesterday.strftime("%Y-%m-%d")
-    end_date_def = yesterday.strftime("%Y-%m-%d")
-
-    start_date = read_or_fallback("Enter start date (YYYY-MM-DD)", start_date_def)
-    end_date = read_or_fallback("Enter end date (YYYY-MM-DD)", end_date_def)
+    start_date = yesterday.strftime("%Y-%m-%d")
+    end_date = yesterday.strftime("%Y-%m-%d")
+    print(f"Automatically setting date range to: {start_date} to {end_date}")
 
     # 2. FETCH DATA
     print("\nFetching Weather Underground data...")

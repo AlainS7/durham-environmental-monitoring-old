@@ -1,12 +1,41 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
+const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-const wu_key = JSON.parse(fs.readFileSync('./wu_api_key.json')).test_api_key;
-const tsi_creds = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../tsi_creds.json')));
+// --- Google Secret Manager ---
+const client = new SecretManagerServiceClient();
+const PROJECT_ID = process.env.PROJECT_ID || '441117079833'; // Fallback for local dev
+
+async function getSecret(secretId, version = 'latest') {
+  try {
+    const name = `projects/${PROJECT_ID}/secrets/${secretId}/versions/${version}`;
+    const [response] = await client.accessSecretVersion({ name });
+    const payload = response.payload.data.toString('utf8');
+    return JSON.parse(payload);
+  } catch (error) {
+    console.error(`Error accessing secret ${secretId}:`, error);
+    throw new Error(`Could not access secret: ${secretId}`);
+  }
+}
+
+// Asynchronously fetch secrets at startup
+let wu_key, tsi_creds;
+
+async function initializeSecrets() {
+  try {
+    console.log('Initializing secrets...');
+    const wuSecret = await getSecret('wu_api_key');
+    wu_key = wuSecret.test_api_key;
+    tsi_creds = await getSecret('tsi_creds');
+    console.log('✅ Secrets initialized successfully.');
+  } catch (error) {
+    console.error('❌ FATAL: Could not initialize secrets. Exiting.', error);
+    process.exit(1);
+  }
+}
+// --- End Secret Manager ---
 
 async function getTSIToken() {
   const resp = await fetch('https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken?grant_type=client_credentials', {
@@ -76,6 +105,9 @@ app.get('/api/tsi/:deviceId', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`API proxy running at http://localhost:${PORT}`);
+// Initialize secrets and then start the server
+initializeSecrets().then(() => {
+  app.listen(PORT, () => {
+    console.log(`API proxy running at http://localhost:${PORT}`);
+  });
 });
