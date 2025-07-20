@@ -10,41 +10,35 @@ making it clear which sensors should have their data stored separately from prod
 """
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import os
+import json
 
-# List your test sensor IDs here - update this list with your actual test sensor identifiers
-TEST_SENSOR_IDS = [
-    # Weather Underground test sensors (clustered for validation testing)
-    # Format: WU_ID (MS Station Name)
-    'KNCDURHA634',  # MS-09
-    'KNCDURHA635',  # MS-10
-    'KNCDURHA636',  # MS-11
-    'KNCDURHA638',  # MS-12
-    'KNCDURHA639',  # MS-13
-    'KNCDURHA640',  # MS-14
-    'KNCDURHA641',  # MS-15
-    'KNCDURHA642',  # MS-16
-    'KNCDURHA643',  # MS-17
-    'KNCDURHA644',  # MS-18
-    'KNCDURHA645',  # MS-19
-    'KNCDURHA646',  # MS-20
-    'KNCDURHA647',  # MS-21
-    'KNCDURHA648',  # MS-22
-    
-    # TSI test sensors (device names or IDs) - add your TSI test sensor IDs here
-    
-    # AA-series sensors (identified as test sensors):
-    'AA-2 (Burch)', 'AA-3', 'AA-4', 'AA-5', 'AA-6', 'AA-7', 'AA-8', 'AA-9', 
-    'AA-10', 'AA-11', 'AA-12', 'AA-13', 'AA-14',
-    
-    # Note: TSI sensors may use different ID formats:
-    # - device_id: Long alphanumeric string (e.g., 'cv123abc456def789')
-    # - device_name: Short descriptive name (e.g., 'BS-01', 'BS-TEST-01')  
-    # - Device Name: Human-readable name (e.g., 'Test Sensor 1', 'BS-TEST-01')
-    
-    # Add additional test sensor IDs here as you deploy them
-]
+# Path to the JSON file that stores the list of test sensors
+CONFIG_FILE_PATH = Path(__file__).parent.parent / 'test_data' / 'test_sensors.json'
+
+# Global variable to hold the list of test sensors
+TEST_SENSOR_IDS = []
+
+def load_test_sensor_ids():
+    """Loads the test sensor list from the JSON config file."""
+    global TEST_SENSOR_IDS
+    if CONFIG_FILE_PATH.exists():
+        with open(CONFIG_FILE_PATH, 'r') as f:
+            TEST_SENSOR_IDS = json.load(f)
+    else:
+        # Default list if the file doesn't exist
+        TEST_SENSOR_IDS = [
+            {'id': 'KNCDURHA634', 'active': True},
+            {'id': 'KNCDURHA635', 'active': True},
+        ]
+        save_test_sensor_ids()
+
+def save_test_sensor_ids():
+    """Saves the current test sensor list to the JSON config file."""
+    CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE_PATH, 'w') as f:
+        json.dump(TEST_SENSOR_IDS, f, indent=4)
 
 # Mapping of WU sensor IDs to MS station names for reference
 WU_TO_MS_MAPPING = {
@@ -79,7 +73,7 @@ GOOGLE_DRIVE_CONFIG = {
 class TestSensorConfig:
     """Configuration manager for test sensors."""
     
-    def __init__(self, project_root: str = None):
+    def __init__(self, project_root: Optional[str] = None):
         if project_root is None:
             # Get the project root (Hot Durham folder)
             self.project_root = Path(__file__).parent.parent
@@ -109,7 +103,8 @@ class TestSensorConfig:
         Returns:
             True if this is a test sensor, False otherwise
         """
-        return sensor_id in TEST_SENSOR_IDS
+        load_test_sensor_ids()
+        return any(s['id'] == sensor_id for s in TEST_SENSOR_IDS)
     
     def get_data_path(self, sensor_id: str) -> Path:
         """
@@ -156,38 +151,72 @@ class TestSensorConfig:
         else:
             return ''
     
-    def add_test_sensor(self, sensor_id: str) -> None:
+    def add_test_sensor(self, sensor_id: str, active: bool = True) -> None:
         """
-        Add a new sensor to the test list.
-        
-        Note: This modifies the in-memory list but doesn't persist changes.
-        To permanently add sensors, update the TEST_SENSOR_IDS list in this file.
+        Add a new sensor to the test list and save it to the config file.
         
         Args:
             sensor_id: The sensor identifier to add
+            active: The active status of the sensor
         """
-        global TEST_SENSOR_IDS
-        if sensor_id not in TEST_SENSOR_IDS:
-            TEST_SENSOR_IDS.append(sensor_id)
-            print(f"Added {sensor_id} to test sensors list (in-memory only)")
-    
+        load_test_sensor_ids()
+        if not any(s['id'] == sensor_id for s in TEST_SENSOR_IDS):
+            TEST_SENSOR_IDS.append({'id': sensor_id, 'active': active})
+            save_test_sensor_ids()
+            print(f"Sensor {sensor_id} added.")
+        else:
+            print(f"Sensor {sensor_id} already exists.")
+
     def remove_test_sensor(self, sensor_id: str) -> None:
         """
-        Remove a sensor from the test list (promote to production).
-        
-        Note: This modifies the in-memory list but doesn't persist changes.
-        To permanently remove sensors, update the TEST_SENSOR_IDS list in this file.
+        Remove a sensor from the test list and save the updated list.
         
         Args:
             sensor_id: The sensor identifier to remove
         """
-        global TEST_SENSOR_IDS
-        if sensor_id in TEST_SENSOR_IDS:
-            TEST_SENSOR_IDS.remove(sensor_id)
-            print(f"Removed {sensor_id} from test sensors list (in-memory only)")
-    
-    def get_test_sensors(self) -> List[str]:
-        """Get list of all test sensor IDs."""
+        load_test_sensor_ids()
+        original_count = len(TEST_SENSOR_IDS)
+        TEST_SENSOR_IDS[:] = [s for s in TEST_SENSOR_IDS if s['id'] != sensor_id]
+        if len(TEST_SENSOR_IDS) < original_count:
+            save_test_sensor_ids()
+            print(f"Sensor {sensor_id} removed.")
+        else:
+            print(f"Sensor {sensor_id} not found.")
+
+    def set_sensor_active_status(self, sensor_id: str, active=True) -> None:
+        """
+        Set the active status of a sensor.
+        
+        Args:
+            sensor_id: The sensor identifier
+            active: True to set as active, False to set as inactive
+        """
+        load_test_sensor_ids()
+        sensor_found = False
+        for sensor in TEST_SENSOR_IDS:
+            if sensor['id'] == sensor_id:
+                sensor['active'] = active
+                sensor_found = True
+                break
+        if sensor_found:
+            save_test_sensor_ids()
+            status = "active" if active else "inactive"
+            print(f"Sensor {sensor_id} set to {status}.")
+        else:
+            print(f"Sensor {sensor_id} not found.")
+
+    def get_test_sensor_ids(self, active_only=True):
+        """
+        Retrieves the list of test sensor IDs from the configuration file.
+        """
+        load_test_sensor_ids()
+        if active_only:
+            return [sensor['id'] for sensor in TEST_SENSOR_IDS if sensor.get('active', True)]
+        return [sensor['id'] for sensor in TEST_SENSOR_IDS]
+
+    def get_test_sensors(self) -> List[Dict[str, Any]]:
+        """Get list of all test sensor objects."""
+        load_test_sensor_ids()
         return TEST_SENSOR_IDS.copy()
     
     def get_ms_station_name(self, wu_sensor_id: str) -> Optional[str]:
@@ -286,7 +315,7 @@ class TestSensorConfig:
                 # Use existing production structure
                 return base_path
     
-    def get_drive_config(self) -> Dict[str, any]:
+    def get_drive_config(self) -> Dict[str, Any]:
         """
         Get the Google Drive configuration for this sensor configuration.
         
@@ -295,7 +324,7 @@ class TestSensorConfig:
         """
         return GOOGLE_DRIVE_CONFIG.copy()
     
-    def get_sensor_status(self, sensor_id: str) -> Dict[str, any]:
+    def get_sensor_status(self, sensor_id: str) -> Dict[str, Any]:
         """
         Get comprehensive status information for a sensor.
         
@@ -332,15 +361,15 @@ class TestSensorConfig:
         print(f"Test Logs Path: {self.test_logs_path}")
         print(f"Production Data Path: {self.prod_data_path}")
         print(f"\nTest Sensors ({len(TEST_SENSOR_IDS)}):")
-        for sensor_id in TEST_SENSOR_IDS:
-            ms_station = self.get_ms_station_name(sensor_id)
+        for sensor in TEST_SENSOR_IDS:
+            ms_station = self.get_ms_station_name(sensor['id'])
             if ms_station:
-                print(f"  - {sensor_id} ({ms_station})")
+                print(f"  - {sensor['id']} ({ms_station})")
             else:
-                print(f"  - {sensor_id}")
+                print(f"  - {sensor['id']}")
         print("=" * 40)
     
-    def validate_configuration(self) -> Dict[str, any]:
+    def validate_configuration(self) -> Dict[str, Any]:
         """
         Validate the test sensor configuration and return validation results.
         
@@ -373,7 +402,8 @@ class TestSensorConfig:
         tsi_sensors = []
         unknown_sensors = []
         
-        for sensor_id in TEST_SENSOR_IDS:
+        for sensor in TEST_SENSOR_IDS:
+            sensor_id = sensor['id']
             if sensor_id.startswith('KNCDURHA'):
                 wu_sensors.append(sensor_id)
                 validation['stats']['wu_test_sensors'] += 1
@@ -447,6 +477,8 @@ class TestSensorConfig:
 
 # Global instance for easy importing
 test_config = TestSensorConfig()
+# Load the initial sensor list at startup
+load_test_sensor_ids()
 
 # Convenience functions for easy importing
 def is_test_sensor(sensor_id: str) -> bool:
