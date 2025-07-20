@@ -35,7 +35,7 @@ jobs:
       uses: 'google-github-actions/setup-gcloud@v2'
 
     - name: Create Artifact Registry repository
-      uses: 'google-github-actions/create-gcp-artifact-registry-repository@v2'
+      uses: 'google-github-actions/create-artifact-registry-repository@v2'
       with:
         project_id: '${{ env.PROJECT_ID }}'
         location: '${{ env.GAR_LOCATION }}'
