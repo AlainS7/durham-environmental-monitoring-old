@@ -358,3 +358,6 @@ fix_current_env.sh
 
 
 cloud-sql-proxy
+
+# Separated Hot Durham Project
+#hot_durham_project/
