@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 
 def setup_logging():
     """
@@ -12,6 +13,10 @@ def setup_logging():
     """
     # Attempt to use Google Cloud Logging handler if available
     try:
+        # Only attempt to set up Google Cloud Logging if in a GCP environment
+        if 'K_SERVICE' not in os.environ:
+            raise ImportError("Not in a GCP environment, falling back to standard logging.")
+
         from google.cloud.logging.handlers import CloudLoggingHandler
         import google.cloud.logging
         
@@ -25,7 +30,7 @@ def setup_logging():
         print("✅ Successfully configured Google Cloud Logging.")
         
     except ImportError:
-        print("⚠️ Google Cloud Logging library not found. Falling back to standard console logging.")
+        print("⚠️ Falling back to standard console logging.")
         handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',

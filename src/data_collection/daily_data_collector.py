@@ -13,14 +13,14 @@ from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
 # Setup logging and configuration first
-from ..utils.logging_setup import setup_logging
-from ..config.app_config import app_config
+from src.utils.logging_setup import setup_logging
+from src.config.app_config import app_config
 
 # Use relative imports for local modules
-from ...config.test_sensors_config import TestSensorConfig
-from ...config.wu_stations_config import get_wu_stations
-from ...config.tsi_stations_config import get_tsi_devices
-from ..utils.tsi_date_manager import TSIDateRangeManager
+from config.test_sensors_config import TestSensorConfig
+from config.wu_stations_config import get_wu_stations
+from config.tsi_stations_config import get_tsi_devices
+from src.utils.tsi_date_manager import TSIDateRangeManager
 
 # Initialize logging
 setup_logging()
@@ -537,13 +537,14 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
                 separation_stats['wu_unknown_count'] += 1
                 continue
         
-        # Create DataFrames if we have data
+        # Create DataFrame if we have test data
         if test_wu_rows:
             test_data['wu'] = pd.DataFrame(test_wu_rows)
             logging.info(f"Separated {len(test_wu_rows)} WU test sensor records from {len(separation_stats['wu_test_sensors'])} sensors")
             if len(separation_stats['wu_test_sensors']) <= 5:
                 logging.info(f"Test sensors: {', '.join(sorted(separation_stats['wu_test_sensors']))}")
         
+        # Create DataFrame if we have production data
         if prod_wu_rows:
             prod_data['wu'] = pd.DataFrame(prod_wu_rows)
             logging.info(f"Separated {len(prod_wu_rows)} WU production sensor records from {len(separation_stats['wu_prod_sensors'])} sensors")
@@ -614,13 +615,14 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
                     separation_stats['tsi_unknown_count'] += 1
                     continue
             
-            # Create DataFrames if we have data
+            # Create DataFrame if we have test data
             if test_tsi_rows:
                 test_data['tsi'] = pd.DataFrame(test_tsi_rows)
                 logging.info(f"Separated {len(test_tsi_rows)} TSI test sensor records from {len(separation_stats['tsi_test_sensors'])} sensors")
                 if len(separation_stats['tsi_test_sensors']) <= 5:
                     logging.info(f"Test sensors: {', '.join(sorted(separation_stats['tsi_test_sensors']))}")
             
+            # Create DataFrame if we have production data
             if prod_tsi_rows:
                 prod_data['tsi'] = pd.DataFrame(prod_tsi_rows)
                 logging.info(f"Separated {len(prod_tsi_rows)} TSI production sensor records from {len(separation_stats['tsi_prod_sensors'])} sensors")
@@ -651,40 +653,14 @@ def separate_sensor_data_by_type(wu_df, tsi_df):
     
     return test_data, prod_data
 
-async def main():
-    """
-    Main async function to fetch data from TSI and WU, then upload to database.
-    This version is non-interactive and concurrent, designed for automated execution.
-    """
-    parser = argparse.ArgumentParser(description="Fetch weather data for a specified date range.")
-    parser.add_argument('--start-date', help="Start date in YYYY-MM-DD format.")
-    parser.add_argument('--end-date', help="End date in YYYY-MM-DD format.")
-    parser.add_argument('--dry-run', action='store_true', help="Fetch data and print a summary without saving to the database.")
-    args = parser.parse_args()
-
-    logging.info("Starting data collection process...")
-
-    # 1. SET DATE RANGE
-    if args.start_date and args.end_date:
-        start_date = args.start_date
-        end_date = args.end_date
-        logging.info(f"Using manually specified date range: {start_date} to {end_date}")
-    else:
-        # This service will always fetch data for the previous day.
-        today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        start_date = yesterday.strftime("%Y-%m-%d")
-        end_date = yesterday.strftime("%Y-%m-%d")
-        logging.info(f"Automatically setting date range to previous day: {start_date} to {end_date}")
-
-    # 2. FETCH DATA CONCURRENTLY
+async def run_collection_process(start_date_str, end_date_str, tsi_end_date_str, dry_run):
     logging.info("Starting concurrent data fetch for Weather Underground and TSI...")
     
-    wu_task = asyncio.create_task(fetch_wu_data_async(start_date, end_date))
-    tsi_task = asyncio.create_task(fetch_tsi_data_async(start_date, end_date))
-
-    wu_df = await wu_task
-    tsi_df, _ = await tsi_task
+    # Concurrently fetch both data sources
+    wu_task = asyncio.create_task(fetch_wu_data_async(start_date_str, end_date_str))
+    tsi_task = asyncio.create_task(fetch_tsi_data_async(start_date_str, tsi_end_date_str))
+    
+    wu_df, (tsi_df, _) = await asyncio.gather(wu_task, tsi_task)
 
     if wu_df is not None and not wu_df.empty:
         logging.info(f"Found {len(wu_df)} records from Weather Underground.")
@@ -696,46 +672,74 @@ async def main():
     else:
         logging.warning("No data returned from TSI.")
 
-    # 3. SEPARATE DATA (IF NEEDED)
     logging.info("Separating test and production data...")
     test_data, prod_data = separate_sensor_data_by_type(wu_df, tsi_df)
-    prod_wu_df = prod_data.get('wu')
-    prod_tsi_df = prod_data.get('tsi')
 
-    # If --dry-run is specified, print summaries and exit before DB insertion
-    if args.dry_run:
+    if dry_run:
         logging.info("--- DRY RUN MODE ENABLED ---")
         
-        if prod_wu_df is not None and not prod_wu_df.empty:
+        # Handle WU data
+        if prod_data['wu'] is not None and not prod_data['wu'].empty:
             logging.info("--- WU Production Data Summary ---")
-            logging.info(f"Shape: {prod_wu_df.shape}")
-            logging.info("Head:\n" + prod_wu_df.head().to_string())
-            dry_run_path_wu = "wu_dry_run_output.csv"
-            prod_wu_df.to_csv(dry_run_path_wu, index=False)
-            logging.info(f"Full WU production data saved to '{dry_run_path_wu}'")
+            logging.info(f"Shape: {prod_data['wu'].shape}")
+            logging.info(f"Head:\n{prod_data['wu'].head().to_string()}")
+            prod_data['wu'].to_csv('wu_dry_run_output.csv', index=False)
+            logging.info("Full WU production data saved to 'wu_dry_run_output.csv'")
         else:
             logging.info("No WU production data to display.")
 
-        if prod_tsi_df is not None and not prod_tsi_df.empty:
+        # Handle TSI data
+        if prod_data['tsi'] is not None and not prod_data['tsi'].empty:
             logging.info("--- TSI Production Data Summary ---")
-            logging.info(f"Shape: {prod_tsi_df.shape}")
-            logging.info("Head:\n" + prod_tsi_df.head().to_string())
-            dry_run_path_tsi = "tsi_dry_run_output.csv"
-            prod_tsi_df.to_csv(dry_run_path_tsi, index=False)
-            logging.info(f"Full TSI production data saved to '{dry_run_path_tsi}'")
+            logging.info(f"Shape: {prod_data['tsi'].shape}")
+            logging.info(f"Head:\n{prod_data['tsi'].head().to_string()}")
+            prod_data['tsi'].to_csv('tsi_dry_run_output.csv', index=False)
+            logging.info("Full TSI production data saved to 'tsi_dry_run_output.csv'")
         else:
             logging.info("No TSI production data to display.")
             
         logging.info("Dry run finished. Exiting before database insertion.")
-        return # Exit before writing to DB
+    else:
+        logging.info("--- LIVE RUN MODE ---")
+        logging.info("Inserting production data into the database...")
+        insert_data_to_db(prod_data['wu'], 'wu_data')
+        insert_data_to_db(prod_data['tsi'], 'tsi_data')
+        logging.info("Database insertion process complete.")
 
-    # 4. INSERT DATA INTO DATABASE
-    logging.info("Uploading data to PostgreSQL...")
-    insert_data_to_db(prod_wu_df, 'wu_data')
-    insert_data_to_db(prod_tsi_df, 'tsi_data')
+async def main():
+    """
+    Main async function to fetch data from TSI and WU, then upload to database.
+    This version is non-interactive and concurrent, designed for automated execution.
+    """
+    parser = argparse.ArgumentParser(description="Fetch weather data for a specified date range.")
+    parser.add_argument('--start-date', help="Start date in YYYY-MM-DD format.")
+    parser.add_argument('--end-date', type=str, help='End date for data fetching (YYYY-MM-DD). Defaults to start date.')
+    parser.add_argument('--dry-run', action='store_true', help='Run script without inserting data into DB, saving to CSV instead.')
+    args = parser.parse_args()
 
-    logging.info("Data collection and upload process finished.")
+    start_date_str = args.start_date
+    end_date_str = args.end_date
 
+    # If no start date is provided, default to yesterday
+    if not start_date_str:
+        start_date_dt = datetime.now() - timedelta(days=1)
+        start_date_str = start_date_dt.strftime("%Y-%m-%d")
+        logging.info(f"Automatically setting date range to previous day: {start_date_str} to {start_date_str}")
+    
+    # If no end date is provided, default to the start date
+    if not end_date_str:
+        end_date_str = start_date_str
 
-if __name__ == '__main__':
+    # For TSI, the end date needs to be the day after to include the full day's data.
+    start_date_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+    tsi_end_date_dt = end_date_dt + timedelta(days=1)
+    tsi_end_date_str = tsi_end_date_dt.strftime("%Y-%m-%d")
+
+    logging.info("Starting data collection process...")
+    
+    # Run the main collection process
+    await run_collection_process(start_date_str, end_date_str, tsi_end_date_str, args.dry_run)
+
+if __name__ == "__main__":
     asyncio.run(main())

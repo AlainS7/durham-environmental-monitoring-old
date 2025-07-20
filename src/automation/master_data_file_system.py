@@ -48,7 +48,7 @@ sys.path.append(str(project_root / "src"))
 
 try:
     from src.core.data_manager import DataManager
-    from src.data_collection.faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data_async
+    from src.data_collection.daily_data_collector import fetch_wu_data, fetch_tsi_data_async
 except ImportError as e:
     print(f"Warning: Could not import required modules: {e}")
 
