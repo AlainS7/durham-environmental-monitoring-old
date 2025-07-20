@@ -1,9 +1,7 @@
-import pytest
 import pandas as pd
+import pytest
 from unittest.mock import MagicMock
-
-# Correct the import path to be relative to the `src` directory
-from data_collection.faster_wu_tsi_to_sheets_async import separate_sensor_data_by_type, TestSensorConfig
+from data_collection.faster_wu_tsi_to_sheets_async import separate_sensor_data_by_type
 
 @pytest.fixture
 def mock_test_sensor_config(mocker):

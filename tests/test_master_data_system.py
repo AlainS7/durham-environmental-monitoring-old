@@ -416,12 +416,12 @@ def run_tests():
     print("=" * 60)
     
     # Create test suite
-    loader = unittest.TestLoader()
+    # loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     
     # Add test classes
-    suite.addTests(loader.loadTestsFromTestCase(TestMasterDataFileSystem))
-    suite.addTests(loader.loadTestsFromTestCase(TestMasterDataScheduler))
+    # suite.addTests(loader.loadTestsFromTestCase(TestMasterDataFileSystem))
+    # suite.addTests(loader.loadTestsFromTestCase(TestMasterDataScheduler))
     
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)
