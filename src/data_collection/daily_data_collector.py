@@ -63,10 +63,15 @@ def clean_and_transform_tsi_data(df: pd.DataFrame) -> pd.DataFrame:
 
     transformed_df = df[schema_columns].copy()
 
-    for col in transformed_df.columns:
-        if col not in ['device_id', 'reading_time', 'device_name']:
+    numeric_cols = [
+        'temperature', 'rh', 'p_bar', 'co2', 'co', 'so2', 'o3', 'no2',
+        'pm_1', 'pm_2_5', 'pm_4', 'pm_10', 'nc_pt5', 'nc_1', 'nc_2_5',
+        'nc_4', 'nc_10', 'aqi', 'pm_offset', 't_offset', 'rh_offset'
+    ]
+    for col in numeric_cols:
+        if col in transformed_df.columns:
             transformed_df.loc[:, col] = pd.to_numeric(transformed_df.loc[:, col], errors='coerce')
-    
+
     # Ensure reading_time is a timezone-aware datetime object
     transformed_df['reading_time'] = pd.to_datetime(transformed_df['reading_time'], utc=True)
 
@@ -102,6 +107,9 @@ def separate_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, prod_sensors: dict)
 
     return wu_prod_df, tsi_prod_df
 
+from sqlalchemy import text, types
+
+
 def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
     """
     Inserts a DataFrame into the specified database table using an
@@ -111,10 +119,62 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
         log.info(f"No data to insert into {table_name}.")
         return
 
+    # Replace all forms of NA/NaN with None for database compatibility
+    df = df.replace({pd.NaT: None, np.nan: None, pd.NA: None})
+
     pk_columns = {'wu_data': ['stationid', 'obstimeutc'], 'tsi_data': ['device_id', 'reading_time']}
     if table_name not in pk_columns:
         log.error(f"Unknown table for insertion: {table_name}. Aborting.")
         return
+
+    dtype_map = {}
+    if table_name == 'wu_data':
+        dtype_map = {
+            'stationid': types.TEXT,
+            'obstimeutc': types.TIMESTAMP(timezone=True),
+            'tempavg': types.REAL,
+            'humidityavg': types.REAL,
+            'solarradiationhigh': types.REAL,
+            'preciprate': types.REAL,
+            'preciptotal': types.REAL,
+            'winddiravg': types.INTEGER,
+            'windspeedavg': types.REAL,
+            'windgustavg': types.REAL,
+            'pressuremax': types.REAL,
+            'pressuremin': types.REAL,
+            'pressuretrend': types.REAL,
+            'heatindexavg': types.REAL,
+            'dewptavg': types.REAL
+        }
+    elif table_name == 'tsi_data':
+        dtype_map = {
+            'device_id': types.TEXT,
+            'reading_time': types.TIMESTAMP(timezone=True),
+            'device_name': types.TEXT,
+            'latitude': types.REAL,
+            'longitude': types.REAL,
+            'temperature': types.REAL,
+            'rh': types.REAL,
+            'p_bar': types.REAL,
+            'co2': types.REAL,
+            'co': types.REAL,
+            'so2': types.REAL,
+            'o3': types.REAL,
+            'no2': types.REAL,
+            'pm_1': types.REAL,
+            'pm_2_5': types.REAL,
+            'pm_4': types.REAL,
+            'pm_10': types.REAL,
+            'nc_pt5': types.REAL,
+            'nc_1': types.REAL,
+            'nc_2_5': types.REAL,
+            'nc_4': types.REAL,
+            'nc_10': types.REAL,
+            'aqi': types.REAL,
+            'pm_offset': types.REAL,
+            't_offset': types.REAL,
+            'rh_offset': types.REAL
+        }
 
     temp_table = f"temp_{table_name}"
     pk_cols = pk_columns[table_name]
@@ -127,7 +187,7 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
     query = text(f"""
         INSERT INTO {table_name} ({all_cols_str})
         SELECT {all_cols_str} FROM {temp_table}
-        ON CONFLICT ({pk_cols_str}) DO UPDATE 
+        ON CONFLICT ({pk_cols_str}) DO UPDATE
         SET {set_clause};
     """)
 
@@ -136,7 +196,7 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
             with connection.begin() as transaction:
                 try:
                     log.info(f"Writing {len(df)} rows to temporary table {temp_table}...")
-                    df.to_sql(temp_table, connection, if_exists='replace', index=False)
+                    df.to_sql(temp_table, connection, if_exists='replace', index=False, dtype=dtype_map)
                     
                     log.info(f"Executing INSERT...ON CONFLICT for {table_name}...")
                     result = connection.execute(query)
