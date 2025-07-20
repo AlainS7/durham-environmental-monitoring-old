@@ -29,6 +29,7 @@ from typing import Optional, Dict, List, Tuple, Any
 import sqlite3
 import shutil
 import hashlib
+import asyncio
 
 # Google Drive integration
 try:
@@ -42,19 +43,19 @@ except ImportError:
 
 # Add project paths
 project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root / "src" / "core"))
-sys.path.append(str(project_root / "src" / "data_collection"))
+sys.path.append(str(project_root))
+sys.path.append(str(project_root / "src"))
 
 try:
-    from data_manager import DataManager
-    from faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data
+    from src.core.data_manager import DataManager
+    from src.data_collection.faster_wu_tsi_to_sheets_async import fetch_wu_data, fetch_tsi_data_async
 except ImportError as e:
     print(f"Warning: Could not import required modules: {e}")
 
 class MasterDataFileSystem:
     """Manages master historical data files with automated weekly updates."""
     
-    def __init__(self, base_dir: str = None, config_path: str = None):
+    def __init__(self, base_dir: Optional[str] = None, config_path: Optional[str] = None):
         self.project_root = project_root  # Add project_root as instance attribute
         self.base_dir = Path(base_dir) if base_dir else project_root / "data"
         self.config_path = Path(config_path) if config_path else project_root / "config" / "master_data_config.json"
@@ -359,7 +360,7 @@ class MasterDataFileSystem:
         """Create a hash for data row to enable deduplication."""
         # Create a string representation of key data fields
         hash_data = ""
-        if 'timestamp' in row:
+        if 'timestamp' in row and pd.notna(row['timestamp']):
             hash_data += str(row['timestamp'])
         if 'station_id' in row or 'device_id' in row:
             hash_data += str(row.get('station_id', row.get('device_id', '')))
@@ -490,7 +491,7 @@ class MasterDataFileSystem:
                                 
                     return group[mask]
                 
-                df = df.groupby(group_col).apply(remove_close_duplicates).reset_index(drop=True)
+                df = df.groupby(group_col).apply(remove_close_duplicates).reset_index(drop=True) # type: ignore
         
         duplicates_removed = initial_count - len(df)
         if duplicates_removed > 0:
@@ -639,14 +640,15 @@ class MasterDataFileSystem:
         end_date = datetime.now()
         start_date = end_date - timedelta(days=7)
         
-        start_str = start_date.strftime("%Y%m%d")
-        end_str = end_date.strftime("%Y%m%d")
-        
         try:
             if data_type == "wu":
+                start_str = start_date.strftime("%Y-%m-%d")
+                end_str = end_date.strftime("%Y-%m-%d")
                 df = fetch_wu_data(start_str, end_str)
             elif data_type == "tsi":
-                df, _ = fetch_tsi_data(start_str, end_str)
+                start_str = start_date.strftime("%Y%m%d")
+                end_str = end_date.strftime("%Y%m%d")
+                df, _ = asyncio.run(fetch_tsi_data_async(start_str, end_str))
             else:
                 self.logger.error(f"Unknown data type: {data_type}")
                 return None
@@ -824,7 +826,7 @@ class MasterDataFileSystem:
             return False
             
     def export_data(self, data_type: str = "all", format: str = "csv", 
-                   start_date: str = None, end_date: str = None) -> List[Path]:
+                   start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Path]:
         """Export master data in various formats."""
         self.logger.info(f"Exporting {data_type} data in {format} format")
         
@@ -940,7 +942,7 @@ class MasterDataFileSystem:
         if self.tsi_master_file.exists():
             try:
                 tsi_df = pd.read_csv(self.tsi_master_file)
-                tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce');
+                tsi_df['timestamp'] = pd.to_datetime(tsi_df['timestamp'], errors='coerce')
                 
                 summary["tsi_data"] = {
                     "file_exists": True,
@@ -976,7 +978,7 @@ class MasterDataFileSystem:
             
         return summary
         
-    def cleanup_old_backups(self, retention_days: int = None):
+    def cleanup_old_backups(self, retention_days: Optional[int] = None):
         """Clean up old backup files."""
         if retention_days is None:
             retention_days = self.config.get("master_file_settings", {}).get("backup_retention_days", 365)
@@ -1018,9 +1020,12 @@ class MasterDataFileSystem:
         # Test credentials
         try:
             # Try to access drive
-            self.drive_service.files().list(pageSize=1).execute()
-            results["credentials_valid"] = True
-            self.logger.info("✅ Google Drive credentials valid")
+            if self.drive_service:
+                self.drive_service.files().list(pageSize=1).execute()
+                results["credentials_valid"] = True
+                self.logger.info("✅ Google Drive credentials valid")
+            else:
+                results["credentials_valid"] = False
         except Exception as e:
             self.logger.error(f"❌ Google Drive credentials invalid: {e}")
             return results
@@ -1034,7 +1039,8 @@ class MasterDataFileSystem:
                 self.logger.info("✅ Google Drive folder creation successful")
                 
                 # Clean up test folder
-                self.drive_service.files().delete(fileId=folder_id).execute()
+                if self.drive_service:
+                    self.drive_service.files().delete(fileId=folder_id).execute()
             else:
                 self.logger.error("❌ Google Drive folder creation failed")
                 return results
