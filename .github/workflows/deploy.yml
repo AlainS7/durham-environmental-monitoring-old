@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  PROJECT_ID: "durham-weather-466502"
+  PROJECT_ID: "441117079833"
   GAR_LOCATION: "us-east1"
   GAR_REPOSITORY: "weather-data-images"
   SERVICE_NAME: "weather-data-uploader"
@@ -29,7 +29,7 @@ jobs:
       uses: 'google-github-actions/auth@v2'
       with:
         workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-        service_account: 'github-actions-deployer@durham-weather-466502.iam.gserviceaccount.com'
+        service_account: 'github-actions-deployer@441117079833.iam.gserviceaccount.com' # Change this if you used a different service account name
 
     - name: Set up Cloud SDK
       uses: 'google-github-actions/setup-gcloud@v2'
@@ -51,4 +51,5 @@ jobs:
           --image "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" \
           --region ${{ env.REGION }} \
           --platform "managed" \
+          --set-env-vars="PROJECT_ID=${{ env.PROJECT_ID }},DB_CREDS_SECRET_ID=prod-db-credentials" \
           --quiet
