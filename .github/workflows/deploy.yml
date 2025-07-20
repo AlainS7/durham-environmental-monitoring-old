@@ -6,11 +6,11 @@ on:
       - main
 
 env:
-  PROJECT_ID: "your-gcp-project-id" # TODO: Replace with your Google Cloud project ID
-  GAR_LOCATION: "your-gar-location" # TODO: Replace with your Artifact Registry location (e.g., us-central1)
-  GAR_REPOSITORY: "your-gar-repo-name" # TODO: Replace with your Artifact Registry repository name
-  SERVICE_NAME: "your-cloud-run-service-name" # TODO: Replace with your Cloud Run service name
-  REGION: "your-cloud-run-region" # TODO: Replace with your Cloud Run region (e.g., us-central1)
+  PROJECT_ID: "durham-weather-466502"
+  GAR_LOCATION: "us-east1"
+  GAR_REPOSITORY: "weather-data-images"
+  SERVICE_NAME: "weather-data-uploader"
+  REGION: "us-east1"
 
 jobs:
   build-and-deploy:
@@ -28,9 +28,8 @@ jobs:
       id: auth
       uses: 'google-github-actions/auth@v2'
       with:
-        # Replace with your Workload Identity Federation details
-        workload_identity_provider: 'projects/your-gcp-project-number/locations/global/workloadIdentityPools/your-pool-name/providers/your-provider-name' # TODO: Replace with your WIF provider
-        service_account: 'your-service-account-email' # TODO: Replace with your Service Account email
+        workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        service_account: 'github-actions-deployer@durham-weather-466502.iam.gserviceaccount.com'
 
     - name: Set up Cloud SDK
       uses: 'google-github-actions/setup-gcloud@v2'

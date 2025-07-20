@@ -355,3 +355,6 @@ test_data/temp_*
 setup_test_*
 install_packages.py
 fix_current_env.sh
+
+
+cloud-sql-proxy
