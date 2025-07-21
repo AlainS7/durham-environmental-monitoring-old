@@ -7,7 +7,7 @@ import nest_asyncio
 import argparse
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import text
+from sqlalchemy import text, types
 from tqdm import tqdm
 
 # Configuration and DB access are imported, which handle logging setup
@@ -107,7 +107,7 @@ def separate_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, prod_sensors: dict)
 
     return wu_prod_df, tsi_prod_df
 
-from sqlalchemy import text, types
+
 
 
 def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
@@ -196,7 +196,7 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
             with connection.begin() as transaction:
                 try:
                     log.info(f"Writing {len(df)} rows to temporary table {temp_table}...")
-                    df.to_sql(temp_table, connection, if_exists='replace', index=False, dtype=dtype_map)
+                    df.to_sql(temp_table, connection, if_exists='replace', index=False, dtype=dtype_map)  # type: ignore
                     
                     log.info(f"Executing INSERT...ON CONFLICT for {table_name}...")
                     result = connection.execute(query)
@@ -211,51 +211,92 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
     except Exception as e:
         log.error(f"Database connection failed for {table_name}: {e}", exc_info=True)
 
-async def fetch_wu_data_async(start_date_str, end_date_str):
-    """ Fetches Weather Underground data concurrently. """
+async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
+    """
+    Fetches Weather Underground data concurrently.
+    - Default mode: Uses 'all/1day' for recent high-resolution data.
+    - Backfill mode: Uses 'history/all' for specific historical dates.
+    """
     wu_key = app_config.wu_api_key.get('test_api_key')
     if not wu_key:
         log.error("Weather Underground API key not found.")
         return pd.DataFrame()
-        
+
     stations = get_wu_stations()
     if not stations:
         log.warning("No WU stations found in the configuration. Skipping WU data fetch.")
         return pd.DataFrame()
 
-    start_date_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-    end_date_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
-
-    requests_to_make = [(s['stationId'], (start_date_dt + timedelta(days=d)).strftime("%Y%m%d")) for s in stations if isinstance(s, dict) and 'stationId' in s for d in range((end_date_dt - start_date_dt).days + 1)]
-
     async def fetch_one(client, station_id, date_str, semaphore):
         async with semaphore:
-            params = {"stationId": station_id, "date": date_str, "format": "json", "apiKey": wu_key, "units": "m", "numericPrecision": "decimal"}
+            if is_backfill:
+                url = "https://api.weather.com/v2/pws/history/all"
+                params = {"stationId": station_id, "date": date_str, "format": "json", "apiKey": wu_key, "units": "m", "numericPrecision": "decimal"}
+            else:
+                url = "https://api.weather.com/v2/pws/observations/all/1day"
+                params = {"stationId": station_id, "format": "json", "apiKey": wu_key, "units": "m", "numericPrecision": "decimal"}
+
             try:
-                response = await client.get("https://api.weather.com/v2/pws/history/hourly", params=params, timeout=60.0)
+                response = await client.get(url, params=params, timeout=60.0)
                 if response.status_code == 200:
                     return response.json().get('observations', [])
                 if response.status_code == 204:
+                    log.info(f"No content (204) for WU station {station_id} on {date_str if is_backfill else 'recent'}.")
                     return []
-                log.warning(f"WU API non-200 response for {station_id} on {date_str}: {response.status_code}")
+                log.warning(f"WU API non-200 response for {station_id}: {response.status_code}")
             except Exception as e:
-                log.error(f"WU API request failed for {station_id} on {date_str}: {e}", exc_info=True)
+                log.error(f"WU API request failed for {station_id}: {e}", exc_info=True)
             return None
 
     semaphore = asyncio.Semaphore(10)
     async with httpx.AsyncClient(timeout=60.0) as client:
-        tasks = [fetch_one(client, station_id, date_str, semaphore) for station_id, date_str in requests_to_make]
+        if is_backfill:
+            start_date_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_date_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+            requests_to_make = [(s['stationId'], (start_date_dt + timedelta(days=d)).strftime("%Y%m%d")) for s in stations if isinstance(s, dict) and 'stationId' in s for d in range((end_date_dt - start_date_dt).days + 1)]
+            log.info(f"Backfill mode: Fetching WU data for {len(requests_to_make)} station-days.")
+            tasks = [fetch_one(client, station_id, date_str, semaphore) for station_id, date_str in requests_to_make]
+            desc = "Fetching WU historical"
+        else:
+            log.info("Default mode: Fetching WU rapid history for the last 24 hours.")
+            tasks = [fetch_one(client, s['stationId'], None, semaphore) for s in stations if isinstance(s, dict) and 'stationId' in s]
+            desc = "Fetching WU rapid history"
+
         results = []
-        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching WU data"):
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
             result = await future
             if result is not None:
                 results.extend(result)
 
-    cols = ['stationID', 'obsTimeUtc', 'tempAvg', 'humidityAvg', 'solarRadiationHigh', 'precipRate', 'precipTotal', 'winddirAvg', 'windspeedAvg', 'windgustAvg', 'pressureMax', 'pressureMin', 'pressureTrend', 'heatindexAvg', 'dewptAvg']
-    df = pd.DataFrame(results, columns=cols)
+    if not results:
+        log.warning("No observations found for any WU station.")
+        return pd.DataFrame()
+
+    flat_results = []
+    for obs in results:
+        metric_data = obs.pop('metric', {})
+        obs.update(metric_data)
+        flat_results.append(obs)
+
+    df = pd.DataFrame(flat_results)
+
+    rename_map = {
+        'stationID': 'stationid', 'obsTimeUtc': 'obstimeutc', 'temp': 'tempavg',
+        'humidity': 'humidityavg', 'solarRadiation': 'solarradiationhigh',
+        'precipRate': 'preciprate', 'precipTotal': 'preciptotal', 'winddir': 'winddiravg',
+        'windSpeed': 'windspeedavg', 'windGust': 'windgustavg', 'pressure': 'pressuremax',
+        'heatindex': 'heatindexavg', 'dewpt': 'dewptavg'
+    }
+    df.rename(columns=rename_map, inplace=True)
+
+    db_cols = ['stationid', 'obstimeutc', 'tempavg', 'humidityavg', 'solarradiationhigh', 'preciprate', 'preciptotal', 'winddiravg', 'windspeedavg', 'windgustavg', 'pressuremax', 'pressuremin', 'pressuretrend', 'heatindexavg', 'dewptavg']
+    for col in db_cols:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    df = df[db_cols]
+
     if not df.empty:
-        df.columns = [c.lower() for c in df.columns]
-        # Ensure obstimeutc is a timezone-aware datetime object
         df['obstimeutc'] = pd.to_datetime(df['obstimeutc'], utc=True)
         df = df.replace([np.inf, -np.inf], np.nan).fillna(pd.NA)
     return df
@@ -323,7 +364,7 @@ async def fetch_tsi_data_async(start_date, end_date):
     all_dfs = [df for df in results if df is not None]
     return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
-async def run_collection_process(start_date_str=None, end_date_str=None, is_dry_run=False):
+async def run_collection_process(start_date_str=None, end_date_str=None, is_dry_run=False, is_backfill=False):
     if not start_date_str or not end_date_str:
         yesterday = (datetime.utcnow().date() - timedelta(days=1)).strftime("%Y-%m-%d")
         start_date_str = end_date_str = yesterday
@@ -331,7 +372,8 @@ async def run_collection_process(start_date_str=None, end_date_str=None, is_dry_
 
     log.info(f"Starting data collection for {start_date_str} to {end_date_str}...")
     
-    wu_task = asyncio.create_task(fetch_wu_data_async(start_date_str, end_date_str))
+    # Pass the is_backfill flag to the WU fetcher
+    wu_task = asyncio.create_task(fetch_wu_data_async(start_date_str, end_date_str, is_backfill))
     tsi_task = asyncio.create_task(fetch_tsi_data_async(start_date_str, end_date_str))
     wu_df, tsi_df = await asyncio.gather(wu_task, tsi_task)
 
@@ -366,6 +408,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_date", type=str, default=None, help="Start date (YYYY-MM-DD). Defaults to yesterday.")
     parser.add_argument("--end_date", type=str, default=None, help="End date (YYYY-MM-DD). Defaults to yesterday.")
     parser.add_argument("--dry_run", action="store_true", help="Enable dry run mode (no data insertion).")
+    parser.add_argument("--backfill", action="store_true", help="Enable backfill mode for fetching specific historical dates.")
     args = parser.parse_args()
     
-    asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run))
+    asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.backfill))
