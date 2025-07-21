@@ -274,15 +274,20 @@ async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
 
     flat_results = []
     for obs in results:
-        metric_data = obs.pop('metric', {})
-        obs.update(metric_data)
+        # The 'metric' key is present in the 'history' endpoint but not 'observations'
+        if 'metric' in obs:
+            metric_data = obs.pop('metric', {})
+            obs.update(metric_data)
         flat_results.append(obs)
 
     df = pd.DataFrame(flat_results)
 
+    # This map handles field names from BOTH the 'history' and 'observations' endpoints.
     rename_map = {
-        'stationID': 'stationid', 'obsTimeUtc': 'obstimeutc', 'temp': 'tempavg',
-        'humidity': 'humidityavg', 'solarRadiation': 'solarradiationhigh',
+        'stationID': 'stationid', 'obsTimeUtc': 'obstimeutc',
+        'temp': 'tempavg', 'tempAvg': 'tempavg',  # History and Observations
+        'humidity': 'humidityavg', 'humidityAvg': 'humidityavg',  # History and Observations
+        'solarRadiation': 'solarradiationhigh',
         'precipRate': 'preciprate', 'precipTotal': 'preciptotal', 'winddir': 'winddiravg',
         'windSpeed': 'windspeedavg', 'windGust': 'windgustavg', 'pressure': 'pressuremax',
         'heatindex': 'heatindexavg', 'dewpt': 'dewptavg'
