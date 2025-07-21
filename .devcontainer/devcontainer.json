@@ -20,7 +20,8 @@
         "ms-python.vscode-pylance",
         "ms-azuretools.vscode-docker",
         "mtxr.sqltools",
-        "mtxr.sqltools-driver-pg"
+        "mtxr.sqltools-driver-pg",
+        "Google.gemini"
       ]
     }
   },
