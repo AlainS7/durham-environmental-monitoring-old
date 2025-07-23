@@ -48,7 +48,7 @@ sys.path.append(str(project_root / "src"))
 
 try:
     from src.core.data_manager import DataManager
-    from src.data_collection.daily_data_collector import fetch_wu_data, fetch_tsi_data_async
+    from src.data_collection.daily_data_collector import fetch_wu_data_async, fetch_tsi_data_async
 except ImportError as e:
     print(f"Warning: Could not import required modules: {e}")
 
@@ -304,7 +304,8 @@ class MasterDataFileSystem:
                     pressure REAL,
                     data_hash TEXT UNIQUE,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    source_file TEXT
+                    source_file TEXT,
+                    obstimeutc DATETIME
                 )
             ''')
             
@@ -426,6 +427,9 @@ class MasterDataFileSystem:
                 
                 # Standardize timestamp column
                 if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                elif 'obstimeutc' in df.columns:
+                    df.rename(columns={'obstimeutc': 'timestamp'}, inplace=True)
                     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
                 
                 all_data.append(df)

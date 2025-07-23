@@ -127,6 +127,10 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
         log.error(f"Unknown table for insertion: {table_name}. Aborting.")
         return
 
+    # Drop duplicates before insertion
+    pk_cols = pk_columns[table_name]
+    df.drop_duplicates(subset=pk_cols, keep='last', inplace=True)
+
     dtype_map = {}
     if table_name == 'wu_data':
         dtype_map = {
@@ -177,7 +181,6 @@ def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
         }
 
     temp_table = f"temp_{table_name}"
-    pk_cols = pk_columns[table_name]
     update_cols = [c for c in df.columns if c not in pk_cols]
     
     all_cols_str = ", ".join([f'"{c}"' for c in df.columns])
@@ -287,7 +290,7 @@ async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
         'stationID': 'stationid', 'obsTimeUtc': 'obstimeutc',
         'temp': 'tempavg', 'tempAvg': 'tempavg',  # History and Observations
         'humidity': 'humidityavg', 'humidityAvg': 'humidityavg',  # History and Observations
-        'solarRadiation': 'solarradiationhigh',
+        'solarRadiationHigh': 'solarradiationhigh',
         'precipRate': 'preciprate', 'precipTotal': 'preciptotal', 'winddir': 'winddiravg',
         'windSpeed': 'windspeedavg', 'windGust': 'windgustavg', 'pressure': 'pressuremax',
         'heatindex': 'heatindexavg', 'dewpt': 'dewptavg'
@@ -310,32 +313,38 @@ def to_iso8601(date_str):
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return dt.strftime("%Y-%m-%dT00:00:00Z")
 
-async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers):
+async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, semaphore):
     device_id = device.get('device_id')
     device_name = device.get('metadata', {}).get('friendlyName') or device_id
     params = {'device_id': device_id, 'start_date': start_date_iso, 'end_date': end_date_iso}
-    try:
-        response = await client.get("https://api-prd.tsilink.com/api/v3/external/telemetry", headers=headers, params=params, timeout=30)
-        if response.status_code == 200:
-            records = response.json()
-            if not records:
-                return None
-            df = pd.DataFrame(records)
-            def extract(sensors):
-                res = {}
-                if isinstance(sensors, list):
-                    for s in sensors:
-                        for m in s.get('measurements', []):
-                            res[m.get('type')] = m.get('data', {}).get('value')
-                return res
-            if 'sensors' in df.columns:
-                measurements_df = df['sensors'].apply(extract).apply(pd.Series)
-                df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
-            df['device_id'] = device_id
-            df['device_name'] = device_name
-            return df
-    except Exception as e:
-        log.warning(f"Failed to fetch data for TSI device {device_name}: {e}", exc_info=True)
+    
+    async with semaphore:
+        try:
+            response = await client.get("https://api-prd.tsilink.com/api/v3/external/telemetry", headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                records = response.json()
+                if not records:
+                    return None
+                df = pd.DataFrame(records)
+                def extract(sensors):
+                    res = {}
+                    if isinstance(sensors, list):
+                        for s in sensors:
+                            for m in s.get('measurements', []):
+                                res[m.get('type')] = m.get('data', {}).get('value')
+                    return res
+                if 'sensors' in df.columns:
+                    measurements_df = df['sensors'].apply(extract).apply(pd.Series)
+                    df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
+                df['device_id'] = device_id
+                df['device_name'] = device_name
+                return df
+            elif response.status_code == 429:
+                log.warning(f"Rate limit exceeded for TSI device {device_name}. Will retry after a delay.")
+                await asyncio.sleep(10) # Wait for 10 seconds before retrying
+                return await fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, semaphore)
+        except Exception as e:
+            log.warning(f"Failed to fetch data for TSI device {device_name}: {e}", exc_info=True)
     return None
 
 async def fetch_tsi_data_async(start_date, end_date):
@@ -357,16 +366,27 @@ async def fetch_tsi_data_async(start_date, end_date):
     selected_devices = [api_devices[dev_id] for dev_id in configured_ids if dev_id in api_devices] if configured_ids else list(api_devices.values())
     log.info(f"Processing {len(selected_devices)} TSI devices.")
 
-    start_iso = to_iso8601(start_date)
-    end_iso = to_iso8601((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d"))
+    all_results = []
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    date_range = pd.date_range(start_dt, end_dt)
+    semaphore = asyncio.Semaphore(3)
 
     async with httpx.AsyncClient() as client:
-        tasks = [fetch_device_data_async(client, d, start_iso, end_iso, headers) for d in selected_devices]
-        results = []
-        for fut in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching TSI data"):
-            results.append(await fut)
+        for single_date in tqdm(date_range, desc="Fetching TSI data by day"):
+            day_start_iso = single_date.strftime("%Y-%m-%dT00:00:00Z")
+            day_end_iso = (single_date + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+            
+            tasks = []
+            for d in selected_devices:
+                tasks.append(fetch_device_data_async(client, d, day_start_iso, day_end_iso, headers, semaphore))
+                await asyncio.sleep(0.1)
+            
+            daily_results = await asyncio.gather(*tasks)
+            all_results.extend(daily_results)
 
-    all_dfs = [df for df in results if df is not None]
+    all_dfs = [df for df in all_results if df is not None]
     return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
 async def run_collection_process(start_date_str=None, end_date_str=None, is_dry_run=False, is_backfill=False):
