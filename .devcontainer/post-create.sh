@@ -52,6 +52,9 @@ if ! command -v cloud-sql-proxy &> /dev/null; then
   chmod +x /usr/local/bin/cloud-sql-proxy
 fi
 
+# Ensure the Cloud SQL Proxy wrapper script is executable
+chmod +x /workspaces/tsi-data-uploader/.devcontainer/start-cloud-sql-proxy.sh
+
 # Start supervisord with the config (will manage cloud-sql-proxy)
 # supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf
 
@@ -62,6 +65,6 @@ echo "1. Run 'gcloud auth application-default login'"
 echo "2. Start the Cloud SQL Auth Proxy when needed:"
 echo "   supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf"
 echo "   or"
-echo "   cloud-sql-proxy durham-weather-466502:us-east1:durham-weather-db --port=5432"
+echo "   .devcontainer/start-cloud-sql-proxy.sh"
 echo "For more information, visit: https://cloud.google.com/sql/docs/mysql/connect-auth-proxy"
 echo "--------------------------------------------------------"
