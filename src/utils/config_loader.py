@@ -7,7 +7,7 @@ from src.config.app_config import app_config
 def load_sensor_configs():
     """
     Loads production and test sensor configurations from their respective files.
-    Only includes test sensors where "active" is not set to false.
+    # Only includes test sensors where "active" is not set to false.
     Caches the result to avoid repeated file I/O.
     """
     # Correctly access the paths from app_config
