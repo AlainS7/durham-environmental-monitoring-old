@@ -72,8 +72,10 @@ async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
     if not all_obs:
         return pd.DataFrame()
         
-    flat_obs = [obs.update(obs.pop('metric')) or obs for obs in all_obs if 'metric' in obs]
-    return pd.DataFrame(flat_obs or all_obs)
+    for obs in all_obs:
+        if 'metric' in obs:
+            obs.update(obs.pop('metric'))
+    return pd.DataFrame(all_obs)
 
 
 async def fetch_tsi_data_async(start_date, end_date):
