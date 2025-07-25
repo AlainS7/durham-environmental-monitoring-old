@@ -55,14 +55,21 @@ fi
 # Ensure the Cloud SQL Proxy wrapper script is executable
 chmod +x /workspaces/tsi-data-uploader/.devcontainer/start-cloud-sql-proxy.sh
 
+
+# Authenticate with GCP using service account key from Codespace secret
+echo "Authenticating with GCP using service account key from Codespace secret..."
+if [ -z "$GCP_SERVICE_ACCOUNT_KEY_DB_ACCESS" ]; then
+  echo "ERROR: GCP_SERVICE_ACCOUNT_KEY_DB_ACCESS environment variable is not set. Please add your service account JSON key as a Codespace secret."
+  exit 1
+fi
+echo "$GCP_SERVICE_ACCOUNT_KEY_DB_ACCESS" | base64 -d > /tmp/gcp-sa-key.json
+gcloud auth activate-service-account --key-file=/tmp/gcp-sa-key.json
+
 # Set GCP project and export DATABASE_URL from Secret Manager
 echo "Setting GCP project and exporting DATABASE_URL from Secret Manager..."
-# Fetch GCP project ID from Secret Manager
 gcloud config set project durham-weather-466502
-# GCP_project_ID=$(gcloud secrets versions access latest --secret="GCP_project_ID") # only for switching projects
-# gcloud config set project "$GCP_project_ID" # only for switching projects
-export DATABASE_URL=$(gcloud secrets versions access latest --secret="DATABASE_URL")
-echo 'export DATABASE_URL=$(gcloud secrets versions access latest --secret="DATABASE_URL")' >> ~/.bashrc
+export DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL)
+echo 'export DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL)' >> ~/.bashrc
 
 # Start supervisord with the config (will manage cloud-sql-proxy)
 # supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf
@@ -70,8 +77,9 @@ echo 'export DATABASE_URL=$(gcloud secrets versions access latest --secret="DATA
 echo "Post-create setup complete."
 echo "--------------------------------------------------------"
 echo "To connect to your database:"
-echo "1. Run 'gcloud auth application-default login'"
-echo "2. Start the Cloud SQL Auth Proxy when needed:"
+echo "1. Make sure you have set the GCP_SERVICE_ACCOUNT_KEY Codespace secret with your service account JSON key."
+echo "2. The container will automatically authenticate to GCP and fetch secrets."
+echo "3. Start the Cloud SQL Auth Proxy when needed:"
 echo "   supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf"
 echo "   or"
 echo "   .devcontainer/start-cloud-sql-proxy.sh"
