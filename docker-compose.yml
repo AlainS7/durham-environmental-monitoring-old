@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres #  don’t use this password in production
+      POSTGRES_DB: tsi_data_uploader
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
+#
+# To run your app and the database together, add your app as a service below.
+# Example:
+#  app:
+#    build: .
+#    depends_on:
+#      - db
+#    environment:
+#      DATABASE_URL: postgres://postgres:postgres@db:5432/tsi_data_uploader
+#    ports:
+#      - "8000:8000"
+#
+# This will build your app from the Dockerfile in the project root and link it to the db service.

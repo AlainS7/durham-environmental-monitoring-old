@@ -12,7 +12,7 @@
   "forwardPorts": [
     5432
   ],
-  "postCreateCommand": "bash .devcontainer/post-create.sh && npm install -g @google/gemini-cli",
+"postCreateCommand": "sudo apt update && sudo apt upgrade -y && bash .devcontainer/post-create.sh && npm install -g @google/gemini-cli",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -25,7 +25,8 @@
         "eamodio.gitlens",
         "github.copilot-chat",
         "oderwat.indent-rainbow",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "ms-ossdata.vscode-pgsql"
       ]
     }
   },

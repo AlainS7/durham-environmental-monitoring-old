@@ -55,6 +55,15 @@ fi
 # Ensure the Cloud SQL Proxy wrapper script is executable
 chmod +x /workspaces/tsi-data-uploader/.devcontainer/start-cloud-sql-proxy.sh
 
+# Set GCP project and export DATABASE_URL from Secret Manager
+echo "Setting GCP project and exporting DATABASE_URL from Secret Manager..."
+# Fetch GCP project ID from Secret Manager
+gcloud config set project durham-weather-466502
+# GCP_project_ID=$(gcloud secrets versions access latest --secret="GCP_project_ID") # only for switching projects
+# gcloud config set project "$GCP_project_ID" # only for switching projects
+export DATABASE_URL=$(gcloud secrets versions access latest --secret="DATABASE_URL")
+echo 'export DATABASE_URL=$(gcloud secrets versions access latest --secret="DATABASE_URL")' >> ~/.bashrc
+
 # Start supervisord with the config (will manage cloud-sql-proxy)
 # supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf
 
