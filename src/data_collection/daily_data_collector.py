@@ -105,7 +105,8 @@ async def fetch_tsi_data_async(start_date, end_date):
                 response = await client.get(url, headers=headers, params=params, timeout=90.0)
                 if response.status_code == 200:
                     records = response.json()
-                    if not records: return None
+                    if not records:
+                        return None
                     df = pd.DataFrame(records)
                     df['device_id'] = device_id
                     return df
