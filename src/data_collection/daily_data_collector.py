@@ -268,7 +268,7 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, is_back
             log.error(f"An error occurred during live run database operations: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Data collection script for Hot Durham project.")
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
