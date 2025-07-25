@@ -56,7 +56,7 @@ class Config:
     def _get_json_secret(self, secret_id):
         """Fetches and decodes a JSON secret from Google Secret Manager."""
         try:
-            name = f"projects/{self.project_id}/secrets/{secret_id}/versions/latest"
+            name = f"projects/{self.project_id}/secrets/{secret_id.strip()}/versions/latest"
             response = self.secret_client.access_secret_version(request={"name": name})
             payload = response.payload.data.decode("UTF-8")
             return json.loads(payload)

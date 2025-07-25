@@ -7,6 +7,7 @@ from src.config.app_config import app_config
 def load_sensor_configs():
     """
     Loads production and test sensor configurations from their respective files.
+    # Only includes test sensors where "active" is not set to false.
     Caches the result to avoid repeated file I/O.
     """
     # Correctly access the paths from app_config
@@ -16,12 +17,22 @@ def load_sensor_configs():
     prod_sensors = {}
     if prod_config_path and os.path.exists(prod_config_path):
         with open(prod_config_path, 'r') as f:
-            prod_sensors = json.load(f)
-            
+            sensors = json.load(f)
+            # # Filter WU sensors
+            # if "wu" in sensors:
+            #     sensors["wu"] = [s for s in sensors["wu"] if s.get("active", True)]
+            # # Filter TSI sensors
+            # if "tsi" in sensors:
+            #     sensors["tsi"] = [s for s in sensors["tsi"] if s.get("active", True)]
+            prod_sensors = sensors            
     test_sensors = {}
     if test_config_path and os.path.exists(test_config_path):
         with open(test_config_path, 'r') as f:
-            test_sensors = json.load(f)
+            sensors = json.load(f)
+            # If test sensors are a list, filter directly
+            if isinstance(sensors, list):
+                sensors = [s for s in sensors if s.get("active", True)]
+            test_sensors = sensors
             
     return prod_sensors, test_sensors
 
