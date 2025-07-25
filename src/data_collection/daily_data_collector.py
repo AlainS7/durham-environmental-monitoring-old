@@ -1,8 +1,6 @@
 import asyncio
 import httpx
 import pandas as pd
-import json
-import numpy as np
 import nest_asyncio
 import argparse
 import logging
@@ -10,430 +8,272 @@ from datetime import datetime, timedelta
 from sqlalchemy import text, types
 from tqdm import tqdm
 
-# Configuration and DB access are imported, which handle logging setup
+# --- Correctly use your existing project structure for configuration ---
+# These imports fetch credentials and sensor lists from your config files.
 from src.config.app_config import app_config
 from src.database.db_manager import HotDurhamDB
-from src.utils.config_loader import get_wu_stations, get_tsi_devices, load_sensor_configs
+from src.utils.config_loader import get_wu_stations, get_tsi_devices
 
-# Get the logger instance
+# Get the logger instance set up by your project's config
 log = logging.getLogger(__name__)
 
 # Apply nest_asyncio to allow running async functions in scripts
 nest_asyncio.apply()
 
-def clean_and_transform_tsi_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Cleans and transforms the raw TSI DataFrame to match the database schema.
-    """
-    if df.empty:
-        return df
 
-    schema_columns = [
-        'device_id', 'reading_time', 'device_name', 'latitude', 'longitude',
-        'temperature', 'rh', 'p_bar', 'co2', 'co', 'so2', 'o3', 'no2',
-        'pm_1', 'pm_2_5', 'pm_4', 'pm_10', 'nc_pt5', 'nc_1', 'nc_2_5',
-        'nc_4', 'nc_10', 'aqi', 'pm_offset', 't_offset', 'rh_offset'
-    ]
-
-    rename_map = {
-        'timestamp': 'reading_time', 'temp_c': 'temperature', 'rh_percent': 'rh',
-        'baro_inhg': 'p_bar', 'co2_ppm': 'co2', 'co_ppm': 'co', 'so2_ppb': 'so2',
-        'o3_ppb': 'o3', 'no2_ppb': 'no2', 'mcpm1x0': 'pm_1', 'mcpm2x5': 'pm_2_5',
-        'mcpm4x0': 'pm_4', 'mcpm10': 'pm_10', 'ncpm0x5': 'nc_pt5', 'ncpm1x0': 'nc_1',
-        'ncpm2x5': 'nc_2_5', 'ncpm4x0': 'nc_4', 'ncpm10': 'nc_10', 'mcpm2x5_aqi': 'aqi'
-    }
-    df.rename(columns=rename_map, inplace=True)
-
-    if 'metadata' in df.columns:
-        def to_dict(x):
-            if isinstance(x, str):
-                try:
-                    return json.loads(x)
-                except (json.JSONDecodeError, TypeError):
-                    return {}
-            return x if isinstance(x, dict) else {}
-
-        meta_series = df['metadata'].apply(to_dict)
-        df['latitude'] = meta_series.apply(lambda x: x.get('location', {}).get('latitude'))
-        df['longitude'] = meta_series.apply(lambda x: x.get('location', {}).get('longitude'))
-
-    for col in schema_columns:
-        if col not in df.columns:
-            df[col] = None
-
-    transformed_df = df[schema_columns].copy()
-
-    numeric_cols = [
-        'temperature', 'rh', 'p_bar', 'co2', 'co', 'so2', 'o3', 'no2',
-        'pm_1', 'pm_2_5', 'pm_4', 'pm_10', 'nc_pt5', 'nc_1', 'nc_2_5',
-        'nc_4', 'nc_10', 'aqi', 'pm_offset', 't_offset', 'rh_offset'
-    ]
-    for col in numeric_cols:
-        if col in transformed_df.columns:
-            transformed_df.loc[:, col] = pd.to_numeric(transformed_df.loc[:, col], errors='coerce')
-
-    # Ensure reading_time is a timezone-aware datetime object
-    transformed_df['reading_time'] = pd.to_datetime(transformed_df['reading_time'], utc=True)
-
-    return transformed_df
-
-def separate_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, prod_sensors: dict):
-    """
-    Filters dataframes to include only records from production sensors.
-    """
-    wu_prod_df = pd.DataFrame()
-    if not wu_df.empty:
-        # The config under 'wu' is a list of dictionaries, each with a 'stationId'.
-        wu_prod_ids = [s['stationId'] for s in prod_sensors.get('wu', []) if isinstance(s, dict) and 'stationId' in s]
-        if wu_prod_ids:
-            wu_prod_df = wu_df[wu_df['stationid'].isin(wu_prod_ids)].copy()
-            num_skipped = len(wu_df) - len(wu_prod_df)
-            if num_skipped > 0:
-                log.warning(f"Skipped {num_skipped} WU records with station IDs not in production config.")
-        else:
-            log.warning("No production WU sensors configured. Skipping all WU records.")
-
-    tsi_prod_df = pd.DataFrame()
-    if not tsi_df.empty:
-        # The config under 'tsi' is a list of dictionaries, each with an 'id'.
-        tsi_prod_ids = [s['id'] for s in prod_sensors.get('tsi', []) if isinstance(s, dict) and 'id' in s]
-        if tsi_prod_ids:
-            tsi_prod_df = tsi_df[tsi_df['device_id'].isin(tsi_prod_ids)].copy()
-            num_skipped = len(tsi_df) - len(tsi_prod_df)
-            if num_skipped > 0:
-                log.warning(f"Skipped {num_skipped} TSI records with device IDs not in production config.")
-        else:
-            log.warning("No production TSI sensors configured. Skipping all TSI records.")
-
-    return wu_prod_df, tsi_prod_df
-
-
-
-
-def insert_data_to_db(db: HotDurhamDB, df: pd.DataFrame, table_name: str):
-    """
-    Inserts a DataFrame into the specified database table using an
-    efficient and robust INSERT...ON CONFLICT...DO UPDATE strategy.
-    """
-    if df is None or df.empty:
-        log.info(f"No data to insert into {table_name}.")
-        return
-
-    # Replace all forms of NA/NaN with None for database compatibility
-    df = df.replace({pd.NaT: None, np.nan: None, pd.NA: None})
-
-    pk_columns = {'wu_data': ['stationid', 'obstimeutc'], 'tsi_data': ['device_id', 'reading_time']}
-    if table_name not in pk_columns:
-        log.error(f"Unknown table for insertion: {table_name}. Aborting.")
-        return
-
-    # Drop duplicates before insertion
-    pk_cols = pk_columns[table_name]
-    df.drop_duplicates(subset=pk_cols, keep='last', inplace=True)
-
-    dtype_map = {}
-    if table_name == 'wu_data':
-        dtype_map = {
-            'stationid': types.TEXT,
-            'obstimeutc': types.TIMESTAMP(timezone=True),
-            'tempavg': types.REAL,
-            'humidityavg': types.REAL,
-            'solarradiationhigh': types.REAL,
-            'preciprate': types.REAL,
-            'preciptotal': types.REAL,
-            'winddiravg': types.INTEGER,
-            'windspeedavg': types.REAL,
-            'windgustavg': types.REAL,
-            'pressuremax': types.REAL,
-            'pressuremin': types.REAL,
-            'pressuretrend': types.REAL,
-            'heatindexavg': types.REAL,
-            'dewptavg': types.REAL
-        }
-    elif table_name == 'tsi_data':
-        dtype_map = {
-            'device_id': types.TEXT,
-            'reading_time': types.TIMESTAMP(timezone=True),
-            'device_name': types.TEXT,
-            'latitude': types.REAL,
-            'longitude': types.REAL,
-            'temperature': types.REAL,
-            'rh': types.REAL,
-            'p_bar': types.REAL,
-            'co2': types.REAL,
-            'co': types.REAL,
-            'so2': types.REAL,
-            'o3': types.REAL,
-            'no2': types.REAL,
-            'pm_1': types.REAL,
-            'pm_2_5': types.REAL,
-            'pm_4': types.REAL,
-            'pm_10': types.REAL,
-            'nc_pt5': types.REAL,
-            'nc_1': types.REAL,
-            'nc_2_5': types.REAL,
-            'nc_4': types.REAL,
-            'nc_10': types.REAL,
-            'aqi': types.REAL,
-            'pm_offset': types.REAL,
-            't_offset': types.REAL,
-            'rh_offset': types.REAL
-        }
-
-    temp_table = f"temp_{table_name}"
-    update_cols = [c for c in df.columns if c not in pk_cols]
-    
-    all_cols_str = ", ".join([f'"{c}"' for c in df.columns])
-    pk_cols_str = ", ".join(pk_cols)
-    set_clause = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
-
-    query = text(f"""
-        INSERT INTO {table_name} ({all_cols_str})
-        SELECT {all_cols_str} FROM {temp_table}
-        ON CONFLICT ({pk_cols_str}) DO UPDATE
-        SET {set_clause};
-    """)
-
-    try:
-        with db.engine.connect() as connection:
-            with connection.begin() as transaction:
-                try:
-                    log.info(f"Writing {len(df)} rows to temporary table {temp_table}...")
-                    df.to_sql(temp_table, connection, if_exists='replace', index=False, dtype=dtype_map)  # type: ignore
-                    
-                    log.info(f"Executing INSERT...ON CONFLICT for {table_name}...")
-                    result = connection.execute(query)
-                    
-                    log.info(f"Database operation for {table_name} affected {result.rowcount} rows.")
-                    
-                    connection.execute(text(f"DROP TABLE {temp_table}"))
-                except Exception as e:
-                    log.error(f"Error during transaction for {table_name}, rolling back. Error: {e}", exc_info=True)
-                    transaction.rollback()
-                    raise
-    except Exception as e:
-        log.error(f"Database connection failed for {table_name}: {e}", exc_info=True)
+# --- Data Fetching Functions ---
 
 async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
-    """
-    Fetches Weather Underground data concurrently.
-    - Default mode: Uses 'all/1day' for recent high-resolution data.
-    - Backfill mode: Uses 'history/all' for specific historical dates.
-    """
-    wu_key = app_config.wu_api_key.get('test_api_key')
-    if not wu_key:
-        log.error("Weather Underground API key not found.")
-        return pd.DataFrame()
+    """Fetches Weather Underground data concurrently using project configs."""
+    wu_key = app_config.wu_api_key.get('test_api_key') # Use your config object
+    stations = get_wu_stations() # Use your config loader
 
-    stations = get_wu_stations()
-    if not stations:
-        log.warning("No WU stations found in the configuration. Skipping WU data fetch.")
+    if not wu_key or not stations:
+        log.error("Weather Underground API key or station list is not configured properly.")
         return pd.DataFrame()
 
     async def fetch_one(client, station_id, date_str, semaphore):
         async with semaphore:
+            endpoint = "history/all" if is_backfill else "observations/all/1day"
+            url = f"https://api.weather.com/v2/pws/{endpoint}"
+            params = {"stationId": station_id, "format": "json", "apiKey": wu_key, "units": "m"}
             if is_backfill:
-                url = "https://api.weather.com/v2/pws/history/all"
-                params = {"stationId": station_id, "date": date_str, "format": "json", "apiKey": wu_key, "units": "m", "numericPrecision": "decimal"}
-            else:
-                url = "https://api.weather.com/v2/pws/observations/all/1day"
-                params = {"stationId": station_id, "format": "json", "apiKey": wu_key, "units": "m", "numericPrecision": "decimal"}
+                params["date"] = date_str
 
             try:
                 response = await client.get(url, params=params, timeout=60.0)
                 if response.status_code == 200:
                     return response.json().get('observations', [])
                 if response.status_code == 204:
-                    log.info(f"No content (204) for WU station {station_id} on {date_str if is_backfill else 'recent'}.")
                     return []
-                log.warning(f"WU API non-200 response for {station_id}: {response.status_code}")
+                log.warning(f"WU API non-200 for {station_id}: {response.status_code} - {response.text}")
             except Exception as e:
                 log.error(f"WU API request failed for {station_id}: {e}", exc_info=True)
             return None
 
     semaphore = asyncio.Semaphore(10)
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient() as client:
         if is_backfill:
-            start_date_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
-            end_date_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
-            requests_to_make = [(s['stationId'], (start_date_dt + timedelta(days=d)).strftime("%Y%m%d")) for s in stations if isinstance(s, dict) and 'stationId' in s for d in range((end_date_dt - start_date_dt).days + 1)]
-            log.info(f"Backfill mode: Fetching WU data for {len(requests_to_make)} station-days.")
-            tasks = [fetch_one(client, station_id, date_str, semaphore) for station_id, date_str in requests_to_make]
-            desc = "Fetching WU historical"
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+            requests = [(s['stationId'], (start_dt + timedelta(days=d)).strftime("%Y%m%d"))
+                        for s in stations if 'stationId' in s
+                        for d in range((end_dt - start_dt).days + 1)]
+            tasks = [fetch_one(client, station_id, date, semaphore) for station_id, date in requests]
         else:
-            log.info("Default mode: Fetching WU rapid history for the last 24 hours.")
-            tasks = [fetch_one(client, s['stationId'], None, semaphore) for s in stations if isinstance(s, dict) and 'stationId' in s]
-            desc = "Fetching WU rapid history"
+            tasks = [fetch_one(client, s['stationId'], None, semaphore) for s in stations if 'stationId' in s]
 
-        results = []
-        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
+        all_obs = []
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching WU Data"):
             result = await future
-            if result is not None:
-                results.extend(result)
+            if result:
+                all_obs.extend(result)
 
-    if not results:
-        log.warning("No observations found for any WU station.")
+    if not all_obs:
         return pd.DataFrame()
-
-    flat_results = []
-    for obs in results:
-        # The 'metric' key is present in the 'history' endpoint but not 'observations'
+        
+    for obs in all_obs:
         if 'metric' in obs:
-            metric_data = obs.pop('metric', {})
-            obs.update(metric_data)
-        flat_results.append(obs)
+            obs.update(obs.pop('metric'))
+    return pd.DataFrame(all_obs)
 
-    df = pd.DataFrame(flat_results)
-
-    # This map handles field names from BOTH the 'history' and 'observations' endpoints.
-    rename_map = {
-        'stationID': 'stationid', 'obsTimeUtc': 'obstimeutc',
-        'temp': 'tempavg', 'tempAvg': 'tempavg',  # History and Observations
-        'humidity': 'humidityavg', 'humidityAvg': 'humidityavg',  # History and Observations
-        'solarRadiationHigh': 'solarradiationhigh',
-        'precipRate': 'preciprate', 'precipTotal': 'preciptotal', 'winddir': 'winddiravg',
-        'windSpeed': 'windspeedavg', 'windGust': 'windgustavg', 'pressure': 'pressuremax',
-        'heatindex': 'heatindexavg', 'dewpt': 'dewptavg'
-    }
-    df.rename(columns=rename_map, inplace=True)
-
-    db_cols = ['stationid', 'obstimeutc', 'tempavg', 'humidityavg', 'solarradiationhigh', 'preciprate', 'preciptotal', 'winddiravg', 'windspeedavg', 'windgustavg', 'pressuremax', 'pressuremin', 'pressuretrend', 'heatindexavg', 'dewptavg']
-    for col in db_cols:
-        if col not in df.columns:
-            df[col] = pd.NA
-
-    df = df[db_cols]
-
-    if not df.empty:
-        df['obstimeutc'] = pd.to_datetime(df['obstimeutc'], utc=True)
-        df = df.replace([np.inf, -np.inf], np.nan).fillna(pd.NA)
-    return df
-
-def to_iso8601(date_str):
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return dt.strftime("%Y-%m-%dT00:00:00Z")
-
-async def fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, semaphore):
-    device_id = device.get('device_id')
-    device_name = device.get('metadata', {}).get('friendlyName') or device_id
-    params = {'device_id': device_id, 'start_date': start_date_iso, 'end_date': end_date_iso}
-    
-    async with semaphore:
-        try:
-            response = await client.get("https://api-prd.tsilink.com/api/v3/external/telemetry", headers=headers, params=params, timeout=30)
-            if response.status_code == 200:
-                records = response.json()
-                if not records:
-                    return None
-                df = pd.DataFrame(records)
-                def extract(sensors):
-                    res = {}
-                    if isinstance(sensors, list):
-                        for s in sensors:
-                            for m in s.get('measurements', []):
-                                res[m.get('type')] = m.get('data', {}).get('value')
-                    return res
-                if 'sensors' in df.columns:
-                    measurements_df = df['sensors'].apply(extract).apply(pd.Series)
-                    df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
-                df['device_id'] = device_id
-                df['device_name'] = device_name
-                return df
-            elif response.status_code == 429:
-                log.warning(f"Rate limit exceeded for TSI device {device_name}. Will retry after a delay.")
-                await asyncio.sleep(10) # Wait for 10 seconds before retrying
-                return await fetch_device_data_async(client, device, start_date_iso, end_date_iso, headers, semaphore)
-        except Exception as e:
-            log.warning(f"Failed to fetch data for TSI device {device_name}: {e}", exc_info=True)
-    return None
 
 async def fetch_tsi_data_async(start_date, end_date):
-    log.info(f"TSI fetching data for range: {start_date} to {end_date}")
+    """Fetches TSI data concurrently using project configs."""
     tsi_creds = app_config.tsi_creds
-    auth_resp = httpx.post('https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken', params={'grant_type': 'client_credentials'}, data={'client_id': tsi_creds['key'], 'client_secret': tsi_creds['secret']})
-    if auth_resp.status_code != 200:
-        log.error(f"Failed to authenticate with TSI API: {auth_resp.text}")
-        return pd.DataFrame()
-    headers = {"Authorization": f"Bearer {auth_resp.json()['access_token']}", "Accept": "application/json"}
-    
-    devices_resp = httpx.get("https://api-prd.tsilink.com/api/v3/external/devices", headers=headers)
-    if devices_resp.status_code != 200:
-        log.error(f"Failed to fetch TSI devices: {devices_resp.status_code}")
-        return pd.DataFrame()
-    
-    configured_ids = get_tsi_devices()
-    api_devices = {d['device_id']: d for d in devices_resp.json()}
-    selected_devices = [api_devices[dev_id] for dev_id in configured_ids if dev_id in api_devices] if configured_ids else list(api_devices.values())
-    log.info(f"Processing {len(selected_devices)} TSI devices.")
+    device_ids = get_tsi_devices()
 
-    all_results = []
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    
-    date_range = pd.date_range(start_dt, end_dt)
+    if not tsi_creds or not tsi_creds.get('key') or not device_ids:
+        log.error("TSI credentials or device IDs are not configured properly.")
+        return pd.DataFrame()
+
+    auth_url = 'https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken'
+    auth_data = {'grant_type': 'client_credentials', 'client_id': tsi_creds['key'], 'client_secret': tsi_creds['secret']}
+    try:
+        auth_resp = httpx.post(auth_url, data=auth_data)
+        auth_resp.raise_for_status()
+        headers = {"Authorization": f"Bearer {auth_resp.json()['access_token']}", "Accept": "application/json"}
+    except Exception as e:
+        log.error(f"Failed to authenticate with TSI API: {e}", exc_info=True)
+        return pd.DataFrame()
+
+    async def fetch_one_day(client, device_id, date_iso, semaphore):
+        async with semaphore:
+            url = "https://api-prd.tsilink.com/api/v3/external/telemetry"
+            start_iso = f"{date_iso}T00:00:00Z"
+            end_iso = (datetime.strptime(date_iso, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+            params = {'device_id': device_id, 'start_date': start_iso, 'end_date': end_iso}
+            try:
+                response = await client.get(url, headers=headers, params=params, timeout=90.0)
+                if response.status_code == 200:
+                    records = response.json()
+                    if not records:
+                        return None
+                    df = pd.DataFrame(records)
+                    df['device_id'] = device_id
+                    return df
+            except Exception as e:
+                log.error(f"TSI API request failed for {device_id} on {date_iso}: {e}", exc_info=True)
+            return None
+
+    date_range = pd.date_range(start=start_date, end=end_date)
     semaphore = asyncio.Semaphore(3)
-
     async with httpx.AsyncClient() as client:
-        for single_date in tqdm(date_range, desc="Fetching TSI data by day"):
-            day_start_iso = single_date.strftime("%Y-%m-%dT00:00:00Z")
-            day_end_iso = (single_date + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
-            
-            tasks = []
-            for d in selected_devices:
-                tasks.append(fetch_device_data_async(client, d, day_start_iso, day_end_iso, headers, semaphore))
-                await asyncio.sleep(0.1)
-            
-            daily_results = await asyncio.gather(*tasks)
-            all_results.extend(daily_results)
+        tasks = [fetch_one_day(client, dev_id, d.strftime("%Y-%m-%d"), semaphore)
+                 for dev_id in device_ids
+                 for d in date_range]
+        all_results = await asyncio.gather(*tasks)
 
-    all_dfs = [df for df in all_results if df is not None]
-    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+    valid_dfs = [df for df in all_results if df is not None and not df.empty]
+    return pd.concat(valid_dfs, ignore_index=True) if valid_dfs else pd.DataFrame()
 
-async def run_collection_process(start_date_str=None, end_date_str=None, is_dry_run=False, is_backfill=False):
-    if not start_date_str or not end_date_str:
-        yesterday = (datetime.utcnow().date() - timedelta(days=1)).strftime("%Y-%m-%d")
-        start_date_str = end_date_str = yesterday
-        log.info(f"Date range not specified. Defaulting to yesterday: {start_date_str}")
 
-    log.info(f"Starting data collection for {start_date_str} to {end_date_str}...")
+# --- Data Cleaning and Transformation ---
+
+def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
+    """Cleans and transforms raw data from a given source."""
+    if df.empty:
+        return df
+
+    if source == 'WU':
+        rename_map = {'stationID': 'native_sensor_id', 'obsTimeUtc': 'timestamp', 'tempAvg': 'temperature', 'humidityAvg': 'humidity'}
+        df.rename(columns=rename_map, inplace=True)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+        return df[['native_sensor_id', 'timestamp', 'temperature', 'humidity']] # Select only relevant columns
+
+    if source == 'TSI':
+        # Unpack nested data
+        def extract(sensors_list):
+            readings = {}
+            if isinstance(sensors_list, list):
+                for sensor in sensors_list:
+                    for m in sensor.get('measurements', []):
+                        readings[m.get('type')] = m.get('data', {}).get('value')
+            return readings
+        
+        measurements_df = df['sensors'].apply(extract).apply(pd.Series)
+        df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
+
+        rename_map = {'device_id': 'native_sensor_id', 'timestamp': 'raw_timestamp', 'mcpm2x5': 'pm2_5', 'temp_c': 'temperature', 'rh_percent': 'humidity'}
+        df.rename(columns=rename_map, inplace=True)
+        df['timestamp'] = pd.to_datetime(df['raw_timestamp'], utc=True)
+        return df[['native_sensor_id', 'timestamp', 'temperature', 'humidity', 'pm2_5']] # Select relevant columns
+
+    return pd.DataFrame()
+
+
+# --- Database Insertion ---
+
+def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
+    """Transforms and inserts cleaned data into sensor_readings via deployments."""
+    if wu_df.empty and tsi_df.empty:
+        log.info("No data to insert.")
+        return
+
+    with db.engine.connect() as connection:
+        deployment_map_sql = """
+            SELECT d.deployment_pk, sm.native_sensor_id, sm.sensor_type
+            FROM deployments d
+            JOIN sensors_master sm ON d.sensor_fk = sm.sensor_pk
+            WHERE d.end_date IS NULL;
+        """
+        deployment_map_df = pd.read_sql(deployment_map_sql, connection)
+        if deployment_map_df.empty:
+            log.error("No active deployments found. Cannot insert data.")
+            return
+
+    all_readings = []
     
-    # Pass the is_backfill flag to the WU fetcher
-    wu_task = asyncio.create_task(fetch_wu_data_async(start_date_str, end_date_str, is_backfill))
-    tsi_task = asyncio.create_task(fetch_tsi_data_async(start_date_str, end_date_str))
-    wu_df, tsi_df = await asyncio.gather(wu_task, tsi_task)
+    # Process DataFrames
+    for df, df_type in [(wu_df, 'WU'), (tsi_df, 'TSI')]:
+        if not df.empty:
+            type_map = deployment_map_df[deployment_map_df['sensor_type'] == df_type]
+            merged_df = df.merge(type_map, on='native_sensor_id', how='inner')
+            if merged_df.empty:
+                log.warning(f"No {df_type} data matched an active deployment.")
+                continue
+            
+            merged_df.rename(columns={'deployment_pk': 'deployment_fk'}, inplace=True)
+            id_vars = ['timestamp', 'deployment_fk']
+            value_vars = [col for col in merged_df.columns if col not in ['native_sensor_id', 'sensor_type'] + id_vars]
+            long_df = pd.melt(merged_df, id_vars=id_vars, value_vars=value_vars, var_name='metric_name', value_name='value')
+            all_readings.append(long_df)
 
-    log.info(f"Found {len(wu_df)} records from WU and {len(tsi_df)} raw records from TSI.")
-    
-    if not tsi_df.empty:
-        tsi_df = clean_and_transform_tsi_data(tsi_df)
-        log.info(f"Successfully transformed {len(tsi_df)} TSI records.")
+    if not all_readings:
+        log.warning("No data records matched an active deployment after processing. Nothing to insert.")
+        return
 
-    prod_sensors, _ = load_sensor_configs()
-    wu_prod_df, tsi_prod_df = separate_data(wu_df, tsi_df, prod_sensors)
-    log.info(f"Separated {len(wu_prod_df)} WU and {len(tsi_prod_df)} TSI production records.")
+    final_df = pd.concat(all_readings, ignore_index=True)
+    final_df.dropna(subset=['value'], inplace=True)
+    final_df.drop_duplicates(subset=['timestamp', 'deployment_fk', 'metric_name'], keep='last', inplace=True)
+
+    if final_df.empty:
+        log.info("Final DataFrame is empty after cleaning. Nothing to insert.")
+        return
+
+    # Use the efficient "upsert" method with a temporary table
+    temp_table_name = "temp_sensor_readings"
+    pk_cols_str = '"timestamp", deployment_fk, metric_name'
+    query = text(f"""
+        INSERT INTO sensor_readings ("timestamp", deployment_fk, metric_name, value)
+        SELECT "timestamp", deployment_fk, metric_name, value FROM {temp_table_name}
+        ON CONFLICT ({pk_cols_str}) DO UPDATE SET value = EXCLUDED.value;
+    """)
+
+    try:
+        with db.engine.connect() as connection:
+            with connection.begin():
+                log.info(f"Writing {len(final_df)} unique records to database...")
+                final_df.to_sql(
+                    temp_table_name, connection, if_exists='replace', index=False,
+                    dtype={'timestamp': types.TIMESTAMP(timezone=True), 'deployment_fk': types.INTEGER, 'metric_name': types.VARCHAR, 'value': types.DOUBLE_PRECISION} # pyright: ignore[reportArgumentType]
+                )
+                result = connection.execute(query)
+                log.info(f"Database upsert complete. {result.rowcount} rows affected.")
+                connection.execute(text(f"DROP TABLE {temp_table_name}"))
+    except Exception as e:
+        log.error(f"Database insertion failed: {e}", exc_info=True)
+        raise
+
+
+# --- Main Execution Logic ---
+
+async def run_collection_process(start_date, end_date, is_dry_run=False, is_backfill=False):
+    """Main process to fetch, clean, and store sensor data."""
+    log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}, Backfill: {is_backfill}")
+
+    wu_raw_df, tsi_raw_df = await asyncio.gather(
+        fetch_wu_data_async(start_date, end_date, is_backfill),
+        fetch_tsi_data_async(start_date, end_date)
+    )
+    log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
+
+    wu_df = clean_and_transform_data(wu_raw_df, 'WU')
+    tsi_df = clean_and_transform_data(tsi_raw_df, 'TSI')
+    log.info(f"Cleaned data: {len(wu_df)} WU records, {len(tsi_df)} TSI records.")
 
     if is_dry_run:
         log.info("--- DRY RUN MODE ---")
-        log.info("WU Production Data (first 5):")
-        log.info(wu_prod_df.head())
-        log.info("TSI Production Data (first 5):")
-        log.info(tsi_prod_df.head())
+        print("Cleaned WU Data (first 5):\n", wu_df.head().to_markdown(index=False))
+        print("\nCleaned TSI Data (first 5):\n", tsi_df.head().to_markdown(index=False))
+        log.info("Dry run complete. No data was written.")
     else:
         log.info("--- LIVE RUN MODE ---")
         try:
+            # Use your project's DB Manager
             db = HotDurhamDB()
-            insert_data_to_db(db, wu_prod_df, 'wu_data')
-            insert_data_to_db(db, tsi_prod_df, 'tsi_data')
-            log.info("Database insertion process complete.")
+            insert_data_to_db(db, wu_df, tsi_df)
+            log.info("Live run complete.")
         except Exception as e:
-            log.error(f"An error occurred during database operations: {e}", exc_info=True)
+            log.error(f"An error occurred during live run database operations: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Data collection script for Hot Durham project.")
-    parser.add_argument("--start_date", type=str, default=None, help="Start date (YYYY-MM-DD). Defaults to yesterday.")
-    parser.add_argument("--end_date", type=str, default=None, help="End date (YYYY-MM-DD). Defaults to yesterday.")
-    parser.add_argument("--dry_run", action="store_true", help="Enable dry run mode (no data insertion).")
-    parser.add_argument("--backfill", action="store_true", help="Enable backfill mode for fetching specific historical dates.")
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
+    parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
+    parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to the database.")
+    parser.add_argument("--backfill", action="store_true", help="Enables backfill mode for fetching historical dates.")
     args = parser.parse_args()
-    
+
     asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.backfill))
