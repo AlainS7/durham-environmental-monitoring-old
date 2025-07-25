@@ -25,7 +25,7 @@ nest_asyncio.apply()
 
 async def fetch_wu_data_async(start_date_str, end_date_str, is_backfill=False):
     """Fetches Weather Underground data concurrently using project configs."""
-    wu_key = app_config.wu_api_key.get('api_key') # Use your config object
+    wu_key = app_config.wu_api_key.get('test_api_key') # Use your config object
     stations = get_wu_stations() # Use your config loader
 
     if not wu_key or not stations:

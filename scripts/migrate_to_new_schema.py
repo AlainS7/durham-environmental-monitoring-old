@@ -121,7 +121,7 @@ def migrate_readings_to_new_schema(engine):
                 
                 wu_long.dropna(subset=['value'], inplace=True)
                 log.info(f"Migrating {len(wu_long)} WU records.")
-                wu_long.to_sql('sensor_readings', connection, if_exists='append', index=False, method='multi')
+                wu_long.to_sql('sensor_readings', connection, if_exists='append', index=False, method='multi', chunksize=5000)
         except Exception as e:
             log.warning(f"Could not migrate WU data. Error: {e}")
 
@@ -138,7 +138,7 @@ def migrate_readings_to_new_schema(engine):
                 
                 tsi_long.dropna(subset=['value'], inplace=True)
                 log.info(f"Migrating {len(tsi_long)} TSI records.")
-                tsi_long.to_sql('sensor_readings', connection, if_exists='append', index=False, method='multi')
+                tsi_long.to_sql('sensor_readings', connection, if_exists='append', index=False, method='multi', chunksize=5000)
         except Exception as e:
             log.warning(f"Could not migrate TSI data. Error: {e}")
 
