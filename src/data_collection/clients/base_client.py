@@ -4,7 +4,7 @@ import httpx
 import logging
 import pandas as pd
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 

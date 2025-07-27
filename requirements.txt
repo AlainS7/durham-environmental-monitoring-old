@@ -4,6 +4,8 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
+annotated-types==0.7.0
+    # via pydantic
 anyio==4.9.0
     # via httpx
 cachetools==5.5.2
@@ -44,6 +46,8 @@ googleapis-common-protos[grpc]==1.70.0
     #   google-cloud-audit-log
     #   grpc-google-iam-v1
     #   grpcio-status
+greenlet==3.2.3
+    # via sqlalchemy
 grpc-google-iam-v1==0.14.2
     # via
     #   google-cloud-logging
@@ -102,6 +106,10 @@ pyasn1==0.6.1
     #   rsa
 pyasn1-modules==0.4.2
     # via google-auth
+pydantic==2.11.7
+    # via tsi-data-uploader (pyproject.toml)
+pydantic-core==2.33.2
+    # via pydantic
 python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.1.1
@@ -124,7 +132,12 @@ typing-extensions==4.14.1
     # via
     #   anyio
     #   opentelemetry-api
+    #   pydantic
+    #   pydantic-core
     #   sqlalchemy
+    #   typing-inspection
+typing-inspection==0.4.1
+    # via pydantic
 tzdata==2025.2
     # via pandas
 urllib3==2.5.0

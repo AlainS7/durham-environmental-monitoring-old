@@ -4,7 +4,7 @@ import httpx
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 
 from .base_client import BaseClient
 from src.utils.config_loader import get_tsi_devices
@@ -24,19 +24,20 @@ class TSIClient(BaseClient):
 
     async def _authenticate(self) -> bool:
         """Authenticates with the TSI API to get an access token."""
-        auth_data = {
-            'grant_type': 'client_credentials',
-            'client_id': self.client_id,
-            'client_secret': self.client_secret
-        }
+        params = {'grant_type': 'client_credentials'}
+        data = {'client_id': self.client_id, 'client_secret': self.client_secret}
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         try:
             async with httpx.AsyncClient() as client:
-                auth_resp = await client.post(self.auth_url, json=auth_data)
+                log.info("Trying TSI authentication with params and form-encoded body...")
+                auth_resp = await client.post(self.auth_url, params=params, data=data, headers=headers)
                 auth_resp.raise_for_status()
-                self.headers = {"Authorization": f"Bearer {auth_resp.json()['access_token']}", "Accept": "application/json"}
+                auth_json = auth_resp.json()
+                self.headers = {"Authorization": f"Bearer {auth_json['access_token']}", "Accept": "application/json"}
+                log.info("TSI authentication succeeded with params and form-encoded body.")
                 return True
         except Exception as e:
-            log.error(f"Failed to authenticate with TSI API: {e}", exc_info=True)
+            log.error(f"TSI authentication failed: {e}", exc_info=True)
             return False
 
     async def _fetch_one_day(self, device_id: str, date_iso: str) -> Optional[pd.DataFrame]:
@@ -53,6 +54,17 @@ class TSIClient(BaseClient):
         if records:
             df = pd.DataFrame(records)
             df['device_id'] = device_id
+            # Flatten nested sensor data
+            def extract(sensors_list):
+                readings = {}
+                if isinstance(sensors_list, list):
+                    for sensor in sensors_list:
+                        for m in sensor.get('measurements', []):
+                            readings[m.get('type')] = m.get('data', {}).get('value')
+                return readings
+            
+            measurements_df = df['sensors'].apply(extract).apply(pd.Series)
+            df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
             return df
         return None
 

@@ -1,6 +1,5 @@
 
 import asyncio
-import httpx
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
@@ -26,7 +25,9 @@ class WUClient(BaseClient):
             params["date"] = date_str
 
         data = await self._request("GET", endpoint, params=params)
-        return data.get('observations') if data else None
+        if data:
+            return data.get('observations')
+        return None
 
     async def fetch_data(self, start_date: str, end_date: str, is_backfill: bool = False) -> pd.DataFrame:
         """Fetches WU data for a given date range."""

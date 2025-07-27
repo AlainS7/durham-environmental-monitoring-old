@@ -28,17 +28,6 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
         return df[['native_sensor_id', 'timestamp', 'temperature', 'humidity']]
 
     if source == 'TSI':
-        def extract(sensors_list):
-            readings = {}
-            if isinstance(sensors_list, list):
-                for sensor in sensors_list:
-                    for m in sensor.get('measurements', []):
-                        readings[m.get('type')] = m.get('data', {}).get('value')
-            return readings
-        
-        measurements_df = df['sensors'].apply(extract).apply(pd.Series)
-        df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
-
         rename_map = {'device_id': 'native_sensor_id', 'timestamp': 'raw_timestamp', 'mcpm2x5': 'pm2_5', 'temp_c': 'temperature', 'rh_percent': 'humidity'}
         df.rename(columns=rename_map, inplace=True)
         df['timestamp'] = pd.to_datetime(df['raw_timestamp'], utc=True)
@@ -109,7 +98,13 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
                 log.info(f"Writing {len(final_df)} unique records to database...")
                 final_df.to_sql(
                     temp_table_name, connection, if_exists='replace', index=False,
-                    dtype={'timestamp': types.TIMESTAMP(timezone=True), 'deployment_fk': types.INTEGER, 'metric_name': types.VARCHAR, 'value': types.DOUBLE_PRECISION}
+                    dtype=
+                    {
+                        'timestamp': types.TIMESTAMP(timezone=True),
+                        'deployment_fk': types.INTEGER,
+                        'metric_name': types.VARCHAR,
+                        'value': types.DOUBLE_PRECISION
+                    } # pyright: ignore[reportArgumentType]
                 )
                 result = connection.execute(query)
                 log.info(f"Database upsert complete. {result.rowcount} rows affected.")
@@ -161,4 +156,7 @@ if __name__ == "__main__":
     parser.add_argument("--backfill", action="store_true", help="Enables backfill mode for fetching historical dates.")
     args = parser.parse_args()
 
-    asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.backfill))
+    try:
+        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.backfill))
+    except Exception as e:
+        log.critical(f"An unhandled error occurred during data collection: {e}", exc_info=True)
