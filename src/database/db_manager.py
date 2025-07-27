@@ -12,12 +12,33 @@ class HotDurhamDB:
     def __init__(self):
         # Database connection parameters should be loaded from environment variables
         # These are typically set when running with the Cloud SQL Auth Proxy
-        self.db_name = os.getenv("DB_NAME", "postgres")
-        self.db_user = os.getenv("DB_USER", "postgres")
-        self.db_pass = os.getenv("DB_PASS")
-        self.db_host = os.getenv("DB_HOST", "127.0.0.1")
-        self.db_port = os.getenv("DB_PORT", "5432")
-        
+
+        self.db_name = os.environ.get("DB_NAME", "postgres")
+        self.db_user = os.environ.get("DB_USER", "postgres")
+        self.db_pass = os.environ.get("DB_PASS")
+        self.db_host = os.environ.get("DB_HOST", "127.0.0.1")
+        self.db_port = os.environ.get("DB_PORT", "5432")
+
+        # Defensive: If DB_NAME is accidentally set as 'DB_NAME=postgres', fix it
+        if self.db_name and self.db_name.startswith("DB_NAME="):
+            self.db_name = self.db_name.split("=", 1)[-1]
+
+        # Defensive: If DB_USER is accidentally set as 'DB_USER=postgres', fix it
+        if self.db_user and self.db_user.startswith("DB_USER="):
+            self.db_user = self.db_user.split("=", 1)[-1]
+
+        # Defensive: If DB_HOST is accidentally set as 'DB_HOST=127.0.0.1', fix it
+        if self.db_host and self.db_host.startswith("DB_HOST="):
+            self.db_host = self.db_host.split("=", 1)[-1]
+
+        # Defensive: If DB_PORT is accidentally set as 'DB_PORT=5432', fix it
+        if self.db_port and self.db_port.startswith("DB_PORT="):
+            self.db_port = self.db_port.split("=", 1)[-1]
+
+        # Defensive: Ensure DB_PASS is set
+        if not self.db_pass:
+            raise ValueError("Environment variable DB_PASS must be set for database connection.")
+
         self.conn_string = f"postgresql://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}"
         self.engine = create_engine(self.conn_string)
         self._init_database()

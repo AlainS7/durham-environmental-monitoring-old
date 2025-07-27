@@ -1,5 +1,6 @@
 
 
+
 import asyncio
 import pandas as pd
 import argparse
@@ -13,6 +14,18 @@ from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
 
 log = logging.getLogger(__name__)
+
+
+# --- Database Connection Check ---
+def check_db_connection(db: HotDurhamDB) -> bool:
+    """Attempt to connect to the database and return True if successful, False otherwise."""
+    try:
+        with db.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        log.error(f"Database connection failed: {e}")
+        return False
 
 # --- Data Cleaning and Transformation ---
 
@@ -120,6 +133,14 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, is_back
     """Main process to fetch, clean, and store sensor data."""
     log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}, Backfill: {is_backfill}")
 
+    # Check DB connection before proceeding (skip for dry run)
+    if not is_dry_run:
+        db = HotDurhamDB()
+        if not check_db_connection(db):
+            log.critical("Database connection could not be established. Exiting.")
+            print("ERROR: Could not connect to the database. Please check your connection settings.")
+            return
+
     wu_client = WUClient(**app_config.wu_api_config)
     tsi_client = TSIClient(**app_config.tsi_api_config)
 
@@ -141,7 +162,6 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, is_back
     else:
         log.info("--- LIVE RUN MODE ---")
         try:
-            db = HotDurhamDB()
             insert_data_to_db(db, wu_df, tsi_df)
             log.info("Live run complete.")
         except Exception as e:
