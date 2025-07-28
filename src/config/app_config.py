@@ -26,7 +26,7 @@ class Config:
     def __init__(self):
         self.project_id = self._parse_env_var_value("PROJECT_ID")
         self.db_creds_secret_id = self._parse_env_var_value("DB_CREDS_SECRET_ID")
-        self.tsi_creds_secret_id = "tsi_creds"
+        self.tsi_creds_secret_id = self._parse_env_var_value("TSI_CREDS_SECRET_ID")
         self.wu_api_key_secret_id = self._parse_env_var_value("WU_API_KEY_SECRET_ID")
 
         self._validate_env_vars()
