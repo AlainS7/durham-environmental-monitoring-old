@@ -64,20 +64,22 @@ async def test_run_collection_process_success(mock_clients, mock_db):
     """Test successful execution of the data collection process."""
     mock_wu_client, mock_tsi_client = mock_clients
     mock_db_instance, mock_connection = mock_db
+    # Mock the new insertion method
+    mock_db_instance.insert_sensor_readings = MagicMock()
 
     start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     end_date = start_date
 
     await run_collection_process(start_date, end_date, is_dry_run=False)
 
-    # Verify clients were called
-    mock_wu_client.fetch_data.assert_called_once_with(start_date, end_date, False)
+    # Verify clients were called with the correct signature
+    mock_wu_client.fetch_data.assert_called_once_with(start_date, end_date)
     mock_tsi_client.fetch_data.assert_called_once_with(start_date, end_date)
 
-    # Verify database interactions
-    assert mock_connection.execute.call_count == 2 # For the DROP TABLE statement
-    pd.DataFrame.to_sql.assert_called_once() # For the temporary table creation
-
-    # Further assertions can be added here to inspect the arguments passed to to_sql
-    # For example, to check the content of the DataFrame passed to to_sql:
-    # assert pd.DataFrame.to_sql.call_args[0][0].shape[0] > 0
+    # Verify the new database insertion method was called
+    mock_db_instance.insert_sensor_readings.assert_called_once()
+    
+    # Optional: inspect the DataFrame passed to the method
+    final_df = mock_db_instance.insert_sensor_readings.call_args[0][0]
+    assert not final_df.empty
+    assert 'deployment_fk' in final_df.columns
