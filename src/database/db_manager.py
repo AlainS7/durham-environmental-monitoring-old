@@ -3,14 +3,16 @@ Database integration for Hot Durham project
 """
 import pandas as pd
 import json
-import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from typing import Optional
 import logging
 
 log = logging.getLogger(__name__)
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 class HotDurhamDB:
     """Database manager for PostgreSQL on Google Cloud SQL"""
 
@@ -20,28 +22,9 @@ class HotDurhamDB:
         self._init_database()
 
     def _create_db_engine(self) -> Engine:
-        """Creates and returns a SQLAlchemy engine from environment variables."""
-        
-        def _get_env_var(var_name: str, default: Optional[str] = None) -> Optional[str]:
-            """Helper function to get and clean environment variables."""
-            value = os.environ.get(var_name, default)
-            if value and f"{var_name}=" in value:
-                log.warning(f"Fixing malformed environment variable: {var_name}")
-                return value.split("=", 1)[-1]
-            return value
-
-        db_user = _get_env_var("DB_USER", "postgres")
-        db_pass = _get_env_var("DB_PASS")
-        db_host = _get_env_var("DB_HOST", "127.0.0.1")
-        db_port = _get_env_var("DB_PORT", "5432")
-        db_name = _get_env_var("DB_NAME", "postgres")
-
-        if not db_pass:
-            log.error("CRITICAL: Environment variable DB_PASS is not set.")
-            raise ValueError("Environment variable DB_PASS must be set for database connection.")
-
-        conn_string = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-        return create_engine(conn_string)
+        """Creates and returns a SQLAlchemy engine using the database_url from app_config (Google Secret Manager)."""
+        from src.config.app_config import app_config
+        return create_engine(app_config.database_url)
 
     def _init_database(self):
         """
@@ -113,19 +96,49 @@ class HotDurhamDB:
     # --- NEW RECOMMENDED ---
     def insert_sensor_readings(self, df: pd.DataFrame):
         """
-        Inserts a DataFrame of sensor data into the normalized sensor_readings table.
-        
+        Efficiently upserts a DataFrame of sensor data into the normalized sensor_readings table.
+        Duplicate rows (same timestamp, deployment_fk, metric_name) are skipped (do nothing on conflict).
         The DataFrame is expected to have the following columns:
         - timestamp
         - deployment_fk
         - metric_name
         - value
         """
+        if df.empty:
+            log.info("No sensor readings to insert (DataFrame is empty).")
+            return
         if not all(col in df.columns for col in ['timestamp', 'deployment_fk', 'metric_name', 'value']):
             raise ValueError("DataFrame must contain 'timestamp', 'deployment_fk', 'metric_name', and 'value' columns.")
-        
-        df.to_sql('sensor_readings', self.engine, if_exists='append', index=False, chunksize=1000)
-        log.info(f"Successfully inserted {len(df)} records into sensor_readings.")
+
+        from sqlalchemy.dialects.postgresql import insert
+        table_name = 'sensor_readings'
+        from sqlalchemy import Table, MetaData
+        meta = MetaData()
+        table = Table(table_name, meta, autoload_with=self.engine)
+
+        # Ensure all keys are str for SQLAlchemy insert
+        log.debug("Converting DataFrame to list of dicts for upsert...")
+        rows = [dict((str(k), v) for k, v in row.items()) for row in df.to_dict(orient='records')]
+        total_rows = len(rows)
+        log.info(f"Prepared {total_rows} rows for upsert into sensor_readings table.")
+        if not rows:
+            log.info("No rows to upsert after DataFrame conversion.")
+            return
+        chunk_size = 10000
+        log.info(f"Using chunk size of {chunk_size} for batch upserts.")
+        num_chunks = (total_rows + chunk_size - 1) // chunk_size
+        inserted_total = 0
+        with self.engine.begin() as conn:
+            for i in range(num_chunks):
+                chunk = rows[i*chunk_size:(i+1)*chunk_size]
+                log.info(f"Upserting chunk {i+1}/{num_chunks} ({len(chunk)} rows)...")
+                stmt = insert(table).values(chunk)
+                stmt = stmt.on_conflict_do_nothing(index_elements=['timestamp', 'deployment_fk', 'metric_name'])
+                result = conn.execute(stmt)
+                inserted = getattr(result, 'rowcount', 'N/A')
+                inserted_total += inserted if isinstance(inserted, int) else 0
+                log.info(f"Chunk {i+1}/{num_chunks} upserted. Rowcount reported: {inserted}")
+        log.info(f"Batch upsert complete. Attempted to insert {total_rows} records into sensor_readings (duplicates skipped). Total inserted (rowcount sum): {inserted_total}")
 
     # --- LEGACY METHODS (To be deprecated) ---
     def insert_tsi_data(self, df: pd.DataFrame):

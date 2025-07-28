@@ -1,4 +1,3 @@
-
 import asyncio
 import httpx
 import pandas as pd
@@ -69,14 +68,19 @@ class TSIClient(BaseClient):
         return None
 
     async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetches TSI data for a given date range, with progress bar."""
+        """
+        Fetches TSI data for a given date range and aggregates it into hourly summaries.
+        """
         if not await self._authenticate():
+            log.error("TSI authentication failed. No data will be fetched.")
             return pd.DataFrame()
 
+        log.info("Building list of requests for all devices and dates...")
         date_range = pd.date_range(start=start_date, end=end_date)
         requests = [(dev_id, d.strftime("%Y-%m-%d")) for dev_id in self.device_ids for d in date_range]
         tasks = [self._fetch_one_day(dev_id, date_str) for dev_id, date_str in requests]
 
+        log.info(f"Starting async fetch for {len(tasks)} device-date combinations...")
         all_results = []
         from tqdm import tqdm
         for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching TSI Data"):
@@ -84,5 +88,31 @@ class TSIClient(BaseClient):
             if result is not None:
                 all_results.append(result)
 
-        valid_dfs = [df for df in all_results if df is not None and not df.empty]
-        return pd.concat(valid_dfs, ignore_index=True) if valid_dfs else pd.DataFrame()
+        log.info(f"Fetched data for {len(all_results)} device-date combinations.")
+
+        if not all_results:
+            log.warning("No data fetched from TSI API.")
+            return pd.DataFrame()
+
+        log.info("Concatenating all results into a single DataFrame...")
+        raw_df = pd.concat(all_results, ignore_index=True)
+        if raw_df.empty or 'timestamp' not in raw_df.columns:
+            log.warning("No valid data after concatenation.")
+            return pd.DataFrame()
+
+        log.info("Converting timestamp to datetime and setting as index...")
+        raw_df['timestamp'] = pd.to_datetime(raw_df['timestamp'])
+        raw_df.set_index('timestamp', inplace=True)
+
+        log.info("Preparing aggregation dictionary for hourly resampling...")
+        numeric_cols = raw_df.select_dtypes(include='number').columns.tolist()
+        agg_dict = {col: 'mean' for col in numeric_cols}
+
+        log.info("Starting groupby and hourly resampling...")
+        final_df = raw_df.groupby('device_id').resample('h').agg(agg_dict)  # type: ignore
+
+        log.info("Resetting index after resampling...")
+        final_df = final_df.reset_index()
+
+        log.info(f"Successfully resampled TSI data to {len(final_df)} hourly records.")
+        return final_df
