@@ -145,7 +145,7 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, is_back
     tsi_client = TSIClient(**app_config.tsi_api_config)
 
     wu_raw_df, tsi_raw_df = await asyncio.gather(
-        wu_client.fetch_data(start_date, end_date, is_backfill),
+        wu_client.fetch_data(start_date, end_date),
         tsi_client.fetch_data(start_date, end_date)
     )
     log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
@@ -162,7 +162,18 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, is_back
     else:
         log.info("--- LIVE RUN MODE ---")
         try:
-            insert_data_to_db(db, wu_df, tsi_df)
+            # Combine WU and TSI data for sensor_readings
+            all_dfs = []
+            if not wu_df.empty:
+                all_dfs.append(wu_df)
+            if not tsi_df.empty:
+                all_dfs.append(tsi_df)
+            if all_dfs:
+                combined_df = pd.concat(all_dfs, ignore_index=True)
+                db.insert_sensor_readings(combined_df)
+                log.info(f"Inserted {len(combined_df)} records into sensor_readings.")
+            else:
+                log.info("No data to insert into sensor_readings.")
             log.info("Live run complete.")
         except Exception as e:
             log.error(f"An error occurred during live run database operations: {e}", exc_info=True)

@@ -69,15 +69,20 @@ class TSIClient(BaseClient):
         return None
 
     async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetches TSI data for a given date range."""
+        """Fetches TSI data for a given date range, with progress bar."""
         if not await self._authenticate():
             return pd.DataFrame()
 
         date_range = pd.date_range(start=start_date, end=end_date)
-        tasks = [self._fetch_one_day(dev_id, d.strftime("%Y-%m-%d"))
-                 for dev_id in self.device_ids
-                 for d in date_range]
+        requests = [(dev_id, d.strftime("%Y-%m-%d")) for dev_id in self.device_ids for d in date_range]
+        tasks = [self._fetch_one_day(dev_id, date_str) for dev_id, date_str in requests]
 
-        all_results = await asyncio.gather(*tasks)
+        all_results = []
+        from tqdm import tqdm
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching TSI Data"):
+            result = await future
+            if result is not None:
+                all_results.append(result)
+
         valid_dfs = [df for df in all_results if df is not None and not df.empty]
         return pd.concat(valid_dfs, ignore_index=True) if valid_dfs else pd.DataFrame()

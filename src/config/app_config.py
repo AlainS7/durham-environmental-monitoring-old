@@ -5,9 +5,6 @@ import logging
 from google.cloud import secretmanager
 from dotenv import load_dotenv
 
-# Import to configure logging for the entire application
-import src.utils.logging_setup
-
 # Load environment variables from .env file for local development
 load_dotenv()
 
