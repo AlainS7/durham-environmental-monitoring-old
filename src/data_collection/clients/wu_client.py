@@ -114,7 +114,7 @@ class WUClient(BaseClient):
                     processed.append({**o, **metric})
                 if processed:
                     df = pd.DataFrame(processed)
-                    print(f"[WUClient _fetch_one] DataFrame shape for station {station_id} on {start_date}: {df.shape}")
+                    log.debug(f"[WUClient _fetch_one] DataFrame shape for station {station_id} on {start_date}: {df.shape}")
                     df['stationID'] = station_id
                     if 'obsTimeUtc' in df.columns:
                         df['obsTimeUtc'] = pd.to_datetime(df['obsTimeUtc'])
