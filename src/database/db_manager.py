@@ -158,7 +158,7 @@ class HotDurhamDB:
             FROM sensor_readings r
             JOIN deployments d ON r.deployment_fk = d.deployment_pk
             JOIN sensors_master s ON d.sensor_fk = s.sensor_pk
-            WHERE r."timestamp" >= NOW() - INTERVAL ':hours hours'
+            WHERE r."timestamp" >= NOW() - INTERVAL :hours || ' hours'
             ORDER BY r."timestamp" DESC
         """)
         return pd.read_sql_query(query, self.engine, params={"hours": hours})
