@@ -249,3 +249,4 @@ if __name__ == "__main__":
         asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run))
     except Exception as e:
         log.critical(f"An unhandled error occurred in the main process: {e}", exc_info=True)
+        sys.exit(1) # Exit with a non-zero status code to indicate failure
