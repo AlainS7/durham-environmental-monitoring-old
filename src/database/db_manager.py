@@ -189,7 +189,7 @@ class HotDurhamDB:
                 SUM(errors_count) as total_errors,
                 AVG(duration_seconds) as avg_duration
             FROM collection_log 
-            WHERE collection_date >= NOW() - INTERVAL ':days days'
+            WHERE collection_date >= NOW() - INTERVAL :days || ' days'
             GROUP BY collection_day, source
             ORDER BY collection_day DESC, source
         """)
