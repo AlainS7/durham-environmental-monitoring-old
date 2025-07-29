@@ -30,9 +30,8 @@ class TSIClient(BaseClient):
         data = {'client_id': self.client_id, 'client_secret': self.client_secret}
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         try:
-            async with httpx.AsyncClient() as client:
-                log.info("Trying TSI authentication with params and form-encoded body...")
-                auth_resp = await client.post(self.auth_url, params=params, data=data, headers=headers)
+            log.info("Trying TSI authentication with params and form-encoded body...")
+            auth_resp = await self._http_client.post(self.auth_url, params=params, data=data, headers=headers)
                 auth_resp.raise_for_status()
                 auth_json = auth_resp.json()
                 self.headers = {"Authorization": f"Bearer {auth_json['access_token']}", "Accept": "application/json"}
