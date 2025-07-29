@@ -135,7 +135,7 @@ class HotDurhamDB:
                 stmt = insert(table).values(chunk)
                 stmt = stmt.on_conflict_do_nothing(index_elements=['timestamp', 'deployment_fk', 'metric_name'])
                 result = conn.execute(stmt)
-                inserted = getattr(result, 'rowcount', 'N/A')
+                inserted = getattr(result, 'rowcount', 0)
                 inserted_total += inserted if isinstance(inserted, int) else 0
                 log.info(f"Chunk {i+1}/{num_chunks} upserted. Rowcount reported: {inserted}")
         log.info(f"Batch upsert complete. Attempted to insert {total_rows} records into sensor_readings (duplicates skipped). Total inserted (rowcount sum): {inserted_total}")
