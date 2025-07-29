@@ -26,11 +26,11 @@ def mock_clients(mocker):
 
     # Sample data for TSIClient
     tsi_data = {
-        'device_id': ['d14rfblfk2973f196c5g'],
-        'timestamp': ['2025-07-27T12:00:00Z'],
+        'cloud_device_id': ['d14rfblfk2973f196c5g'],
+        'cloud_timestamp': ['2025-07-27T12:00:00Z'],
         'mcpm2x5': [15.5],
-        'temp_c': [26.0],
-        'rh_percent': [55.0]
+        'temperature': [26.0],
+        'rh': [55.0]
     }
     mock_tsi_client.fetch_data.return_value = pd.DataFrame(tsi_data)
 
