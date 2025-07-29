@@ -7,8 +7,7 @@ Creates combined plots with multiple data categories on the same chart
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
 import sys
 from pathlib import Path
 

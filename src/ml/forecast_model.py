@@ -13,7 +13,6 @@ Key Features:
 - Data quality scoring.
 """
 
-import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
 class ForecastModel:

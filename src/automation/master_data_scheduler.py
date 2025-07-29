@@ -12,7 +12,6 @@ This scheduler integrates with the master data file system to ensure continuous
 data collection and master file updates.
 """
 
-import os
 import sys
 import schedule
 import time
@@ -319,7 +318,7 @@ class MasterDataScheduler:
     def run_scheduler(self):
         """Run the scheduler continuously."""
         self.logger.info("🚀 Starting Master Data Scheduler")
-        self.logger.info(f"📅 Scheduled jobs:")
+        self.logger.info("📅 Scheduled jobs:")
         
         for job_info in self.get_schedule_info():
             self.logger.info(f"  - {job_info['job']}: every {job_info['interval']} {job_info['unit']}")

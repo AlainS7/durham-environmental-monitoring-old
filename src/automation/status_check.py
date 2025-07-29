@@ -12,8 +12,7 @@ Usage:
 import os
 import sys
 import argparse
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 
 # Add the project root to the path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

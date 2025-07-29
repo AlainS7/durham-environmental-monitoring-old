@@ -19,7 +19,6 @@ import sys
 import json
 import shutil
 import tarfile
-import gzip
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging

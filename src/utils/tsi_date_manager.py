@@ -10,7 +10,7 @@ It includes functions to:
 """
 
 from datetime import datetime, timedelta
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ def demonstrate_tsi_date_limitations():
                 print(f"     ... and {len(chunks) - 3} more chunks")
     
     # Show current valid range
-    print(f"\n🕒 Current valid range (last 89 days):")
+    print("\n🕒 Current valid range (last 89 days):")
     recent_start, recent_end = manager.get_recent_valid_range()
     print(f"   {recent_start} to {recent_end}")
 
