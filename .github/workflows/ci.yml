@@ -35,6 +35,8 @@ jobs:
 
     - name: Scan for vulnerabilities
       run: |
+        source .venv/bin/activate
+        pip install pip-audit
         pip-audit
 
     - name: Lint with ruff

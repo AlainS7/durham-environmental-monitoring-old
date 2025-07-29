@@ -220,16 +220,15 @@ async def run_collection_process(start_date, end_date, is_dry_run=False):
     """Main process to fetch, clean, and store sensor data."""
     log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}")
     
-    # Initialize API clients
-    wu_client = WUClient(**app_config.wu_api_config)
-    tsi_client = TSIClient(**app_config.tsi_api_config)
 
-    # Fetch data concurrently
-    wu_raw_df, tsi_raw_df = await asyncio.gather(
-        wu_client.fetch_data(start_date, end_date),
-        tsi_client.fetch_data(start_date, end_date)
-    )
-    log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
+    # Use async context managers for API clients
+    async with WUClient(**app_config.wu_api_config) as wu_client:
+        async with TSIClient(**app_config.tsi_api_config) as tsi_client:
+            wu_raw_df, tsi_raw_df = await asyncio.gather(
+                wu_client.fetch_data(start_date, end_date),
+                tsi_client.fetch_data(start_date, end_date)
+            )
+            log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
 
     # Clean and standardize both dataframes
     wu_df = clean_and_transform_data(wu_raw_df, 'WU')

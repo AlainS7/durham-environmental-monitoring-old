@@ -26,7 +26,7 @@ async def test_wu_client_fetch_data_success(mocker):
             {'stationID': 'KNCGARNE13', 'obsTimeUtc': '2025-07-27T12:00:00Z', 'tempAvg': 25.0, 'humidityAvg': 60.0}
         ]
     }
-    }
+    
     mocker.patch('src.data_collection.clients.base_client.BaseClient._request', return_value=mock_response)
     mocker.patch('src.data_collection.clients.wu_client.get_wu_stations', return_value=[{'stationId': 'KNCGARNE13'}])
 
@@ -42,17 +42,11 @@ async def test_tsi_client_fetch_data_success(mocker):
     """Test successful data fetching for TSIClient."""
     telemetry_response = [
         {
-            'device_id': 'd14rfblfk2973f196c5g',
-            'timestamp': '2025-07-27T12:00:00Z',
-            'sensors': [
-                {
-                    'measurements': [
-                        {'type': 'mcpm2x5', 'data': {'value': 15.5}},
-                        {'type': 'temp_c', 'data': {'value': 26.0}},
-                        {'type': 'rh_percent', 'data': {'value': 55.0}}
-                    ]
-                }
-            ]
+            'cloud_device_id': 'd14rfblfk2973f196c5g',
+            'cloud_timestamp': '2025-07-27T12:00:00Z',
+            'mcpm2x5': 15.5,
+            'temperature': 26.0,
+            'rh': 55.0
         }
     ]
     client = TSIClient(client_id='test_id', client_secret='test_secret', auth_url='https://fake-tsi.com/auth', base_url='https://fake-tsi.com/api')
