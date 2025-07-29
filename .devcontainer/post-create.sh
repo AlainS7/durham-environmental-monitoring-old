@@ -13,12 +13,21 @@ curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyr
 
 sudo apt-get update && sudo apt-get install -y google-cloud-cli
 
-# Install Python dependencies
-echo "Installing Python dependencies from requirements.txt..."
-pip install --user -r requirements.txt
+# Create and activate a virtual environment
+echo "Creating Python virtual environment in .venv..."
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Upgrade pip and install dependencies inside the venv
+echo "Installing Python dependencies from requirements.txt in venv..."
+pip install --upgrade pip
+pip install -r requirements.txt
 if [ -f "requirements-dev.txt" ]; then
-    pip install --user -r requirements-dev.txt
+    pip install -r requirements-dev.txt
 fi
+
+# Ensure ruff is installed (redundant if in requirements, but safe)
+pip install ruff
 
 # Install supervisord and Cloud SQL Auth Proxy if not already installed
 if ! command -v supervisord &> /dev/null; then
