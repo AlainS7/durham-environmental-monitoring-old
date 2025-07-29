@@ -24,20 +24,26 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install dependencies
+    - name: Set up virtual environment and install dependencies
       run: |
+        python -m venv .venv
+        source .venv/bin/activate
         python -m pip install --upgrade pip setuptools
         pip install -r requirements-dev.txt
         pip install pip-audit
+        pip install ruff
 
     - name: Scan for vulnerabilities
       run: |
+        source .venv/bin/activate
+        pip install pip-audit
         pip-audit
 
     - name: Lint with ruff
       run: |
+        source .venv/bin/activate
         ruff check .
 
     - name: Test with pytest
       run: |
-        pytest
+        PYTHONPATH=$GITHUB_WORKSPACE pytest tests/unit tests/integration
