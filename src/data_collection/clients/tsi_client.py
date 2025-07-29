@@ -1,12 +1,15 @@
+
 import asyncio
 import httpx
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+import pydantic
 
 from .base_client import BaseClient
 from src.utils.config_loader import get_tsi_devices
+from src.data_collection.models import TSIFlatRecord
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +43,7 @@ class TSIClient(BaseClient):
             return False
 
     async def _fetch_one_day(self, device_id: str, date_iso: str) -> Optional[pd.DataFrame]:
-        """Fetches data for a single device and day."""
+        """Fetches data for a single device and day using the flat-format endpoint."""
         if not self.headers:
             log.error("TSI client is not authenticated.")
             return None
@@ -49,21 +52,20 @@ class TSIClient(BaseClient):
         end_iso = (datetime.strptime(date_iso, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
         params = {'device_id': device_id, 'start_date': start_iso, 'end_date': end_iso}
 
-        records = await self._request("GET", "telemetry", params=params, headers=self.headers)
+        # Use the flat-format endpoint
+        records = await self._request("GET", "telemetry/flat-format", params=params, headers=self.headers)
         if records:
-            df = pd.DataFrame(records)
+            validated_records = []
+            for rec in records:
+                try:
+                    validated = TSIFlatRecord.model_validate(rec)
+                    validated_records.append(validated.model_dump())
+                except pydantic.ValidationError as e:
+                    log.error(f"TSI API response validation failed for record: {e}")
+            if not validated_records:
+                return None
+            df = pd.DataFrame(validated_records)
             df['device_id'] = device_id
-            # Flatten nested sensor data
-            def extract(sensors_list):
-                readings = {}
-                if isinstance(sensors_list, list):
-                    for sensor in sensors_list:
-                        for m in sensor.get('measurements', []):
-                            readings[m.get('type')] = m.get('data', {}).get('value')
-                return readings
-            
-            measurements_df = df['sensors'].apply(extract).apply(pd.Series)
-            df = pd.concat([df.drop(columns=['sensors']), measurements_df], axis=1)
             return df
         return None
 

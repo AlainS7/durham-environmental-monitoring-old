@@ -65,7 +65,7 @@ class Config:
         """Ensure all required environment variables are set."""
         required_vars = [
             "PROJECT_ID", "DB_CREDS_SECRET_ID", 
-            "WU_API_KEY_SECRET_ID"
+            "TSI_CREDS_SECRET_ID", "WU_API_KEY_SECRET_ID"
         ]
         missing_vars = [var for var in required_vars if not getattr(self, var.lower())]
         if missing_vars:
