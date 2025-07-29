@@ -48,8 +48,8 @@ fi
 
 # Install Cloud SQL Auth Proxy if not already installed
 if ! command -v cloud-sql-proxy &> /dev/null; then
-  curl -o /usr/local/bin/cloud-sql-proxy "$PROXY_URL"
-  chmod +x /usr/local/bin/cloud-sql-proxy
+  sudo curl -o /usr/local/bin/cloud-sql-proxy "$PROXY_URL"
+  sudo chmod +x /usr/local/bin/cloud-sql-proxy
 fi
 
 # Ensure the Cloud SQL Proxy wrapper script is executable

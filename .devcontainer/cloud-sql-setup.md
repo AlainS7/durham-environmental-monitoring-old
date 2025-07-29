@@ -115,7 +115,7 @@ Use the following connection parameters in your application or database client:
 
 ## References
 
-- [Cloud SQL Auth Proxy Documentation](https://cloud.google.com/sql/docs/mysql/connect-auth-proxy)
+- [Cloud SQL Auth Proxy Documentation](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy)
 - [Google Cloud Secret Manager](https://cloud.google.com/secret-manager/docs)
 - [supervisord Documentation](http://supervisord.org/)
 

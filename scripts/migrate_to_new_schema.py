@@ -12,7 +12,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set. Do export DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL) && python3 /workspaces/tsi-data-uploader/scripts/migrate_to_new_schema.py")
+    raise RuntimeError("DATABASE_URL environment variable is not set. Do export DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL) && python3 migrate_to_new_schema.py")
 # --- End Configuration ---
 
 def get_db_engine():
