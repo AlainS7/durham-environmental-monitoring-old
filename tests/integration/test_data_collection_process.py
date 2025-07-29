@@ -1,0 +1,85 @@
+
+import pytest
+import pandas as pd
+from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timedelta
+
+from src.data_collection.daily_data_collector import run_collection_process
+
+@pytest.fixture
+def mock_clients(mocker):
+    """Mocks WUClient and TSIClient fetch_data methods."""
+    mock_wu_client = AsyncMock()
+    mock_tsi_client = AsyncMock()
+
+    mocker.patch('src.data_collection.daily_data_collector.WUClient', return_value=mock_wu_client)
+    mocker.patch('src.data_collection.daily_data_collector.TSIClient', return_value=mock_tsi_client)
+
+    # Sample data for WUClient
+    wu_data = {
+        'stationID': ['KNCGARNE13'],
+        'obsTimeUtc': ['2025-07-27T12:00:00Z'],
+        'tempAvg': [25.0],
+        'humidityAvg': [60.0]
+    }
+    mock_wu_client.fetch_data.return_value = pd.DataFrame(wu_data)
+
+    # Sample data for TSIClient
+    tsi_data = {
+        'cloud_device_id': ['d14rfblfk2973f196c5g'],
+        'cloud_timestamp': ['2025-07-27T12:00:00Z'],
+        'mcpm2x5': [15.5],
+        'temperature': [26.0],
+        'rh': [55.0]
+    }
+    mock_tsi_client.fetch_data.return_value = pd.DataFrame(tsi_data)
+
+    return mock_wu_client, mock_tsi_client
+
+@pytest.fixture
+def mock_db(mocker):
+    """Mocks HotDurhamDB and its engine interactions."""
+    mock_db_instance = MagicMock()
+    mock_engine = MagicMock()
+    mock_connection = MagicMock()
+    mock_connection.execute = MagicMock() # Explicitly mock the execute method
+    mock_transaction = MagicMock()
+
+    mock_db_instance.engine = mock_engine
+    mock_engine.connect.return_value.__enter__.return_value = mock_connection
+    mock_connection.begin.return_value.__enter__.return_value = mock_transaction
+
+    mocker.patch('src.data_collection.daily_data_collector.HotDurhamDB', return_value=mock_db_instance)
+    mocker.patch('pandas.read_sql', return_value=pd.DataFrame({
+        'deployment_pk': [1, 2],
+        'native_sensor_id': ['KNCGARNE13', 'd14rfblfk2973f196c5g'],
+        'sensor_type': ['WU', 'TSI']
+    }))
+    mocker.patch('pandas.DataFrame.to_sql')
+
+    return mock_db_instance, mock_connection
+
+@pytest.mark.asyncio
+async def test_run_collection_process_success(mock_clients, mock_db):
+    """Test successful execution of the data collection process."""
+    mock_wu_client, mock_tsi_client = mock_clients
+    mock_db_instance, mock_connection = mock_db
+    # Mock the new insertion method
+    mock_db_instance.insert_sensor_readings = MagicMock()
+
+    start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    end_date = start_date
+
+    await run_collection_process(start_date, end_date, is_dry_run=False)
+
+    # Verify clients were called with the correct signature
+    mock_wu_client.fetch_data.assert_called_once_with(start_date, end_date)
+    mock_tsi_client.fetch_data.assert_called_once_with(start_date, end_date)
+
+    # Verify the new database insertion method was called
+    mock_db_instance.insert_sensor_readings.assert_called_once()
+    
+    # Optional: inspect the DataFrame passed to the method
+    final_df = mock_db_instance.insert_sensor_readings.call_args[0][0]
+    assert not final_df.empty
+    assert 'deployment_fk' in final_df.columns

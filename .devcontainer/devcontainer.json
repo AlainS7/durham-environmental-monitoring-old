@@ -26,7 +26,8 @@
         "github.copilot-chat",
         "oderwat.indent-rainbow",
         "esbenp.prettier-vscode",
-        "ms-ossdata.vscode-pgsql"
+        "ms-ossdata.vscode-pgsql",
+        "eamodio.gitlens"
       ]
     }
   },

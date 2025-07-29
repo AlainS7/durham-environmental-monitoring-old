@@ -5,9 +5,6 @@ import logging
 from google.cloud import secretmanager
 from dotenv import load_dotenv
 
-# Import to configure logging for the entire application
-import src.utils.logging_setup
-
 # Load environment variables from .env file for local development
 load_dotenv()
 
@@ -16,11 +13,21 @@ class Config:
     A centralized configuration class for the application.
     Handles loading secrets and environment variables.
     """
+    # temporary
+    def _parse_env_var_value(self, env_var_name):
+        value = os.getenv(env_var_name)
+        if value is None:
+            return None
+        # Check if it's in KEY=VALUE format and extract VALUE
+        if '=' in value and value.startswith(env_var_name + '='):
+            return value.split('=', 1)[1].strip()
+        return value.strip() # Just strip if not in KEY=VALUE format
+
     def __init__(self):
-        self.project_id = os.getenv("PROJECT_ID")
-        self.db_creds_secret_id = os.getenv("DB_CREDS_SECRET_ID")
-        self.tsi_creds_secret_id = os.getenv("TSI_CREDS_SECRET_ID")
-        self.wu_api_key_secret_id = os.getenv("WU_API_KEY_SECRET_ID")
+        self.project_id = self._parse_env_var_value("PROJECT_ID")
+        self.db_creds_secret_id = self._parse_env_var_value("DB_CREDS_SECRET_ID")
+        self.tsi_creds_secret_id = self._parse_env_var_value("TSI_CREDS_SECRET_ID")
+        self.wu_api_key_secret_id = self._parse_env_var_value("WU_API_KEY_SECRET_ID")
 
         self._validate_env_vars()
         
@@ -32,6 +39,18 @@ class Config:
         self.wu_api_key = self._get_json_secret(self.wu_api_key_secret_id)
 
         self._validate_secrets()
+
+        # API configurations
+        self.wu_api_config = {
+            "base_url": "https://api.weather.com/v2/pws",
+            "api_key": self.wu_api_key.get("test_api_key")
+        }
+        self.tsi_api_config = {
+            "base_url": "https://api-prd.tsilink.com/api/v3/external",
+            "auth_url": "https://api-prd.tsilink.com/api/v3/external/oauth/client_credential/accesstoken",
+            "client_id": self.tsi_creds.get("key"),
+            "client_secret": self.tsi_creds.get("secret")
+        }
 
         # Define paths to sensor configuration files
         self.sensor_config_paths = {
