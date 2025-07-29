@@ -20,6 +20,64 @@ class EndpointStrategy(Enum):
 log = logging.getLogger(__name__)
 
 class WUClient(BaseClient):
+    def _build_requests(self, start_date: str, end_date: str) -> list:
+        """
+        Builds a list of (station_id, date_str, end_date) tuples for the selected endpoint strategy.
+        - HOURLY: one request per station per day (for /history/hourly endpoint)
+        - MULTIDAY: one request per station per day (for /observations/all/1day endpoint)
+        - ALL: one request per station for the full date range (for /observations/all endpoint)
+        """
+        requests = []
+        date_range = pd.date_range(start=start_date, end=end_date)
+        if self.endpoint_strategy == EndpointStrategy.HOURLY or self.endpoint_strategy == EndpointStrategy.MULTIDAY:
+            # HOURLY and MULTIDAY: build (station, date) requests for each day in range
+            for s in self.stations:
+                if 'stationId' not in s:
+                    continue
+                station_id = s['stationId']
+                for d in date_range:
+                    date_str = d.strftime("%Y-%m-%d")
+                    requests.append((station_id, date_str, None))
+        elif self.endpoint_strategy == EndpointStrategy.ALL:
+            # ALL: build (station, start_date, end_date) requests for each station
+            for s in self.stations:
+                if 'stationId' not in s:
+                    continue
+                station_id = s['stationId']
+                requests.append((station_id, start_date, end_date))
+        else:
+            # Fallback: treat as per-day requests
+            for s in self.stations:
+                if 'stationId' not in s:
+                    continue
+                station_id = s['stationId']
+                for d in date_range:
+                    date_str = d.strftime("%Y-%m-%d")
+                    requests.append((station_id, date_str, None))
+        return requests
+
+    async def _execute_fetches(self, requests: list) -> list:
+        """
+        Executes async fetches for the given requests and collects results.
+        - For ALL: calls _fetch_one(station_id, start_date, end_date)
+        - For HOURLY/MULTIDAY: calls _fetch_one(station_id, date_str)
+        """
+        all_results = []
+        tasks = []
+        for req in requests:
+            if self.endpoint_strategy == EndpointStrategy.ALL:
+                # /observations/all endpoint
+                station_id, start_date, end_date = req
+                tasks.append(self._fetch_one(station_id, start_date, end_date))
+            else:
+                # /history/hourly or /observations/all/1day endpoint
+                station_id, date_str, _ = req
+                tasks.append(self._fetch_one(station_id, date_str))
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching WU Data"):
+            result = await future
+            if result is not None and not result.empty:
+                all_results.append(result)
+        return all_results
     """Client for fetching data from the Weather Underground API."""
 
     # FEAT: Replace boolean parameters with an enum-based endpoint strategy
@@ -115,73 +173,19 @@ class WUClient(BaseClient):
     async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
         """
         Fetches WU rapid (5-min) data for a given date range, aggregates to hourly summaries.
-        If use_all_endpoint is True, fetches all data for each station in one call.
-        If use_all_endpoint is False and force_1day_multiday_mode is True, loops over date range and fetches each day with /1day endpoint.
-        Otherwise, fetches per day per station (default behavior).
-        If use_history_hourly_endpoint is True, uses /history/hourly endpoint (per-day, per-station, most reliable for old data).
+        Uses endpoint_strategy to determine the request pattern:
+        - HOURLY: /history/hourly endpoint (per-station, per-day)
+        - MULTIDAY: /observations/all/1day endpoint (per-station, per-day)
+        - ALL: /observations/all endpoint (per-station, full date range)
         """
         if not self.api_key or not self.stations:
             log.error("Weather Underground API key or station list is not configured properly.")
             return pd.DataFrame()
 
-        all_results = []
-        if self.endpoint_strategy == EndpointStrategy.HOURLY:
-            log.info("Building list of requests for all stations and all days in range using /history/hourly endpoint...")
-            date_range = pd.date_range(start=start_date, end=end_date)
-            for s in self.stations:
-                if 'stationId' not in s:
-                    continue
-                station_id = s['stationId']
-                station_results = []
-                for d in date_range:
-                    date_str = d.strftime("%Y-%m-%d")
-                    result = await self._fetch_one(station_id, date_str)
-                    if result is not None and not result.empty:
-                        station_results.append(result)
-                if station_results:
-                    all_results.append(pd.concat(station_results, ignore_index=True))
-            log.info(f"Fetched data for {len(all_results)} stations (multiday /history/hourly mode).")
-        elif self.endpoint_strategy == EndpointStrategy.ALL:
-            log.info("Building list of requests for all stations (one call per station for full date range)...")
-            tasks = [self._fetch_one(s['stationId'], start_date, end_date)
-                     for s in self.stations if 'stationId' in s]
-            log.info(f"Starting async fetch for {len(tasks)} stations...")
-            for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching WU Data"):
-                result = await future
-                if result is not None and not result.empty:
-                    all_results.append(result)
-            log.info(f"Fetched data for {len(all_results)} stations.")
-        elif self.endpoint_strategy == EndpointStrategy.MULTIDAY:
-            log.info("Building list of requests for all stations and all days in range using /1day endpoint...")
-            date_range = pd.date_range(start=start_date, end=end_date)
-            for s in self.stations:
-                if 'stationId' not in s:
-                    continue
-                station_id = s['stationId']
-                station_results = []
-                for d in date_range:
-                    date_str = d.strftime("%Y-%m-%d")
-                    result = await self._fetch_one(station_id, date_str)
-                    if result is not None and not result.empty:
-                        station_results.append(result)
-                if station_results:
-                    all_results.append(pd.concat(station_results, ignore_index=True))
-            log.info(f"Fetched data for {len(all_results)} stations (multiday /1day mode).")
-        else:
-            log.info("Building list of requests for all stations and dates...")
-            date_range = pd.date_range(start=start_date, end=end_date)
-            requests = [
-                (s['stationId'], d.strftime("%Y-%m-%d"))
-                for s in self.stations if 'stationId' in s
-                for d in date_range
-            ]
-            tasks = [self._fetch_one(station_id, date_str) for station_id, date_str in requests]
-            log.info(f"Starting async fetch for {len(tasks)} station-date combinations...")
-            for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching WU Data"):
-                result = await future
-                if result is not None and not result.empty:
-                    all_results.append(result)
-            log.info(f"Fetched data for {len(all_results)} station-date combinations.")
+        log.info(f"Building list of requests for endpoint strategy: {self.endpoint_strategy.name}")
+        requests = self._build_requests(start_date, end_date)
+        all_results = await self._execute_fetches(requests)
+        log.info(f"Fetched data for {len(all_results)} requests.")
 
         if not all_results:
             log.warning("No data fetched from WU API.")
