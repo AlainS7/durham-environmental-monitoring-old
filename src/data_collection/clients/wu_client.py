@@ -16,18 +16,17 @@ log = logging.getLogger(__name__)
 class WUClient(BaseClient):
     """Client for fetching data from the Weather Underground API."""
 
-    # FEAT: change use_all_endpoint bool as needed (below or --use-all-endpoint)
-    def __init__(self, api_key: str, base_url: str = "https://api.weather.com/v2/pws", use_all_endpoint: bool = False, force_1day_multiday_mode: bool = False, use_history_hourly_endpoint: bool = True):
+    # FEAT: Replace boolean parameters with an enum-based endpoint strategy
+    def __init__(self, api_key: str, base_url: str = "https://api.weather.com/v2/pws", endpoint_strategy: 'EndpointStrategy' = EndpointStrategy.HOURLY):
         """
-        use_all_endpoint: If True, use 'observations/all' (multi-day, no date param), else 'observations/all/1day' (per-day).
-        force_1day_multiday_mode: If True and use_all_endpoint is False, loop over date range and fetch each day with /1day endpoint.
-        use_history_hourly_endpoint: If True, use 'history/hourly' endpoint (per-day, per-station, most reliable for old data).
+        endpoint_strategy: Specifies the endpoint strategy to use. Options are:
+            - EndpointStrategy.ALL: Use 'observations/all' (multi-day, no date param).
+            - EndpointStrategy.MULTIDAY: Use 'observations/all/1day' (per-day, loop over date range).
+            - EndpointStrategy.HOURLY: Use 'history/hourly' endpoint (per-day, per-station, most reliable for old data).
         """
         super().__init__(base_url, api_key)
         self.stations = get_wu_stations()
-        self.use_all_endpoint = use_all_endpoint
-        self.force_1day_multiday_mode = force_1day_multiday_mode
-        self.use_history_hourly_endpoint = use_history_hourly_endpoint
+        self.endpoint_strategy = endpoint_strategy
 
     async def _fetch_one(self, station_id: str, start_date: str, end_date: str = "") -> Optional[pd.DataFrame]:
         """
