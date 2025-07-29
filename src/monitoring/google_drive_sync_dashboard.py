@@ -5,11 +5,10 @@ Real-time monitoring of Google Drive sync operations and health.
 """
 
 import sys
-import json
 import time
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List
 import logging
 
 # Add project root to path

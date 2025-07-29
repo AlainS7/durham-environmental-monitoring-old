@@ -4,17 +4,12 @@ Live Sensor Map with Real-time Data
 Creates an interactive web map showing all sensors with live data updates
 """
 
-import os
 import sys
 import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 import requests
-import httpx
-import pandas as pd
-from flask import Flask, render_template, jsonify, request
-import asyncio
+from flask import Flask, render_template, jsonify
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -156,7 +151,7 @@ class LiveSensorMapServer:
                     return jsonify({'error': 'WU API key not available'}), 500
                 
                 # Get current weather data
-                url = f"https://api.weather.com/v2/pws/observations/current"
+                url = "https://api.weather.com/v2/pws/observations/current"
                 params = {
                     'stationId': sensor_id,
                     'format': 'json',

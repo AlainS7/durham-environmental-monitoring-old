@@ -3,7 +3,6 @@ Path configuration for Hot Durham project.
 Provides centralized path management for the organized structure.
 """
 
-import os
 from pathlib import Path
 
 # Project root

@@ -4,17 +4,11 @@ Hot Durham Public Dashboard
 A public-facing web interface for Durham residents to view real-time air quality and weather data
 """
 
-import os
 import sys
 import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
-import requests
-import httpx
-import pandas as pd
 from flask import Flask, render_template, jsonify, request
-import asyncio
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -168,7 +162,7 @@ class PublicDashboardServer:
                     'last_updated': datetime.now().isoformat(),
                     'status': 'online'
                 })
-            except Exception as e:
+            except Exception:
                 return jsonify({'error': 'Service temporarily unavailable'}), 500
         
         @self.app.route('/api/public/air-quality')
@@ -227,7 +221,7 @@ class PublicDashboardServer:
             try:
                 aqi_data = self.calculate_public_aqi()
                 return jsonify(aqi_data)
-            except Exception as e:
+            except Exception:
                 return jsonify({
                     'overall_status': 'unknown',
                     'message': 'Air quality index temporarily unavailable'
@@ -239,7 +233,7 @@ class PublicDashboardServer:
             try:
                 trends = self.get_24hour_trends()
                 return jsonify(trends)
-            except Exception as e:
+            except Exception:
                 return jsonify({
                     'trends': [],
                     'message': 'Trend data temporarily unavailable'
@@ -480,7 +474,7 @@ class PublicDashboardServer:
                 ],
                 'last_updated': datetime.now().isoformat()
             }
-        except Exception as e:
+        except Exception:
             return {
                 'overall_aqi': None,
                 'status': 'Unknown',
@@ -573,7 +567,7 @@ class PublicDashboardServer:
     
     def run(self, host='0.0.0.0', port=5001, debug=False):
         """Run the public dashboard server"""
-        print(f"🌍 Starting Hot Durham Public Dashboard...")
+        print("🌍 Starting Hot Durham Public Dashboard...")
         print(f"📍 Server: http://{host}:{port}")
         print(f"🔍 Health Check: http://{host}:{port}/health")
         print(f"📊 Dashboard: http://{host}:{port}")

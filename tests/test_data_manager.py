@@ -61,7 +61,7 @@ def test_data_manager_initialization():
 def test_google_drive_integration():
     """Test Google Drive integration setup"""
     try:
-        from data_manager import DataManager, GOOGLE_DRIVE_AVAILABLE
+        from data_manager import GOOGLE_DRIVE_AVAILABLE
         
         print(f"Google Drive integration available: {GOOGLE_DRIVE_AVAILABLE}")
         
@@ -79,7 +79,7 @@ def test_google_drive_integration():
 def test_schedule_integration():
     """Test schedule integration"""
     try:
-        from data_manager import DataManager, SCHEDULE_AVAILABLE
+        from data_manager import SCHEDULE_AVAILABLE
         
         print(f"Schedule module available: {SCHEDULE_AVAILABLE}")
         
@@ -114,7 +114,7 @@ def test_data_manager_methods():
         
         # Test data integrity check
         report = dm.verify_data_integrity()
-        print(f"✅ Data integrity check completed")
+        print("✅ Data integrity check completed")
         print(f"   Total files: {report['total_files']}")
         print(f"   Total size: {report['total_size_mb']:.2f} MB")
         print(f"   Sources: {list(report['sources'].keys())}")

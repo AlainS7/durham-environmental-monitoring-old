@@ -21,23 +21,19 @@ Author: Hot Durham Project
 Date: June 2025
 """
 
-import os
-import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib.dates import DateFormatter, DayLocator
 from matplotlib.ticker import FuncFormatter
 import seaborn as sns
 import base64
 from io import BytesIO
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
 import weasyprint
 import logging
-import json
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -922,7 +918,7 @@ class ProductionSensorPDFReporter:
             </div>
             """
         
-        html_content += f"""
+        html_content += """
             <div class="page-break"></div>
             
             <div class="section-title">Network Summary - TSI Air Quality Sensors</div>
@@ -944,7 +940,7 @@ class ProductionSensorPDFReporter:
             </div>
             """
         
-        html_content += f"""
+        html_content += """
             <div class="page-break"></div>
             
             <!-- Individual Sensor Details -->
@@ -988,7 +984,7 @@ class ProductionSensorPDFReporter:
                     </div>
                     """
             if not has_chart:
-                html_content += f"""
+                html_content += """
                 <div class=\"chart-container\">
                     <div style=\"color: #b00; font-size: 1.2em; padding: 2em; text-align: center;\">
                         No data available for this sensor in the selected period.
@@ -1061,12 +1057,12 @@ def main():
         print("📊 Generating comprehensive PDF report...")
         pdf_path = reporter.generate_pdf_report()
         
-        print(f"✅ PDF report generated successfully!")
+        print("✅ PDF report generated successfully!")
         print(f"📄 Report location: {pdf_path}")
         print(f"📁 Output directory: {reporter.output_dir}")
         
         # Summary statistics
-        print(f"\n📈 Report Summary:")
+        print("\n📈 Report Summary:")
         print(f"   - Total sensors analyzed: {len(reporter.uptime_data)}")
         print(f"   - Average uptime: {np.mean(list(reporter.uptime_data.values())):.1f}%")
         print(f"   - Report period: {reporter.get_period()}")

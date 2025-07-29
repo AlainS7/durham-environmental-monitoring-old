@@ -16,26 +16,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import warnings
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 import joblib
 
 # ML and Analytics imports
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.cluster import KMeans
-from scipy import stats
-from statsmodels.tsa.seasonal import seasonal_decompose
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Statistical and time series
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.seasonal import seasonal_decompose as stats_seasonal_decompose
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 warnings.filterwarnings('ignore')
 
@@ -85,7 +76,7 @@ class PredictiveAnalytics:
             ]
         }
         
-        print(f"🤖 Predictive Analytics System initialized")
+        print("🤖 Predictive Analytics System initialized")
         print(f"📂 Models directory: {self.models_dir}")
         print(f"📊 Output directory: {self.output_dir}")
 
@@ -346,7 +337,7 @@ class PredictiveAnalytics:
         final_count = len(self.historical_data)
         pm25_count = self.historical_data['pm25'].dropna().shape[0] if 'pm25' in self.historical_data.columns else 0
         
-        print(f"✅ Preprocessing complete:")
+        print("✅ Preprocessing complete:")
         print(f"  📊 Final dataset: {final_count} records")
         print(f"  🌬️ PM2.5 readings: {pm25_count} valid values")
         
@@ -900,7 +891,7 @@ class PredictiveAnalytics:
             with open(analysis_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             
-            print(f"✅ Seasonal analysis completed")
+            print("✅ Seasonal analysis completed")
             print(f"💾 Results saved to: {analysis_file}")
             
             return results
@@ -1172,7 +1163,7 @@ class PredictiveAnalytics:
         with open(report_file, 'w') as f:
             json.dump(results, f, indent=2, default=str)
         
-        print(f"\n✅ Complete predictive analytics analysis finished!")
+        print("\n✅ Complete predictive analytics analysis finished!")
         print(f"📊 Report saved to: {report_file}")
         print(f"🔧 Components completed: {', '.join(results['analysis_components'])}")
         
@@ -1190,7 +1181,7 @@ def main():
     results = analytics.run_complete_analysis()
     
     if 'error' not in results:
-        print(f"\n🎉 Analysis completed successfully!")
+        print("\n🎉 Analysis completed successfully!")
         print(f"📈 Components: {len(results['analysis_components'])}")
         
         if 'predictions' in results and 'predictions' in results['predictions']:

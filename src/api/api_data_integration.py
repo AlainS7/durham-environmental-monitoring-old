@@ -4,12 +4,10 @@ Hot Durham System - Feature 3: API Data Integration
 Enhanced API integration with existing data sources and ML predictions
 """
 
-import os
-import json
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 import sys
 
 # Add src to path for imports

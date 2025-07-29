@@ -9,7 +9,6 @@ import sys
 import json
 import pandas as pd
 from datetime import datetime, timedelta
-import shutil
 from pathlib import Path
 import logging
 from typing import Optional, Tuple, Dict, Any
@@ -332,7 +331,6 @@ class DataManager:
         Returns:
             pd.DataFrame: Combined dataframe of recent data
         """
-        import pandas as pd
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
