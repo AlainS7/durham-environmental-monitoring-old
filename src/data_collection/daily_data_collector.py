@@ -2,6 +2,7 @@ import asyncio
 import pandas as pd
 import argparse
 import logging
+import sys
 from datetime import datetime, timedelta
 from sqlalchemy import text
 
@@ -92,16 +93,39 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 
     elif source == 'TSI':
-        # Flattening and renaming for TSI data
+        # Renaming for TSI flat-format data (expanded to match all provided fields)
         rename_map = {
-            'device_id': 'native_sensor_id',
-            'timestamp': 'timestamp', # The TSI client now provides a clean 'timestamp'
-            'mcpm2x5': 'pm2_5', 
-            'temp_c': 'temperature', 
-            'rh_percent': 'humidity',
-            'co2': 'co2',
-            'o3': 'o3',
-            'no2': 'no2'
+            # 'cloud_account_id': 'account_id', # account the sensor belongs to
+            'cloud_device_id': 'native_sensor_id',
+            'cloud_timestamp': 'timestamp',
+            # 'is_indoor': 'is_indoor',
+            # 'is_public': 'is_public',
+            'latitude': 'latitude',
+            'longitude': 'longitude',
+            'mcpm10': 'pm10',
+            'mcpm10_aqi': 'pm10_aqi',
+            'mcpm1x0': 'pm1_0',
+            'mcpm2x5': 'pm2_5',
+            'mcpm2x5_aqi': 'pm2_5_aqi',
+            'mcpm4x0': 'pm4_0',
+            # 'model': 'model',
+            'ncpm0x5': 'ncpm0_5',
+            'ncpm10': 'ncpm10',
+            'ncpm1x0': 'ncpm1_0',
+            'ncpm2x5': 'ncpm2_5',
+            'ncpm4x0': 'ncpm4_0',
+            'rh': 'humidity',
+            # 'serial': 'serial',
+            'temperature': 'temperature',
+            'tpsize': 'tpsize',
+            'co2_ppm': 'co2_ppm',
+            'co_ppm': 'co_ppm',
+            'baro_inhg': 'baro_inhg',
+            'o3_ppb': 'o3_ppb',
+            'no2_ppb': 'no2_ppb',
+            'so2_ppb': 'so2_ppb',
+            'ch2o_ppb': 'ch2o_ppb',
+            'voc_mgm3': 'voc_mgm3'
         }
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 

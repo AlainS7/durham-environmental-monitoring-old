@@ -1,12 +1,15 @@
 
+
 import asyncio
 import pandas as pd
 import logging
 from tqdm import tqdm
 from typing import Optional
+import pydantic
 
 from .base_client import BaseClient
 from src.utils.config_loader import get_wu_stations
+from src.data_collection.models import WUResponse
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +50,13 @@ class WUClient(BaseClient):
             }
             # /history/hourly is under /v2/pws, so base_url is the same
             data = await self._request("GET", endpoint, params=params)
-            if data and 'observations' in data:
-                obs = data['observations']
+            if data:
+                try:
+                    validated = WUResponse.model_validate(data)
+                except pydantic.ValidationError as e:
+                    log.error(f"WU API response validation failed: {e}")
+                    return None
+                obs = [o.model_dump() for o in validated.observations]
                 processed = []
                 for o in obs:
                     # Flatten the 'metric' dict into the main record
@@ -78,8 +86,13 @@ class WUClient(BaseClient):
                 "endDate": end_date if end_date else start_date  # YYYY-MM-DD
             }
             data = await self._request("GET", endpoint, params=params)
-            if data and 'observations' in data:
-                obs = data['observations']
+            if data:
+                try:
+                    validated = WUResponse.model_validate(data)
+                except pydantic.ValidationError as e:
+                    log.error(f"WU API response validation failed: {e}")
+                    return None
+                obs = [o.model_dump() for o in validated.observations]
                 processed = []
                 for o in obs:
                     metric = o.pop('metric', {}) if 'metric' in o and o['metric'] is not None else {}
@@ -106,8 +119,13 @@ class WUClient(BaseClient):
                 "units": "m"
             }
             data = await self._request("GET", endpoint, params=params)
-            if data and 'observations' in data:
-                obs = data['observations']
+            if data:
+                try:
+                    validated = WUResponse.model_validate(data)
+                except pydantic.ValidationError as e:
+                    log.error(f"WU API response validation failed: {e}")
+                    return None
+                obs = [o.model_dump() for o in validated.observations]
                 processed = []
                 for o in obs:
                     metric = o.pop('metric', {}) if 'metric' in o and o['metric'] is not None else {}
