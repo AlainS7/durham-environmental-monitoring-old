@@ -23,8 +23,9 @@ async def test_wu_client_fetch_data_success(mocker):
     """Test successful data fetching for WUClient."""
     mock_response = {
         'observations': [
-            {'stationID': 'KNCGARNE13', 'obsTimeUtc': '2025-07-27T12:00:00Z', 'metric': {'tempAvg': 25.0, 'humidityAvg': 60.0}}
+            {'stationID': 'KNCGARNE13', 'obsTimeUtc': '2025-07-27T12:00:00Z', 'tempAvg': 25.0, 'humidityAvg': 60.0}
         ]
+    }
     }
     mocker.patch('src.data_collection.clients.base_client.BaseClient._request', return_value=mock_response)
     mocker.patch('src.data_collection.clients.wu_client.get_wu_stations', return_value=[{'stationId': 'KNCGARNE13'}])
