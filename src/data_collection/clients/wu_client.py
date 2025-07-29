@@ -6,10 +6,16 @@ import logging
 from tqdm import tqdm
 from typing import Optional
 import pydantic
+from enum import Enum
 
 from .base_client import BaseClient
 from src.utils.config_loader import get_wu_stations
 from src.data_collection.models import WUResponse
+
+class EndpointStrategy(Enum):
+    ALL = "all"
+    MULTIDAY = "multiday"
+    HOURLY = "hourly"
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +23,7 @@ class WUClient(BaseClient):
     """Client for fetching data from the Weather Underground API."""
 
     # FEAT: Replace boolean parameters with an enum-based endpoint strategy
-    def __init__(self, api_key: str, base_url: str = "https://api.weather.com/v2/pws", endpoint_strategy: 'EndpointStrategy' = EndpointStrategy.HOURLY):
+    def __init__(self, api_key: str, base_url: str = "https://api.weather.com/v2/pws", endpoint_strategy: EndpointStrategy = EndpointStrategy.HOURLY):
         """
         endpoint_strategy: Specifies the endpoint strategy to use. Options are:
             - EndpointStrategy.ALL: Use 'observations/all' (multi-day, no date param).
@@ -37,7 +43,7 @@ class WUClient(BaseClient):
         """
         data = None
         filter_end_date_for_helper = "" # Initialize for clarity
-        if self.use_history_hourly_endpoint:
+        if self.endpoint_strategy == EndpointStrategy.HOURLY:
             # Use /history/hourly endpoint (per-day, per-station)
             endpoint = "history/hourly"
             date_param = start_date.replace("-", "") # The date param for this endpoint is YYYYMMDD
@@ -51,7 +57,7 @@ class WUClient(BaseClient):
             }
             data = await self._request("GET", endpoint, params=params)
             filter_end_date_for_helper = start_date # For history/hourly, filter for just the start_date
-        elif self.use_all_endpoint:
+        elif self.endpoint_strategy == EndpointStrategy.ALL:
             endpoint = "observations/all"
             filter_end_date_for_helper = end_date if end_date else start_date # Use the actual end_date for filtering
             params = {
@@ -119,7 +125,7 @@ class WUClient(BaseClient):
             return pd.DataFrame()
 
         all_results = []
-        if self.use_history_hourly_endpoint:
+        if self.endpoint_strategy == EndpointStrategy.HOURLY:
             log.info("Building list of requests for all stations and all days in range using /history/hourly endpoint...")
             date_range = pd.date_range(start=start_date, end=end_date)
             for s in self.stations:
@@ -135,7 +141,7 @@ class WUClient(BaseClient):
                 if station_results:
                     all_results.append(pd.concat(station_results, ignore_index=True))
             log.info(f"Fetched data for {len(all_results)} stations (multiday /history/hourly mode).")
-        elif self.use_all_endpoint:
+        elif self.endpoint_strategy == EndpointStrategy.ALL:
             log.info("Building list of requests for all stations (one call per station for full date range)...")
             tasks = [self._fetch_one(s['stationId'], start_date, end_date)
                      for s in self.stations if 'stationId' in s]
@@ -145,7 +151,7 @@ class WUClient(BaseClient):
                 if result is not None and not result.empty:
                     all_results.append(result)
             log.info(f"Fetched data for {len(all_results)} stations.")
-        elif self.force_1day_multiday_mode:
+        elif self.endpoint_strategy == EndpointStrategy.MULTIDAY:
             log.info("Building list of requests for all stations and all days in range using /1day endpoint...")
             date_range = pd.date_range(start=start_date, end=end_date)
             for s in self.stations:
