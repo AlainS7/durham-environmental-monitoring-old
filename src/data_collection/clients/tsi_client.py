@@ -1,6 +1,5 @@
 
 import asyncio
-import httpx
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
@@ -25,18 +24,21 @@ class TSIClient(BaseClient):
         self.headers: Optional[Dict[str, str]] = None
 
     async def _authenticate(self) -> bool:
-        """Authenticates with the TSI API to get an access token."""
+        """Authenticates with the TSI API to get an access token using the managed httpx.AsyncClient."""
         params = {'grant_type': 'client_credentials'}
         data = {'client_id': self.client_id, 'client_secret': self.client_secret}
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        if not self.client:
+            log.error("TSIClient httpx.AsyncClient not initialized. Use TSIClient within an 'async with' block.")
+            return False
         try:
-            log.info("Trying TSI authentication with params and form-encoded body...")
-            auth_resp = await self._http_client.post(self.auth_url, params=params, data=data, headers=headers)
-                auth_resp.raise_for_status()
-                auth_json = auth_resp.json()
-                self.headers = {"Authorization": f"Bearer {auth_json['access_token']}", "Accept": "application/json"}
-                log.info("TSI authentication succeeded with params and form-encoded body.")
-                return True
+            log.info("Trying TSI authentication with params and form-encoded body using managed client...")
+            auth_resp = await self.client.post(self.auth_url, params=params, data=data, headers=headers)
+            auth_resp.raise_for_status()
+            auth_json = auth_resp.json()
+            self.headers = {"Authorization": f"Bearer {auth_json['access_token']}", "Accept": "application/json"}
+            log.info("TSI authentication succeeded with params and form-encoded body.")
+            return True
         except Exception as e:
             log.error(f"TSI authentication failed: {e}", exc_info=True)
             return False
