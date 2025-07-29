@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
@@ -30,30 +30,31 @@ from datetime import datetime
 
 # --- WU Models ---
 
-class WUImperial(BaseModel):
-    tempHigh: Optional[float] = None
-    tempLow: Optional[float] = None
-    tempAvg: Optional[float] = None
-    windspeedHigh: Optional[float] = None
-    windspeedLow: Optional[float] = None
-    windspeedAvg: Optional[float] = None
-    windgustHigh: Optional[float] = None
-    windgustLow: Optional[float] = None
-    windgustAvg: Optional[float] = None
-    dewptHigh: Optional[float] = None
-    dewptLow: Optional[float] = None
-    dewptAvg: Optional[float] = None
-    windchillHigh: Optional[float] = None
-    windchillLow: Optional[float] = None
-    windchillAvg: Optional[float] = None
-    heatindexHigh: Optional[float] = None
-    heatindexLow: Optional[float] = None
-    heatindexAvg: Optional[float] = None
-    pressureMax: Optional[float] = None
-    pressureMin: Optional[float] = None
-    pressureTrend: Optional[float] = None
-    precipRate: Optional[float] = None
-    precipTotal: Optional[float] = None
+# only for imperial WU data (currently only using WU)
+# class WUImperial(BaseModel):
+#     tempHigh: Optional[float] = None
+#     tempLow: Optional[float] = None
+#     tempAvg: Optional[float] = None
+#     windspeedHigh: Optional[float] = None
+#     windspeedLow: Optional[float] = None
+#     windspeedAvg: Optional[float] = None
+#     windgustHigh: Optional[float] = None
+#     windgustLow: Optional[float] = None
+#     windgustAvg: Optional[float] = None
+#     dewptHigh: Optional[float] = None
+#     dewptLow: Optional[float] = None
+#     dewptAvg: Optional[float] = None
+#     windchillHigh: Optional[float] = None
+#     windchillLow: Optional[float] = None
+#     windchillAvg: Optional[float] = None
+#     heatindexHigh: Optional[float] = None
+#     heatindexLow: Optional[float] = None
+#     heatindexAvg: Optional[float] = None
+#     pressureMax: Optional[float] = None
+#     pressureMin: Optional[float] = None
+#     pressureTrend: Optional[float] = None
+#     precipRate: Optional[float] = None
+#     precipTotal: Optional[float] = None
 
 class WUObservation(BaseModel):
     stationID: str
@@ -93,7 +94,7 @@ class WUObservation(BaseModel):
     windspeedAvg: Optional[float] = None
     windspeedHigh: Optional[float] = None
     windspeedLow: Optional[float] = None
-    imperial: Optional[WUImperial] = None
+    # imperial: Optional[WUImperial] = None
     # Add metric: Optional[WUMetric] = None if you use metric units
 
 class WUResponse(BaseModel):

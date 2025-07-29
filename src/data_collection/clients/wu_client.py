@@ -34,12 +34,14 @@ class WUClient(BaseClient):
         Fetches all rapid observations for a single station and date range, returns as DataFrame.
         If using /all endpoint, fetches all data for the range in one call; else, expects start_date == end_date and fetches for that day.
         If using /history/hourly endpoint, fetches hourly summary for a single day and station.
+        Uses Pydantic WUResponse for validation.
         """
+        data = None
+        filter_end_date_for_helper = "" # Initialize for clarity
         if self.use_history_hourly_endpoint:
             # Use /history/hourly endpoint (per-day, per-station)
             endpoint = "history/hourly"
-            # The date param for this endpoint is YYYYMMDD
-            date_param = start_date.replace("-", "")
+            date_param = start_date.replace("-", "") # The date param for this endpoint is YYYYMMDD
             params = {
                 "stationId": station_id,
                 "date": date_param,
@@ -48,70 +50,23 @@ class WUClient(BaseClient):
                 "units": "m",
                 "numericPrecision": "decimal"
             }
-            # /history/hourly is under /v2/pws, so base_url is the same
             data = await self._request("GET", endpoint, params=params)
-            if data:
-                try:
-                    validated = WUResponse.model_validate(data)
-                except pydantic.ValidationError as e:
-                    log.error(f"WU API response validation failed: {e}")
-                    return None
-                obs = [o.model_dump() for o in validated.observations]
-                processed = []
-                for o in obs:
-                    # Flatten the 'metric' dict into the main record
-                    metric = o.pop('metric', {}) if 'metric' in o and o['metric'] is not None else {}
-                    processed.append({**o, **metric})
-                if processed:
-                    df = pd.DataFrame(processed)
-                    log.debug(f"[WUClient _fetch_one] DataFrame shape for station {station_id} on {start_date}: {df.shape}")
-                    df['stationID'] = station_id
-                    # Filter to just the requested date
-                    if 'obsTimeUtc' in df.columns:
-                        df['obsTimeUtc'] = pd.to_datetime(df['obsTimeUtc'])
-                        date_start = pd.to_datetime(start_date).tz_localize('UTC')
-                        date_end = date_start + pd.Timedelta(days=1)
-                        mask = (df['obsTimeUtc'] >= date_start) & (df['obsTimeUtc'] < date_end)
-                        df = df.loc[mask]
-                    return df
-            return None
+            filter_end_date_for_helper = start_date # For history/hourly, filter for just the start_date
         elif self.use_all_endpoint:
             endpoint = "observations/all"
+            filter_end_date_for_helper = end_date if end_date else start_date # Use the actual end_date for filtering
             params = {
                 "stationId": station_id,
                 "format": "json",
                 "apiKey": self.api_key,
                 "units": "m",
                 "startDate": start_date,  # YYYY-MM-DD
-                "endDate": end_date if end_date else start_date  # YYYY-MM-DD
+                "endDate": filter_end_date_for_helper  # YYYY-MM-DD
             }
             data = await self._request("GET", endpoint, params=params)
-            if data:
-                try:
-                    validated = WUResponse.model_validate(data)
-                except pydantic.ValidationError as e:
-                    log.error(f"WU API response validation failed: {e}")
-                    return None
-                obs = [o.model_dump() for o in validated.observations]
-                processed = []
-                for o in obs:
-                    metric = o.pop('metric', {}) if 'metric' in o and o['metric'] is not None else {}
-                    processed.append({**o, **metric})
-                if processed:
-                    df = pd.DataFrame(processed)
-                    log.debug(f"[WUClient _fetch_one] DataFrame shape for station {station_id} from {start_date} to {end_date}: {df.shape}")
-                    df['stationID'] = station_id
-                    if 'obsTimeUtc' in df.columns:
-                        df['obsTimeUtc'] = pd.to_datetime(df['obsTimeUtc'])
-                        date_start = pd.to_datetime(start_date).tz_localize('UTC')
-                        date_end_str = end_date if end_date else start_date
-                        date_end = pd.to_datetime(date_end_str).tz_localize('UTC') + pd.Timedelta(days=1)
-                        mask = (df['obsTimeUtc'] >= date_start) & (df['obsTimeUtc'] < date_end)
-                        df = df.loc[mask]
-                    return df
-            return None
         else:
             endpoint = "observations/all/1day"
+            filter_end_date_for_helper = start_date # For 1day endpoint, filter for just the start_date
             params = {
                 "stationId": station_id,
                 "format": "json",
@@ -119,30 +74,38 @@ class WUClient(BaseClient):
                 "units": "m"
             }
             data = await self._request("GET", endpoint, params=params)
-            if data:
-                try:
-                    validated = WUResponse.model_validate(data)
-                except pydantic.ValidationError as e:
-                    log.error(f"WU API response validation failed: {e}")
-                    return None
-                obs = [o.model_dump() for o in validated.observations]
-                processed = []
-                for o in obs:
-                    metric = o.pop('metric', {}) if 'metric' in o and o['metric'] is not None else {}
-                    processed.append({**o, **metric})
-                if processed:
-                    df = pd.DataFrame(processed)
-                    log.debug(f"[WUClient _fetch_one] DataFrame shape for station {station_id} on {start_date}: {df.shape}")
-                    df['stationID'] = station_id
-                    if 'obsTimeUtc' in df.columns:
-                        df['obsTimeUtc'] = pd.to_datetime(df['obsTimeUtc'])
-                        date_start = pd.to_datetime(start_date).tz_localize('UTC')
-                        date_end_str = end_date if end_date else start_date
-                        date_end = pd.to_datetime(date_end_str).tz_localize('UTC') + pd.Timedelta(days=1)
-                        mask = (df['obsTimeUtc'] >= date_start) & (df['obsTimeUtc'] < date_end)
-                        df = df.loc[mask]
-                    return df
+
+        # Validate and parse using Pydantic WUResponse
+        try:
+            validated = WUResponse.model_validate(data)
+        except pydantic.ValidationError as e:
+            log.error(f"WU API response validation failed for station {station_id}: {e}")
             return None
+
+        # Convert validated observations to dicts for DataFrame
+        obs_dicts = [obs.model_dump() for obs in validated.observations]
+        # The 'imperial' block is redundant since we requested metric units.
+        # We will only use the top-level metric values.
+        for o in obs_dicts:
+            o.pop('imperial', None) # Safely remove the imperial block
+
+        if obs_dicts:
+            df = pd.DataFrame(obs_dicts)
+            log.debug(f"Raw DataFrame shape for station {station_id}: {df.shape}")
+            df['stationID'] = station_id
+            # Filter to just the requested date range
+            if 'obsTimeUtc' in df.columns:
+                df['obsTimeUtc'] = pd.to_datetime(df['obsTimeUtc'])
+                date_start_utc = pd.to_datetime(start_date).tz_localize('UTC')
+                # The filter_end_date is inclusive, so we add one day for the exclusive upper bound
+                date_end_utc = pd.to_datetime(filter_end_date_for_helper).tz_localize('UTC') + pd.Timedelta(days=1)
+                mask = (df['obsTimeUtc'] >= date_start_utc) & (df['obsTimeUtc'] < date_end_utc)
+                df = df.loc[mask]
+                log.debug(f"Filtered DataFrame shape for station {station_id} from {start_date} to {filter_end_date_for_helper}: {df.shape}")
+            return df
+        return None
+
+    # _process_and_filter_observations is no longer needed; validation and flattening are handled in _fetch_one
 
     async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
         """
