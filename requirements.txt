@@ -143,4 +143,5 @@ tzdata==2025.2
 urllib3==2.5.0
     # via requests
 zipp==3.23.0
+ruff
     # via importlib-metadata
