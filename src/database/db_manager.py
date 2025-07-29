@@ -118,7 +118,7 @@ class HotDurhamDB:
 
         # Ensure all keys are str for SQLAlchemy insert
         log.debug("Converting DataFrame to list of dicts for upsert...")
-        rows = [dict((str(k), v) for k, v in row.items()) for row in df.to_dict(orient='records')]
+        rows = df.to_dict(orient='records')
         total_rows = len(rows)
         log.info(f"Prepared {total_rows} rows for upsert into sensor_readings table.")
         if not rows:
