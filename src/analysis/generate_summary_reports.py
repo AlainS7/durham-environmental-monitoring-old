@@ -4,12 +4,9 @@ Comprehensive Summary Report Generator for Hot Durham Weather Monitoring System
 Generates detailed reports, aggregations, and visualizations from existing data.
 """
 
-import os
-import sys
 import json
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path

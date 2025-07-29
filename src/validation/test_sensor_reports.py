@@ -6,14 +6,12 @@ This module generates validation reports comparing test sensor data with product
 uploads reports to Google Drive, and provides insights into sensor accuracy.
 """
 
-import os
 import sys
 import json
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 import logging
 
 # Add project root to path

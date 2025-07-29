@@ -27,8 +27,8 @@ sys.path.insert(0, PROJECT_ROOT)
 
 # Import configuration and core components
 from config.automated_data_pull_config import (
-    LOGGING_CONFIG, RAW_DATA_PATH, SHEET_METADATA_PATH, DEFAULT_PULL_TYPE, 
-    DEFAULT_FILE_FORMAT, ENABLED_SOURCES, GOOGLE_CREDS_PATH, GOOGLE_API_SCOPE, 
+    LOGGING_CONFIG, SHEET_METADATA_PATH, DEFAULT_PULL_TYPE, 
+    ENABLED_SOURCES, GOOGLE_CREDS_PATH, GOOGLE_API_SCOPE, 
     SHARE_EMAIL
 )
 from config.alert_manager_config import SMTP_CONFIG, RECIPIENT_EMAILS

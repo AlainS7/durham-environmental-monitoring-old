@@ -8,7 +8,6 @@ and provides a comprehensive analysis of the Hot Durham sensor data.
 """
 
 import sys
-import os
 from pathlib import Path
 import datetime
 import json
@@ -53,7 +52,7 @@ def run_complete_analysis_suite():
             "critical_issues": len([r for r in anomaly_report['recommendations'] if r['priority'] == 'critical'])
         }
         
-        print(f"✅ Anomaly detection completed")
+        print("✅ Anomaly detection completed")
         print(f"   - {anomaly_report['analysis_summary']['wu_data_records']:,} WU records analyzed")
         print(f"   - {anomaly_report['analysis_summary']['tsi_data_records']:,} TSI records analyzed") 
         print(f"   - {len(anomaly_report['recommendations'])} recommendations generated")
@@ -83,7 +82,7 @@ def run_complete_analysis_suite():
             "standard_sensors": schedule['summary']['standard_sensors']
         }
         
-        print(f"✅ Prioritized pull system configured")
+        print("✅ Prioritized pull system configured")
         print(f"   - {schedule['summary']['total_sensors']} total sensors classified")
         print(f"   - {schedule['summary']['critical_sensors']} critical priority sensors")
         print(f"   - {schedule['summary']['high_priority_sensors']} high priority sensors")
@@ -205,7 +204,7 @@ def run_complete_analysis_suite():
             **health_status
         }
         
-        print(f"✅ System health check completed")
+        print("✅ System health check completed")
         print(f"   - Raw data available: {'Yes' if health_status['raw_data_available'] else 'No'}")
         print(f"   - WU data files: {health_status['wu_data_files']}")
         print(f"   - TSI data files: {health_status['tsi_data_files']}")
@@ -246,7 +245,7 @@ def run_complete_analysis_suite():
     with open(results_file, 'w') as f:
         json.dump(analysis_results, f, indent=2)
     
-    print(f"✅ Analysis suite completed!")
+    print("✅ Analysis suite completed!")
     print(f"   - {completed_components}/{total_components} components successful")
     print(f"   - Success rate: {analysis_results['summary']['success_rate']:.1f}%")
     print(f"   - Total duration: {analysis_results['total_duration_minutes']:.1f} minutes")

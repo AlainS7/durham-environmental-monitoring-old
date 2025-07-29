@@ -10,13 +10,11 @@ This module enhances the existing anomaly detection system with:
 - Configurable thresholds and sensitivity
 """
 
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 import smtplib
 import requests
 import logging
@@ -55,7 +53,7 @@ class EnhancedAnomalyDetector(AnomalyDetectionSystem):
         # Setup logging
         self.setup_logging()
         
-        print(f"🚨 Enhanced Anomaly Detection System initialized")
+        print("🚨 Enhanced Anomaly Detection System initialized")
         print(f"📧 Alerts directory: {self.alerts_dir}")
 
     def load_alert_configuration(self) -> Dict:

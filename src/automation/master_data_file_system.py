@@ -17,15 +17,13 @@ Features:
 - Automatic Google Drive synchronization for master files
 """
 
-import os
 import sys
 import json
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
-from typing import Optional, Dict, List, Tuple, Any
+from typing import Optional, Dict, List, Any
 import sqlite3
 import shutil
 import hashlib
@@ -965,7 +963,7 @@ class MasterDataFileSystem:
         if self.combined_master_file.exists():
             try:
                 combined_df = pd.read_csv(self.combined_master_file)
-                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce');
+                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
                 
                 summary["combined_data"] = {
                     "file_exists": True,

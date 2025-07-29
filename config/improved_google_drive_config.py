@@ -6,8 +6,7 @@ Implements the recommended folder structure improvements.
 
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional
-import json
+from typing import Dict
 
 # Improved Google Drive folder structure
 IMPROVED_GOOGLE_DRIVE_CONFIG = {
@@ -317,7 +316,7 @@ if __name__ == "__main__":
         status = "✅" if passed else "❌"
         print(f"   {status} {check.replace('_', ' ').title()}")
     
-    print(f"\n📊 EXAMPLE PATHS:")
+    print("\n📊 EXAMPLE PATHS:")
     print(f"Production WU Data: {get_production_path('raw', 'WU')}")
     print(f"Testing WU Data: {get_testing_path('sensors', 'WU', '20250614')}")
     print(f"Archive Daily: {get_archive_path('daily', '20250614')}")

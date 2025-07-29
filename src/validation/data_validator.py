@@ -2,9 +2,8 @@
 Data validation framework for sensor data
 """
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 @dataclass
 class ValidationResult:

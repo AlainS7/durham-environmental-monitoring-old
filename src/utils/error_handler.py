@@ -4,7 +4,7 @@ Enhanced error handling and recovery system
 import traceback
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pathlib import Path
 
 class ErrorHandler:

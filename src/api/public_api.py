@@ -4,20 +4,16 @@ Hot Durham System - Feature 3: Public API & Developer Portal
 RESTful API for public access to Durham air quality data
 """
 
-import os
 import json
-import time
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-from flask import Flask, request, jsonify, render_template_string
+from typing import Dict, List, Optional
+from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
-import pandas as pd
 import sqlite3
-import hashlib
 import secrets
 
 class PublicAPI:

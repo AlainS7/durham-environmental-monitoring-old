@@ -29,7 +29,6 @@ Date: June 2025
 """
 
 import sys
-import os
 import json
 import argparse
 import schedule

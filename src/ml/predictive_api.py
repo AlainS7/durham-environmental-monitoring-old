@@ -10,13 +10,11 @@ This module provides:
 - Mobile-friendly JSON responses
 """
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
-import json
 from pathlib import Path
 import sys
-import traceback
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Add project paths
 project_root = Path(__file__).parent.parent.parent
@@ -53,7 +51,7 @@ class PredictiveAnalyticsAPI:
         self.prediction_cache = {}
         self.cache_expiry = timedelta(hours=1)
         
-        print(f"🤖 Predictive Analytics API initialized")
+        print("🤖 Predictive Analytics API initialized")
 
     def get_air_quality_forecast(self, hours_ahead: int = 24) -> Dict:
         """Get air quality forecast with caching."""

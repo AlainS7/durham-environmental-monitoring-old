@@ -5,7 +5,7 @@ import time
 import psutil
 import threading
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
