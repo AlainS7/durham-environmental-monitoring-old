@@ -8,19 +8,12 @@ Addresses todo item: "Investigate reasons for any observed decreases or anomalie
 """
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from datetime import datetime, timedelta
 import json
 import warnings
 from scipy import stats
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import plotly.express as px
 
 warnings.filterwarnings('ignore')
 

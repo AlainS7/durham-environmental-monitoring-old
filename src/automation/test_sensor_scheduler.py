@@ -15,7 +15,6 @@ Features:
 - Google Drive integration for test data
 """
 
-import os
 import sys
 import schedule
 import time
@@ -25,7 +24,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import traceback
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import nest_asyncio
+import httpx
+import pandas as pd
 
 # Add project paths
 project_root = Path(__file__).parent.parent.parent
@@ -41,17 +43,12 @@ except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)
 
-import nest_asyncio
-import httpx
-import requests
-import pandas as pd
-
 nest_asyncio.apply()
 
 class TestSensorScheduler:
     """Scheduler for automated 15-minute test sensor data collection."""
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: Optional[str] = None):
         self.project_root = project_root
         self.config_path = Path(config_path) if config_path else project_root / "config" / "test_sensor_scheduler_config.json"
         self.log_file = project_root / "logs" / "test_sensor_scheduler.log"
@@ -200,7 +197,7 @@ class TestSensorScheduler:
         self.logger.info("Scheduled hourly health checks")
         self.logger.info("Scheduled daily cleanup at 01:00")
     
-    async def collect_wu_sensor_data(self, sensor_id: str, collection_time: datetime = None) -> Dict[str, Any]:
+    async def collect_wu_sensor_data(self, sensor_id: str, collection_time: Optional[datetime] = None) -> Dict[str, Any]:
         """Collect data from a single Weather Underground sensor."""
         if collection_time is None:
             collection_time = datetime.now()
@@ -679,9 +676,20 @@ class TestSensorScheduler:
     def get_schedule_info(self):
         """Get information about scheduled jobs."""
         jobs_info = []
+        import functools
         for job in schedule.jobs:
+            # Safely get the function name, handling functools.partial and others
+            job_func = job.job_func
+            if job_func is None:
+                job_name = "unknown"
+            elif isinstance(job_func, functools.partial):
+                job_name = getattr(job_func.func, "__name__", str(job_func.func))
+            elif hasattr(job_func, "__name__"):
+                job_name = job_func.__name__
+            else:
+                job_name = str(job_func)
             jobs_info.append({
-                "job": str(job.job_func.__name__),
+                "job": job_name,
                 "next_run": job.next_run.isoformat() if job.next_run else None,
                 "interval": str(job.interval),
                 "unit": job.unit if hasattr(job, 'unit') else 'unknown'

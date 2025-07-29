@@ -89,7 +89,7 @@ class TestDailySheetsSystem(unittest.TestCase):
         wu_available = data['wu'] is not None and not data['wu'].empty
         tsi_available = data['tsi'] is not None and not data['tsi'].empty
         
-        print(f"✅ Data fetch completed")
+        print("✅ Data fetch completed")
         print(f"  - WU data available: {wu_available}")
         print(f"  - TSI data available: {tsi_available}")
         

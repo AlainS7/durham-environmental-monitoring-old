@@ -6,7 +6,7 @@ Real-time monitoring of Google Drive sync health and performance.
 
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 import logging

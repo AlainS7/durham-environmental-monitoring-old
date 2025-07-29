@@ -184,6 +184,7 @@ wheel==0.45.1
 zipp==3.23.0
 ruff>=0.6.0
     # via importlib-metadata
+jinja2
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip

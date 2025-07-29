@@ -12,7 +12,6 @@ Key Features:
 """
 
 import matplotlib.pyplot as plt
-import pandas as pd
 
 def create_time_series_plot(data, x_col, y_col, title, x_label, y_label, file_path):
     """Creates and saves a time-series plot from the given data."""

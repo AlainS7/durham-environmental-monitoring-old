@@ -5,7 +5,6 @@ Monitor production deployment health and performance
 """
 
 import json
-import time
 import psutil
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -105,7 +104,7 @@ class ProductionMonitor:
         elif pred_status['status'] == 'stale':
             print(f"  ⚠️ Stale predictions ({pred_status['age_hours']:.1f}h old)")
         else:
-            print(f"  ❌ No predictions available")
+            print("  ❌ No predictions available")
         
         # Model performance
         print("\n🤖 Model Performance:")
@@ -114,7 +113,7 @@ class ProductionMonitor:
             for model_name, metrics in model_status['performance'].items():
                 print(f"  {model_name}: R²={metrics['r2_score']:.3f}, MAE={metrics['mae']:.2f}")
         else:
-            print(f"  ❌ No model performance data available")
+            print("  ❌ No model performance data available")
         
         # Service log check
         print("\n📝 Service Logs:")
@@ -130,11 +129,11 @@ class ProductionMonitor:
                     if recent_errors:
                         print(f"  ⚠️ {len(recent_errors)} recent errors found")
                     else:
-                        print(f"  ✅ No recent errors")
+                        print("  ✅ No recent errors")
             except:
-                print(f"  ⚠️ Could not read log file")
+                print("  ⚠️ Could not read log file")
         else:
-            print(f"  ❌ No log file found")
+            print("  ❌ No log file found")
         
         print("\n" + "=" * 50)
         return {

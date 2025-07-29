@@ -6,13 +6,11 @@ Implements the recommended improvements for the Hot Durham project.
 
 import threading
 import time
-import asyncio
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass
-import json
 from queue import Queue, Empty
 import hashlib
 
@@ -575,13 +573,13 @@ if __name__ == "__main__":
     print(manager.create_health_dashboard())
     
     # Demonstrate rate limiting
-    print(f"\n🔄 Rate Limiting Test:")
+    print("\n🔄 Rate Limiting Test:")
     for i in range(5):
         can_proceed = manager._check_rate_limit()
         print(f"   Request {i+1}: {'✅ Allowed' if can_proceed else '❌ Limited'}")
     
     # Show configuration
-    print(f"\n⚙️ Current Configuration:")
+    print("\n⚙️ Current Configuration:")
     print(f"   Rate Limit: {manager.config['rate_limiting']['requests_per_second']} req/sec")
     print(f"   Chunk Size: {manager.config['rate_limiting']['chunk_size_mb']} MB")
     print(f"   Max Retries: {manager.config['rate_limiting']['max_retries']}")

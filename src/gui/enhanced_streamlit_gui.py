@@ -6,15 +6,11 @@ Supports both Weather Underground and TSI data with improved live preview capabi
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from datetime import datetime, timedelta
 import subprocess
 import os
-import json
 import sys
 from pathlib import Path
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 

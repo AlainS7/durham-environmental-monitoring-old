@@ -1,3 +1,27 @@
+
+
+
+import pytest
+import unittest
+from datetime import datetime, timedelta
+import os
+import sys
+
+
+
+# Check for WeasyPrint and its system dependencies before importing the script
+WEASYPRINT_AVAILABLE = False
+try:
+    import weasyprint  # type: ignore # noqa: F401
+    WEASYPRINT_AVAILABLE = True
+except (ImportError, OSError):
+    WEASYPRINT_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not WEASYPRINT_AVAILABLE,
+    reason="WeasyPrint or its system dependencies are not available"
+)
+
 """
 Unit Tests for the Automated Data Pull Script.
 
@@ -11,20 +35,16 @@ Key Tests:
 - `test_get_date_range_monthly`: Checks that the monthly pull targets the entire previous month.
 """
 
-import unittest
-from datetime import datetime, timedelta
-import os
-import sys
 
 # Add project root to Python path for module imports
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
-from scripts.automated_data_pull import get_date_range, parse_arguments
 
 class TestAutomatedDataPull(unittest.TestCase):
 
     def test_get_date_range_daily(self):
+        from scripts.automated_data_pull import get_date_range
         """Verify that the daily date range is always yesterday."""
         yesterday = datetime.now() - timedelta(days=1)
         expected_date = yesterday.strftime('%Y-%m-%d')
@@ -33,6 +53,7 @@ class TestAutomatedDataPull(unittest.TestCase):
         self.assertEqual(end_date, expected_date)
 
     def test_get_date_range_weekly(self):
+        from scripts.automated_data_pull import get_date_range
         """Verify that the weekly date range covers the previous Monday to Sunday."""
         today = datetime.now()
         # Calculate the most recent Monday
@@ -47,6 +68,7 @@ class TestAutomatedDataPull(unittest.TestCase):
         self.assertEqual(end_date, expected_end_date.strftime('%Y-%m-%d'))
 
     def test_get_date_range_monthly(self):
+        from scripts.automated_data_pull import get_date_range
         """Verify that the monthly date range covers the entire previous month."""
         today = datetime.now()
         first_day_of_this_month = today.replace(day=1)
@@ -62,11 +84,13 @@ class TestAutomatedDataPull(unittest.TestCase):
         self.assertEqual(end_date, expected_end_date)
 
     def test_unsupported_pull_type(self):
+        from scripts.automated_data_pull import get_date_range
         """Verify that an unsupported pull type raises a ValueError."""
         with self.assertRaises(ValueError):
             get_date_range('yearly')
 
     def test_parse_arguments_defaults(self):
+        from scripts.automated_data_pull import parse_arguments
         """Verify that default arguments are parsed correctly."""
         sys.argv = ['test_automated_data_pull.py']
         args = parse_arguments()
@@ -75,6 +99,7 @@ class TestAutomatedDataPull(unittest.TestCase):
         self.assertFalse(args.no_sync)
 
     def test_parse_arguments_custom(self):
+        from scripts.automated_data_pull import parse_arguments
         """Verify that custom arguments are parsed correctly."""
         sys.argv = ['test_automated_data_pull.py', '--pull_type', 'weekly', '--no_sheets', '--no_sync']
         args = parse_arguments()
