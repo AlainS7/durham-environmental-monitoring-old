@@ -146,3 +146,5 @@ zipp==3.23.0
 ruff
     # via importlib-metadata
 jinja2
+
+markitdown-mcp

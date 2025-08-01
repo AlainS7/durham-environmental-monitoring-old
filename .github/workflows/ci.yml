@@ -1,4 +1,4 @@
-# This is a basic workflow to help you get started with Actions.
+# This workflow uses 'uv' to speed up testing and linting.
 
 name: Python application test with Ruff and Pytest
 
@@ -17,33 +17,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
-    - name: Set up virtual environment and install dependencies
-      run: |
-        python -m venv .venv
-        source .venv/bin/activate
-        python -m pip install --upgrade pip setuptools
-        pip install -r requirements-dev.txt
-        pip install pip-audit
-        pip install ruff
+    # The official action to install uv. It's very fast.
+    - name: Install uv
+      uses: astral-sh/setup-uv@v1
 
-    - name: Scan for vulnerabilities
+    - name: Install dependencies
       run: |
-        source .venv/bin/activate
-        pip install pip-audit
-        pip-audit
+        # Create a virtual environment
+        uv venv
+        # Install dependencies from the requirements file.
+        # 'sync' is much faster than 'pip install'.
+        uv pip sync requirements-dev.txt
+
+    - name: Scan for vulnerabilities with pip-audit
+      run: |
+        # 'uv run' executes a command within the virtual environment.
+        uv run pip-audit
 
     - name: Lint with ruff
       run: |
-        source .venv/bin/activate
-        ruff check .
+        uv run ruff check .
 
     - name: Test with pytest
       run: |
-        PYTHONPATH=$GITHUB_WORKSPACE pytest tests/unit tests/integration
+        # 'uv run' automatically handles the PYTHONPATH.
+        uv run pytest tests/unit tests/integration

@@ -27,7 +27,8 @@
         "oderwat.indent-rainbow",
         "esbenp.prettier-vscode",
         "ms-ossdata.vscode-pgsql",
-        "eamodio.gitlens"
+        "eamodio.gitlens",
+        "davidanson.vscode-markdownlint"
       ]
     }
   },
