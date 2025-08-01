@@ -186,7 +186,8 @@ ruff>=0.6.0
     # via importlib-metadata
 jinja2
 
-markitdown-mcp
+markitdown-mcp==1.2.3
+    # via documentation generation (dev tool)
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
