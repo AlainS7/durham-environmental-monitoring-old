@@ -186,6 +186,8 @@ ruff>=0.6.0
     # via importlib-metadata
 jinja2
 
+markitdown-mcp
+
 # The following packages are considered to be unsafe in a requirements file:
 # pip
 # setuptools

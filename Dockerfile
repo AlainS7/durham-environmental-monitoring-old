@@ -12,8 +12,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info && \
     rm -rf /var/lib/apt/lists/*
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -r requirements-dev.txt
+
+# Install uv (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    export PATH="$HOME/.cargo/bin:$PATH" && \
+    uv pip sync requirements.txt && \
+    uv pip sync requirements-dev.txt
 
 # Copy the rest of the application's code into the container at /app
 COPY . .
