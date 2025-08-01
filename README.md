@@ -190,7 +190,7 @@ Main configuration files:
 
 ### Data Separation
 
-```plaintext
+```text
 🧪 TEST SENSORS → Local storage (/test_data/)
 🏭 PRODUCTION SENSORS → Google Sheets & reporting
 ```
