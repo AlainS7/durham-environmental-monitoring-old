@@ -15,7 +15,7 @@ RUN apt-get update && \
 
 # Install uv (fast Python package manager)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    export PATH="$HOME/.cargo/bin:$PATH" && \
+    mv $HOME/.cargo/bin/uv /usr/local/bin/uv && \
     uv pip sync requirements.txt && \
     uv pip sync requirements-dev.txt
 
