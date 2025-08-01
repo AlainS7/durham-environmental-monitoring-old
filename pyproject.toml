@@ -34,7 +34,8 @@ dev = [
     "flake8",
     "pip-tools",
     "ruff>=0.6.0",
-    "jinja2"
+    "jinja2",
+    "pip-audit"
 ]
 
 [project.scripts]
