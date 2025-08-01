@@ -19,6 +19,7 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 ## � Data Collection Specifications
 
 ### High-Resolution Research-Grade Data
+
 - **Temporal Resolution**: 15-minute intervals
 - **Data Processing**: Daily aggregations (no weekly averaging)
 - **Quality Standards**: Research-grade accuracy and credibility
@@ -26,54 +27,70 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 - **Data Preservation**: All 15-minute measurements retained for analysis
 
 ### Sensor Coverage
+
 - **TSI Air Quality Sensors**: PM2.5, PM10, Temperature, Humidity
 - **Weather Underground Stations**: Temperature, Humidity, Wind, Solar Radiation
 - **Update Frequency**: Every 15 minutes for all sensors
 - **Data Validation**: Continuous quality monitoring and anomaly detection
 
-## �🚀 Quick Start
+## 🚀 Quick Start (with uv)
 
-1. **Quick Setup**:
-   ```bash
-   python quick_start.py
-   ```
-   This will automatically:
-   - Check system requirements
-   - Install dependencies
-   - Verify project structure
-   - Run health checks
-   - Guide you through credential setup
+1. **Install uv** (if not already):
 
-2. **Manual Setup**:
-   ```bash
-   pip install -r requirements.txt
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   export PATH="$HOME/.cargo/bin:$PATH"
    ```
 
-3. **Configure Credentials**:
+2. **Create a virtual environment** (recommended):
+
+   ```sh
+   uv venv
+   source .venv/bin/activate
+   ```
+
+3. **Install dependencies**:
+
+   ```sh
+   uv pip sync requirements.txt
+   uv pip sync requirements-dev.txt
+   ```
+
+4. **Configure Credentials**:
    - Add Google API credentials to `creds/google_creds.json`
    - Add Weather Underground API key to `creds/wu_api_key.json`
    - Add TSI credentials to `creds/tsi_creds.json`
 
-3. **Run Data Collection**:
-   ```bash
+5. **Run Data Collection**:
+
+   ```sh
    python src/data_collection/faster_wu_tsi_to_sheets_async.py
    ```
 
-4. **System Management**:
-   ```bash
+6. **System Management**:
+
+   ```sh
+   # Lint
+   uv run ruff check .
+
+   # Test
+   uv run pytest
+
    # Check system health
    python tests/comprehensive_test_suite.py
-   
+
    # Production deployment
    python scripts/production_manager.py deploy
-   
+
    # Monitor system
    python scripts/production_manager.py monitor
    ```
 
+**Note:** The CI/CD pipeline and Docker build use `uv` for all dependency management. For more info, see: [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)
+
 ## 📁 Project Structure
 
-```
+```text
 ├── config/                 # Configuration files
 ├── src/                   # Source code
 │   ├── core/              # Core functionality
@@ -88,16 +105,19 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 ## 🛠️ System Components
 
 ### Data Collection
+
 - **Weather Underground**: Meteorological data collection
 - **TSI Sensors**: Air quality monitoring
 - **Automated Scheduling**: Configurable data collection intervals
 
 ### Data Management
+
 - **Master Data System**: Historical data aggregation
 - **Google Drive Sync**: Cloud backup and sharing
 - **Test Data Isolation**: Separate handling of test vs production data
 
 ### Automation
+
 - **Daily Sheets**: Automated daily reports
 - **Master Data Updates**: Weekly data consolidation
 - **Alert System**: Anomaly detection and notifications
@@ -113,6 +133,7 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 ## �️ Troubleshooting
 
 ### If Test Sensors Appear in Google Sheets
+
 The system is designed to exclude test sensors from Google Sheets. If test sensors appear:
 
 1. **Check Sheet Date**: Ensure you're looking at recently created sheets
@@ -121,12 +142,15 @@ The system is designed to exclude test sensors from Google Sheets. If test senso
 4. **Review Data Sources**: Check if additional sensors should be classified as test sensors
 
 ### Common Issues
+
 - **KeyError: 'Device Name'**: Fixed in current version with proper column handling
 - **Mixed Test/Production Data**: Resolved with enhanced separation logic
 - **Chart Data Issues**: Now uses production-only data sources
 
 ### Validation
+
 Run the system with recent date ranges to verify clean separation:
+
 ```bash
 python src/data_collection/faster_wu_tsi_to_sheets_async.py
 # Select date range within last 7 days for best results
@@ -135,6 +159,7 @@ python src/data_collection/faster_wu_tsi_to_sheets_async.py
 ## �🔧 Configuration
 
 Main configuration files:
+
 - `config/improved_google_drive_config.py` - Google Drive paths
 - `config/test_sensors_config.py` - Test sensor management
 - `config/master_data_config.json` - Master data system settings
@@ -148,19 +173,24 @@ Main configuration files:
 ## 🧪 Test Sensor Management
 
 ### Current Configuration
+
 - **27 Test Sensors Configured**: 14 WU + 13 TSI test sensors
 - **Production Data Only**: Google Sheets contain only production sensor data
 - **Separate Storage**: Test data isolated for internal analysis
 
 ### Test Sensor IDs
+
 **Weather Underground Test Sensors:**
+
 - KNCDURHA634 through KNCDURHA648 (MS-09 through MS-22)
 
 **TSI Test Sensors:**
+
 - AA-2 (Burch) through AA-14 (clustered test deployment)
 
 ### Data Separation
-```
+
+```text
 🧪 TEST SENSORS → Local storage (/test_data/)
 🏭 PRODUCTION SENSORS → Google Sheets & reporting
 ```
@@ -168,12 +198,14 @@ Main configuration files:
 ## 🎯 System Status (June 2025)
 
 ### ✅ Production Ready Features
+
 - **Clean Google Sheets**: Production sensor data only
 - **Test Sensor Exclusion**: All test sensors properly filtered from external reports
 - **Data Integrity**: Robust separation logic with comprehensive validation
 - **Professional Output**: Production-ready visualizations and reports
 
 ### Key Technical Implementations
+
 - **Enhanced Separation Logic**: `separate_sensor_data_by_type()` with comprehensive error handling
 - **Google Sheets Integration**: Production-only data flow with proper column handling
 - **Configuration Validation**: Pre-collection validation prevents common errors
@@ -197,4 +229,4 @@ For questions or support, please check the documentation in the `docs/` director
 
 ---
 
-*Last updated: June 2025*
+### Last updated: June 2025
