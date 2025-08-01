@@ -90,7 +90,7 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 
 ## 📁 Project Structure
 
-```plaintext
+```text
 ├── config/                 # Configuration files
 ├── src/                   # Source code
 │   ├── core/              # Core functionality
