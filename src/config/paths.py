@@ -4,6 +4,7 @@ Provides centralized path management for the organized structure.
 """
 
 from pathlib import Path
+from typing import Optional
 
 # Project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -38,7 +39,7 @@ FEATURE_CONFIG_PATH = CONFIG_ROOT / "features"
 LEGACY_RAW_PULLS = PROJECT_ROOT / "raw_pulls"
 LEGACY_PROCESSED = PROJECT_ROOT / "processed"
 
-def get_data_path(data_type: str, sensor_type: str = None, environment: str = "production", year: str = None) -> Path:
+def get_data_path(data_type: str, sensor_type: Optional[str] = None, environment: str = "production", year: Optional[str] = None) -> Path:
     """Get appropriate data path based on type and environment."""
     base_path = RAW_DATA_PATH if data_type == "raw" else PROCESSED_DATA_PATH
     
@@ -49,7 +50,7 @@ def get_data_path(data_type: str, sensor_type: str = None, environment: str = "p
     
     return base_path
 
-def get_log_path(log_type: str, sub_type: str = None) -> Path:
+def get_log_path(log_type: str, sub_type: Optional[str] = None) -> Path:
     """Get appropriate log path based on type."""
     log_paths = {
         "application": APPLICATION_LOG_PATH,
@@ -70,8 +71,7 @@ def get_config_path(config_type: str, environment: str = "base") -> Path:
         return BASE_CONFIG_PATH / f"{config_type}.json"
     else:
         return ENV_CONFIG_PATH / environment / f"{config_type}.json"
-
-def get_backup_path(backup_type: str, sub_type: str = None) -> Path:
+def get_backup_path(backup_type: str, sub_type: Optional[str] = None) -> Path:
     """Get appropriate backup path based on type."""
     backup_paths = {
         "automated": AUTOMATED_BACKUP_PATH,

@@ -10,7 +10,7 @@ This module provides:
 - Mobile-friendly JSON responses
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request # pyright: ignore[reportMissingImports]
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
@@ -229,7 +229,7 @@ class PredictiveAnalyticsAPI:
                     'humidity': latest.get('humidity', None),
                     'timestamp': latest.get('timestamp', datetime.now()).isoformat() if 'timestamp' in latest else datetime.now().isoformat()
                 }
-        except:
+        except Exception:
             pass
         
         return {
