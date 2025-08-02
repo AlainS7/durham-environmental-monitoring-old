@@ -49,12 +49,12 @@ async def test_tsi_client_fetch_data_success(mocker):
             'rh': 55.0
         }
     ]
+    mocker.patch('src.data_collection.clients.tsi_client.get_tsi_devices', return_value=['12345'])
     client = TSIClient(client_id='test_id', client_secret='test_secret', auth_url='https://fake-tsi.com/auth', base_url='https://fake-tsi.com/api')
     mocker.patch.object(client, '_authenticate', side_effect=lambda: setattr(client, 'headers', {"Authorization": "Bearer fake_token", "Accept": "application/json"}) or True)
     mocker.patch('src.data_collection.clients.base_client.BaseClient._request', return_value=telemetry_response)
-    mocker.patch('src.data_collection.clients.tsi_client.get_tsi_devices', return_value=['12345'])
     df = await client.fetch_data('2025-07-27', '2025-07-27')
 
     assert not df.empty
-    assert df.iloc[0]['device_id'] == 'd14rfblfk2973f196c5g'
+    assert (df['device_id'] == '12345').all()
     assert df.iloc[0]['mcpm2x5'] == 15.5
