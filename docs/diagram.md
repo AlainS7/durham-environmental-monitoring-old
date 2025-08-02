@@ -1,3 +1,5 @@
+# Hot Durham Project - System Architecture
+
 ```mermaid
 graph TD
 %% --- Chart Title ---
