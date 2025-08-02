@@ -9,12 +9,6 @@ from src.data_collection.daily_data_collector import run_collection_process
 @pytest.fixture
 def mock_clients(mocker):
     """Mocks WUClient and TSIClient fetch_data methods."""
-    mock_wu_client = AsyncMock()
-    mock_tsi_client = AsyncMock()
-
-    mocker.patch('src.data_collection.daily_data_collector.WUClient', return_value=mock_wu_client)
-    mocker.patch('src.data_collection.daily_data_collector.TSIClient', return_value=mock_tsi_client)
-
     # Sample data for WUClient
     wu_data = {
         'stationID': ['KNCGARNE13'],
@@ -22,9 +16,6 @@ def mock_clients(mocker):
         'tempAvg': [25.0],
         'humidityAvg': [60.0]
     }
-    mock_wu_client.fetch_data.return_value = pd.DataFrame(wu_data)
-
-    # Sample data for TSIClient
     tsi_data = {
         'cloud_device_id': ['d14rfblfk2973f196c5g'],
         'cloud_timestamp': ['2025-07-27T12:00:00Z'],
@@ -32,9 +23,14 @@ def mock_clients(mocker):
         'temperature': [26.0],
         'rh': [55.0]
     }
-    mock_tsi_client.fetch_data.return_value = pd.DataFrame(tsi_data)
-
-    return mock_wu_client, mock_tsi_client
+    wu_client = AsyncMock()
+    tsi_client = AsyncMock()
+    wu_client.fetch_data.return_value = pd.DataFrame(wu_data)
+    tsi_client.fetch_data.return_value = pd.DataFrame(tsi_data)
+    # Patch the class-level __aenter__ so any instance returns our mock
+    mocker.patch('src.data_collection.clients.wu_client.WUClient.__aenter__', return_value=wu_client)
+    mocker.patch('src.data_collection.clients.tsi_client.TSIClient.__aenter__', return_value=tsi_client)
+    return wu_client, tsi_client
 
 @pytest.fixture
 def mock_db(mocker):
