@@ -1,0 +1,91 @@
+{
+  "tsi_test_stations": [
+    "AA-1",
+    "AA-2",
+    "AA-3",
+    "AA-4",
+    "AA-5",
+    "AA-6",
+    "AA-7",
+    "AA-8",
+    "AA-9",
+    "AA-10",
+    "AA-11",
+    "AA-12",
+    "AA-13",
+    "AA-14",
+    "AA-15"
+  ],
+  "wu_test_stations": [
+    {
+      "name": "MS-09",
+      "id": "KNCDURHA634",
+      "key": "XMRJ8XfF"
+    },
+    {
+      "name": "MS-10",
+      "id": "KNCDURHA635",
+      "key": "NnKSOoHs"
+    },
+    {
+      "name": "MS-11",
+      "id": "KNCDURHA636",
+      "key": "bSkL0e2z"
+    },
+    {
+      "name": "MS-12",
+      "id": "KNCDURHA638",
+      "key": "gMJuuARi"
+    },
+    {
+      "name": "MS-13",
+      "id": "KNCDURHA639",
+      "key": "9VDoSufX"
+    },
+    {
+      "name": "MS-14",
+      "id": "KNCDURHA640",
+      "key": "L7ZNhWMS"
+    },
+    {
+      "name": "MS-15",
+      "id": "KNCDURHA641",
+      "key": "AKcgK5Zu"
+    },
+    {
+      "name": "MS-16",
+      "id": "KNCDURHA642",
+      "key": "d1QXyBxp"
+    },
+    {
+      "name": "MS-17",
+      "id": "KNCDURHA643",
+      "key": "r69N0FOm"
+    },
+    {
+      "name": "MS-18",
+      "id": "KNCDURHA644",
+      "key": "mfwAhHW2"
+    },
+    {
+      "name": "MS-19",
+      "id": "KNCDURHA645",
+      "key": "S126Xv1F"
+    },
+    {
+      "name": "MS-20",
+      "id": "KNCDURHA646",
+      "key": "B5WRDBs7"
+    },
+    {
+      "name": "MS-21",
+      "id": "KNCDURHA647",
+      "key": "izzFfERg"
+    },
+    {
+      "name": "MS-22",
+      "id": "KNCDURHA648",
+      "key": "nxr0QE5x"
+    }
+  ]
+}

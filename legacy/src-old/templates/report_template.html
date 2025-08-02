@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title | default('Hot Durham Report') }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        h1, h2 { text-align: center; }
+        img { display: block; margin: 20px auto; max-width: 90%; height: auto; }
+        .table-container { margin: 20px auto; width: 90%; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>{{ title | default('Hot Durham Report') }}</h1>
+    <h2>Date Range: {{ date_range | default('N/A') }}</h2>
+    
+    <div class="chart-container">
+        <img src="{{ chart_path | default('') }}" alt="Time-Series Chart">
+    </div>
+
+    <div class="table-container">
+        <h2>Raw Data</h2>
+        {{ table_html | safe }}
+    </div>
+</body>
+</html>

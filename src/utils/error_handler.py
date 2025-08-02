@@ -4,7 +4,7 @@ Enhanced error handling and recovery system
 import traceback
 import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 class ErrorHandler:
@@ -15,7 +15,7 @@ class ErrorHandler:
         self.log_dir.mkdir(exist_ok=True)
         self.error_log = self.log_dir / "errors.jsonl"
     
-    def log_error(self, error: Exception, context: Dict[str, Any] = None, 
+    def log_error(self, error: Exception, context: Optional[Dict[str, Any]] = None, 
                   severity: str = "ERROR") -> str:
         """Log error with context and return error ID"""
         error_id = f"ERR_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
@@ -106,7 +106,7 @@ class ErrorHandler:
                     error_time = datetime.fromisoformat(error_record["timestamp"]).timestamp()
                     if error_time >= cutoff_time:
                         errors.append(error_record)
-                except:
+                except Exception:
                     continue
         
         # Summarize errors
