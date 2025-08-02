@@ -21,8 +21,8 @@ import logging
 
 # Email imports (fix namespace issue)
 try:
-    from email.mime.text import MimeText
-    from email.mime.multipart import MimeMultipart
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
     EMAIL_AVAILABLE = True
 except ImportError:
     print("Warning: Email functionality not available")
@@ -31,7 +31,7 @@ except ImportError:
 # Import existing anomaly detection system
 import sys
 sys.path.append(str(Path(__file__).parent.parent / "analysis"))
-from anomaly_detection_and_trend_analysis import AnomalyDetectionSystem
+from ..analysis.anomaly_detection_and_trend_analysis import AnomalyDetectionSystem # type: ignore
 
 warnings.filterwarnings('ignore')
 
@@ -412,7 +412,7 @@ class EnhancedAnomalyDetector(AnomalyDetectionSystem):
                 try:
                     with open(alerts_file, 'r') as f:
                         current_alerts = json.load(f)
-                except:
+                except Exception:
                     current_alerts = {}
             
             current_alerts[alert['id']] = alert
@@ -428,7 +428,7 @@ class EnhancedAnomalyDetector(AnomalyDetectionSystem):
                 try:
                     with open(history_file, 'r') as f:
                         history = json.load(f)
-                except:
+                except Exception:
                     history = []
             
             history.append({
@@ -462,7 +462,7 @@ class EnhancedAnomalyDetector(AnomalyDetectionSystem):
                 return
             
             # Create message
-            msg = MimeMultipart()
+            msg = MIMEMultipart()
             msg['From'] = email_config['sender_email']
             msg['To'] = ', '.join(email_config['recipients'])
             msg['Subject'] = f"Hot Durham Alert: {alert['level'].upper()} - {alert['type'].replace('_', ' ').title()}"
@@ -482,7 +482,7 @@ Recommendations:
 This is an automated alert from the Hot Durham monitoring system.
             """
             
-            msg.attach(MimeText(body, 'plain'))
+            msg.attach(MIMEText(body, 'plain'))
             
             # Send email
             server = smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port'])
@@ -624,7 +624,7 @@ def main():
     detector = EnhancedAnomalyDetector()
     
     # Run complete enhanced analysis
-    results = detector.run_enhanced_analysis_with_alerts()
+    detector.run_enhanced_analysis_with_alerts()
     
     # Test real-time alert detection
     print("\n🧪 Testing real-time alert detection...")

@@ -17,7 +17,7 @@ from pathlib import Path
 import json
 import warnings
 from typing import Dict, List, Optional
-import joblib
+import joblib # pyright: ignore[reportMissingImports]
 
 # ML and Analytics imports
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
@@ -232,7 +232,7 @@ class PredictiveAnalytics:
                     self.historical_data['timestamp'] = pd.to_datetime(self.historical_data[col])
                     print(f"  ✅ Using timestamp column: {col}")
                     break
-                except:
+                except Exception:
                     continue
         
         # Ensure we have a timestamp column
@@ -782,15 +782,15 @@ class PredictiveAnalytics:
             }
             
             # Basic monthly pattern analysis (works with any amount of data)
-            data_daily['month'] = data_daily.index.month
-            data_daily['season'] = data_daily.index.month.map(self._get_season)
+            data_daily['month'] = data_daily.index.to_series().dt.month
+            data_daily['season'] = data_daily['month'].map(self._get_season)
             
             # Monthly statistics
             monthly_patterns = data_daily.groupby('month')['pm25'].agg(['mean', 'std', 'min', 'max', 'count'])
             seasonal_patterns = data_daily.groupby('season')['pm25'].agg(['mean', 'std', 'min', 'max', 'count'])
             
-            results['monthly_patterns'] = monthly_patterns.to_dict()
-            results['seasonal_patterns'] = seasonal_patterns.to_dict()
+            results['monthly_patterns'] = {str(k): v for k, v in monthly_patterns.to_dict().items()}
+            results['seasonal_patterns'] = {str(k): v for k, v in seasonal_patterns.to_dict().items()}
             
             # Find peak pollution periods
             pm25_values = data_daily['pm25']
@@ -798,7 +798,7 @@ class PredictiveAnalytics:
             high_pollution_days = data_daily[data_daily['pm25'] > high_pollution_threshold]
             
             if len(high_pollution_days) > 0:
-                high_pollution_months = high_pollution_days.groupby(high_pollution_days.index.month).size()
+                high_pollution_months = high_pollution_days.groupby(pd.Series(high_pollution_days.index).dt.month).size()
                 
                 results['high_pollution_analysis'] = {
                     'threshold': float(high_pollution_threshold),
@@ -814,7 +814,7 @@ class PredictiveAnalytics:
                     period = min(30, len(data_daily) // 4)  # Adaptive period
                     
                     if period >= 7:  # Need at least a week period
-                        from statsmodels.tsa.seasonal import seasonal_decompose
+                        from statsmodels.tsa.seasonal import seasonal_decompose # pyright: ignore[reportMissingImports]
                         decomposition = seasonal_decompose(
                             data_daily['pm25'], 
                             model='additive', 

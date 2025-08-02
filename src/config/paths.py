@@ -73,7 +73,6 @@ def get_config_path(config_type: str, environment: str = "base") -> Path:
         return ENV_CONFIG_PATH / environment / f"{config_type}.json"
 def get_backup_path(backup_type: str, sub_type: Optional[str] = None) -> Path:
     """Get appropriate backup path based on type."""
-    """Get appropriate backup path based on type."""
     backup_paths = {
         "automated": AUTOMATED_BACKUP_PATH,
         "manual": MANUAL_BACKUP_PATH,
