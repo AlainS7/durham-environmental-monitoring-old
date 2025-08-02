@@ -48,20 +48,23 @@ class ConfigManager:
         return config
     
     def _load_environment_config(self, config_name: str) -> Optional[Dict[str, Any]]:
-        """Load environment-specific configuration overrides"""
-        env_file = self.config_dir / "environments" / f"{self.environment}.py"
-        
-        if not env_file.exists():
+        """Load environment-specific configuration overrides from JSON or YAML file"""
+        env_dir = self.config_dir / "environments"
+        env_file_json = env_dir / f"{self.environment}.json"
+        env_file_yaml = env_dir / f"{self.environment}.yaml"
+        env_file_yml = env_dir / f"{self.environment}.yml"
+
+        if env_file_json.exists():
+            with open(env_file_json, 'r') as f:
+                return json.load(f)
+        elif env_file_yaml.exists():
+            with open(env_file_yaml, 'r') as f:
+                return yaml.safe_load(f)
+        elif env_file_yml.exists():
+            with open(env_file_yml, 'r') as f:
+                return yaml.safe_load(f)
+        else:
             return None
-        
-        # Simple way to load Python config files
-        spec = {}
-        with open(env_file, 'r') as f:
-            exec(f.read(), spec)
-        
-        # Remove built-ins
-        env_config = {k: v for k, v in spec.items() if not k.startswith('__')}
-        return env_config
     
     def get_config(self, config_name: str, key: str = None, default: Any = None) -> Any:
         """Get configuration value"""
