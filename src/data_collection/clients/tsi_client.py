@@ -66,6 +66,9 @@ class TSIClient(BaseClient):
             if not validated_records:
                 return None
             df = pd.DataFrame(validated_records)
+            # Rename cloud_timestamp to timestamp for downstream compatibility
+            if 'cloud_timestamp' in df.columns:
+                df = df.rename(columns={'cloud_timestamp': 'timestamp'})
             df['device_id'] = device_id
             return df
         return None

@@ -1,1 +1,0 @@
-"""Hot Durham project module."""
