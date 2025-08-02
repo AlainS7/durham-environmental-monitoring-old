@@ -70,7 +70,7 @@ class TSIDateRangeManager:
         if start_dt < earliest_allowed_start and end_dt < earliest_allowed_start:
             # Both dates are too old, return the most recent valid range
             valid_start = earliest_allowed_start
-            valid_end = min(today, end_dt + timedelta(days=(today - end_dt).days))
+            # valid_end = min(today, end_dt + timedelta(days=(today - end_dt).days))
             return [(valid_start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))]
         
         chunks = []
