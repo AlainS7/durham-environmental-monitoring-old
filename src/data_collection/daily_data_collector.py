@@ -32,9 +32,12 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
     This prepares the DataFrame for the later melting/unpivoting step.
     """
     if df.empty:
+        log.info(f"No raw records from {source} to clean.")
         return df
 
     log.info(f"Cleaning {len(df)} raw records from {source}.")
+    log.info(f"{source} raw columns: {list(df.columns)}")
+    log.info(f"{source} raw sample:\n{df.head().to_string(index=False)}")
     
     # Standardize column names across both sources
     if source == 'WU':
@@ -221,18 +224,22 @@ async def run_collection_process(start_date, end_date, is_dry_run=False):
     log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}")
     
 
-    # Use async context managers for API clients
-    async with WUClient(**app_config.wu_api_config) as wu_client:
-        async with TSIClient(**app_config.tsi_api_config) as tsi_client:
-            wu_raw_df, tsi_raw_df = await asyncio.gather(
-                wu_client.fetch_data(start_date, end_date),
-                tsi_client.fetch_data(start_date, end_date)
-            )
-            log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
 
-    # Clean and standardize both dataframes
-    wu_df = clean_and_transform_data(wu_raw_df, 'WU')
-    tsi_df = clean_and_transform_data(tsi_raw_df, 'TSI')
+    wu_raw_df = pd.DataFrame()
+    tsi_raw_df = pd.DataFrame()
+
+    # Fetch only the selected sources
+    if run_collection_process.source in ("all", "wu"):
+        async with WUClient(**app_config.wu_api_config) as wu_client:
+            wu_raw_df = await wu_client.fetch_data(start_date, end_date)
+    if run_collection_process.source in ("all", "tsi"):
+        async with TSIClient(**app_config.tsi_api_config) as tsi_client:
+            tsi_raw_df = await tsi_client.fetch_data(start_date, end_date)
+
+    log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
+
+    wu_df = clean_and_transform_data(wu_raw_df, 'WU') if not wu_raw_df.empty else pd.DataFrame()
+    tsi_df = clean_and_transform_data(tsi_raw_df, 'TSI') if not tsi_raw_df.empty else pd.DataFrame()
 
     if is_dry_run:
         log.info("--- DRY RUN MODE ---")
@@ -266,7 +273,11 @@ if __name__ == "__main__":
     parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
     parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to the database.")
+    parser.add_argument("--source", type=str, choices=["all", "wu", "tsi"], default="all", help="Which data source(s) to fetch: all, wu, tsi.")
     args = parser.parse_args()
+
+    # Attach the source selection to the coroutine function for access inside
+    run_collection_process.source = args.source
 
     try:
         asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run))
