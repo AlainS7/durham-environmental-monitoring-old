@@ -48,6 +48,7 @@ The dev container uses a wrapper script:
 This script fetches the instance connection name from Secret Manager and starts the proxy.
 
 **Example secret fetch command:**
+
 ```sh
 gcloud secrets versions access latest --secret="YOUR_SECRET_NAME" --project="PROJECT_ID"
 ```
@@ -65,11 +66,13 @@ supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf
 ```
 
 Check status:
+
 ```sh
 supervisorctl -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf status
 ```
 
 Restart the proxy if needed:
+
 ```sh
 supervisorctl -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf restart cloud-sql-proxy
 ```
