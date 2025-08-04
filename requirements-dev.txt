@@ -117,6 +117,7 @@ packaging==25.0
     #   pytest
 pandas==2.3.1
     # via tsi-data-uploader (pyproject.toml)
+tabulate
 pip==25.2
     # via
     #   pip-api

@@ -4,8 +4,11 @@ FROM python:3.11-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
+
+# Copy requirements files into the container at /app
 COPY requirements.txt .
+COPY requirements-dev.txt .
+
 
 # Install system dependencies for WeasyPrint (PDF generation)
 RUN apt-get update && \
