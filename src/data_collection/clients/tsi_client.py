@@ -55,6 +55,7 @@ class TSIClient(BaseClient):
 
         # Use the flat-format endpoint
         records = await self._request("GET", "telemetry/flat-format", params=params, headers=self.headers)
+        log.info(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: {records if records else 'EMPTY'}")
         if records:
             validated_records = []
             for rec in records:
@@ -64,13 +65,17 @@ class TSIClient(BaseClient):
                 except pydantic.ValidationError as e:
                     log.error(f"TSI API response validation failed for record: {e}")
             if not validated_records:
+                log.info(f"TSI validated records for device {device_id} date {date_iso}: EMPTY after validation.")
                 return None
             df = pd.DataFrame(validated_records)
+            log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}, columns={list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
             # Rename cloud_timestamp to timestamp for downstream compatibility
             if 'cloud_timestamp' in df.columns:
                 df = df.rename(columns={'cloud_timestamp': 'timestamp'})
             df['device_id'] = device_id
             return df
+        else:
+            log.info(f"TSI API returned no records for device {device_id} date {date_iso}.")
         return None
 
     async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
@@ -108,6 +113,11 @@ class TSIClient(BaseClient):
 
         log.info("Converting timestamp to datetime and setting as index...")
         raw_df['timestamp'] = pd.to_datetime(raw_df['timestamp'])
+        # Drop rows with missing timestamps to avoid NaTType errors during resampling
+        raw_df = raw_df.dropna(subset=['timestamp'])
+        if raw_df.empty:
+            log.warning("No valid data after dropping rows with missing timestamps.")
+            return pd.DataFrame()
         raw_df.set_index('timestamp', inplace=True)
 
         log.info("Preparing aggregation dictionary for hourly resampling...")
