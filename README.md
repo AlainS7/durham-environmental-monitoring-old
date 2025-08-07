@@ -1,5 +1,7 @@
 # Hot Durham Environmental Monitoring System
 
+[![CodeScene general](https://codescene.io/images/analyzed-by-codescene-badge.svg)](https://codescene.io/projects/70050)
+
 A comprehensive environmental monitoring system for Durham, NC, featuring **high-resolution 15-minute interval** data collection from Weather Underground and TSI air quality sensors for accurate research and analysis.
 
 ## 🌟 Features
