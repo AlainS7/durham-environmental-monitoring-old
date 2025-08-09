@@ -44,3 +44,6 @@ run-data-collection = "src.data_collection.daily_data_collector:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = {find = {where = ["src"]}}
+
+[tool.pytest.ini_options]
+pythonpath = "."

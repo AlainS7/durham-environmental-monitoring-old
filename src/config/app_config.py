@@ -65,7 +65,7 @@ class Config:
 
         # Define paths to sensor configuration files
         self.sensor_config_paths = {
-            'production': os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'environments', 'production.json'),
+            'production': os.path.join(os.path.dirname(__file__), 'production_sensors.json'),
             'test': os.path.join(os.path.dirname(__file__), '..', '..', 'test_data', 'test_sensors.json')
         }
     @property

@@ -2,6 +2,8 @@
 
 A comprehensive environmental monitoring system for Durham, NC, featuring **high-resolution 15-minute interval** data collection from Weather Underground and TSI air quality sensors for accurate research and analysis.
 
+For detailed technical documentation, please see the `docs/` directory.
+
 ## 🌟 Features
 
 - **High-Resolution Data Collection**: 15-minute interval data from Weather Underground and TSI sensors
@@ -91,15 +93,15 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 ## 📁 Project Structure
 
 ```text
-├── config/                 # Configuration files
-├── src/                   # Source code
-│   ├── core/              # Core functionality
-│   ├── data_collection/   # Data collection scripts
-│   └── automation/        # Automation systems
-├── data/                  # Data storage
-├── docs/                  # Documentation
-├── tests/                 # Test files
-└── scripts/               # Utility scripts
+.
+├── src/                     # Main application source code
+│   ├── config/              # Centralized configuration
+│   ├── data_collection/     # Data collection scripts and API clients
+│   └── ...
+├── web-app/                 # Self-contained web application (map visualization)
+├── docs/                    # Project documentation
+├── tests/                   # Automated tests
+└── ...                      # Other project files (e.g., Dockerfile)
 ```
 
 ## 🛠️ System Components
@@ -137,7 +139,7 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 The system is designed to exclude test sensors from Google Sheets. If test sensors appear:
 
 1. **Check Sheet Date**: Ensure you're looking at recently created sheets
-2. **Verify Configuration**: Confirm test sensor IDs are in `config/test_sensors_config.py`
+2. **Verify Configuration**: The list of production sensors is managed in `src/config/production_sensors.json`. The test sensors are located in `test_data/test_sensors.json`.
 3. **Generate Fresh Sheet**: Run data collection to create new clean sheets
 4. **Review Data Sources**: Check if additional sensors should be classified as test sensors
 
@@ -158,11 +160,11 @@ python src/data_collection/faster_wu_tsi_to_sheets_async.py
 
 ## �🔧 Configuration
 
-Main configuration files:
+Main configuration is handled by `src/config/app_config.py`, which loads secrets from Google Secret Manager and environment variables. Key configuration files include:
 
-- `config/improved_google_drive_config.py` - Google Drive paths
-- `config/test_sensors_config.py` - Test sensor management
-- `config/master_data_config.json` - Master data system settings
+- `src/config/production_sensors.json`: Defines the list of production sensor IDs.
+- `src/config/logging.json`: Configures the application's logging behavior.
+- `.env`: Used for local development to set environment variables for database connections, API keys, etc.
 
 ## 📋 Maintenance
 

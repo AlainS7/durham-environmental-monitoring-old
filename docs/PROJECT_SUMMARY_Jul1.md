@@ -36,38 +36,28 @@ Monitor and analyze weather patterns in Durham, NC by collecting real-time data 
 
 ### Core Technologies
 - **Python 3.11+**: Primary programming language
+- **PostgreSQL**: Primary database for storing sensor readings.
 - **Google Drive API**: Cloud storage and file sharing
 - **Google Sheets API**: Data presentation and sharing
-- **SQLite**: Local data caching and processing
 - **Pandas**: Data manipulation and analysis
 - **JSON/CSV**: Data format standards
 
 ### System Components
 
 #### 1. Data Collection Layer
-```
-scripts/
-├── automated_data_pull.py          # Main data collection orchestrator
-├── production_manager.py           # Production deployment manager
-└── automation/                     # Automated scheduling scripts
-```
+Located in `src/data_collection/`
+- `daily_data_collector.py`: Main data collection orchestrator.
+- `clients/`: Contains API clients for WU and TSI.
 
 #### 2. Configuration Management
-```
-config/
-├── automated_data_pull_config.py   # API keys, endpoints, schedules
-├── daily_sheets_config.json        # Google Sheets configuration
-├── high_resolution_data_config.json # High-frequency data settings
-├── production/                     # Production environment configs
-└── environments/                   # Multi-environment support
-```
+All configuration is centralized in `src/config/`.
+- `app_config.py`: Main configuration loader (handles secrets, env vars).
+- `logging.json`: Logging configuration.
+- `production_sensors.json`: List of production sensor IDs.
 
 #### 3. Data Processing & Storage
-```
-data/
-├── hot_durham.db                   # SQLite database
-├── daily_sheets_metadata/         # Sheet tracking information
-└── master_data_metadata/          # Primary data catalogs
+- **PostgreSQL Database**: Stores all sensor readings, metadata, and logs.
+- **Google Drive**: Used for backups and sharing reports.
 
 processed/
 ├── annual_summaries/               # Yearly aggregations
@@ -205,7 +195,7 @@ Processed Data → Google Sheets → PDF Reports → Alert System → Archive St
 - **Local Processing**: Python scripts run on local infrastructure
 - **Cloud Storage**: Google Drive for file storage and sharing
 - **Email Alerts**: Gmail SMTP for notifications
-- **Database**: SQLite for local data processing
+- **Database**: PostgreSQL for storing all sensor data and metadata.
 
 ### Scaling Considerations
 - **Data Volume**: Currently processing hundreds of readings per day
@@ -255,24 +245,23 @@ Consider Googling:
 
 ### Key Directories
 ```
-tsi-data-uploader/
-├── config/                    # Configuration files
-├── scripts/                   # Data collection scripts
-├── data/                      # Local data storage
-├── processed/                 # Processed data outputs
-├── tools/                     # Utility and diagnostic scripts
-├── logs/                      # System and error logs
-├── creds/                     # API credentials
-├── backup/                    # Backup storage
-└── docs/                      # Documentation
+.
+├── src/                     # Main application source code
+│   ├── config/              # Centralized configuration
+│   ├── data_collection/     # Data collection scripts and API clients
+│   └── ...
+├── web-app/                 # Self-contained web application (map visualization)
+├── docs/                    # Project documentation
+├── tests/                   # Automated tests
+└── ...                      # Other project files (e.g., Dockerfile)
 ```
 
 ### Important Files
-- `requirements.txt`: Python dependencies
-- `.env`: Environment configuration (SMTP, etc.)
-- `setup.py`: Project setup and dependencies
-- `README.md`: Project documentation
-- `automated_maintenance.sh`: System maintenance scripts
+- `pyproject.toml`: Project metadata and dependencies (replaces setup.py).
+- `requirements.txt`: Pinned production dependencies.
+- `requirements-dev.txt`: Pinned development dependencies.
+- `.env`: Used for local development environment variables.
+- `README.md`: Main project overview and setup instructions.
 
 ---
 
@@ -282,7 +271,7 @@ This is a mature, production-ready weather data collection and analysis system t
 
 1. **Collects real-time weather data** from multiple sources in Durham, NC
 2. **Processes and validates data** through automated pipelines
-3. **Stores data in multiple formats** (SQLite, CSV, Google Sheets)
+3. **Stores data in multiple formats** (PostgreSQL, CSV, Google Sheets)
 4. **Provides automated reporting** and alert capabilities
 5. **Has robust error handling** and recovery mechanisms
 6. **Operates with cloud integration** via Google Drive/Sheets APIs

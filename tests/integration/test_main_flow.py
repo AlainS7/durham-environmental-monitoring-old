@@ -58,6 +58,7 @@ async def test_main_script_flow(mocker, sample_wu_df, sample_tsi_df):
     # Run the main collection process
     start_date = '2025-07-27'
     end_date = '2025-07-27'
+    run_collection_process.source = "all"
     await run_collection_process(start_date, end_date, is_dry_run=False)
 
     # Assert that the clients were called

@@ -66,6 +66,7 @@ async def test_run_collection_process_success(mock_clients, mock_db):
     start_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     end_date = start_date
 
+    run_collection_process.source = "all"
     await run_collection_process(start_date, end_date, is_dry_run=False)
 
     # Verify clients were called with the correct signature
