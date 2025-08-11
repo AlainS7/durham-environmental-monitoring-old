@@ -211,6 +211,91 @@ Main configuration files:
 - **Configuration Validation**: Pre-collection validation prevents common errors
 - **Smart TSI Detection**: Automatic detection of available sensor ID fields
 
+## Cloud storage and BigQuery
+
+This project defaults to writing raw sensor data to Google Cloud Storage (GCS) as Parquet, organized for efficient BigQuery batch loads.
+
+- GCS layout: `gs://$GCS_BUCKET/$GCS_PREFIX/source=<WU|TSI>/agg=<raw|interval>/dt=YYYY-MM-DD/*.parquet`
+- BigQuery tables: partitioned by `timestamp`, clustered by `native_sensor_id`.
+
+Environment variables:
+
+- GCS_BUCKET: Target GCS bucket (required for GCS uploads)
+- GCS_PREFIX: Prefix within the bucket (default: sensor_readings)
+- BQ_PROJECT: BigQuery project (optional; defaults to ADC project)
+- BQ_DATASET: BigQuery dataset (required by the loader)
+- BQ_LOCATION: BigQuery location (default: US)
+- GOOGLE_APPLICATION_CREDENTIALS: Path to a service account key (if not using ADC)
+
+Example (zsh):
+
+```sh
+export GCS_BUCKET="my-bucket"
+export GCS_PREFIX="sensor_readings"
+export BQ_PROJECT="my-project"
+export BQ_DATASET="env_readings"
+export BQ_LOCATION="US"
+# export GOOGLE_APPLICATION_CREDENTIALS="$PWD/sa.json"  # if needed
+```
+
+## Scripts overview
+
+- src/data_collection/daily_data_collector.py
+  - Purpose: Fetch Weather Underground (WU) and TSI data and write to sinks.
+  - Defaults: raw (no aggregation), sink=gcs.
+  - Flags:
+    - --aggregate/--no-aggregate (default: no-aggregate)
+    - --agg-interval [pandas offset alias] (e.g., h, 15min) when aggregating
+    - --sink [gcs|db|both]
+    - --source [WU|TSI|all]
+  - Example:
+    - python -m src.data_collection.daily_data_collector --no-aggregate --sink gcs --source all --start-date 2025-01-01 --end-date 2025-01-02
+
+- scripts/load_to_bigquery.py
+  - Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.
+  - Table naming: sensor_readings_{source}_{agg} (e.g., sensor_readings_wu_raw)
+  - Partitioning: by `timestamp`; clustering: `native_sensor_id` by default.
+  - Requirements: BQ_DATASET and GCS_BUCKET (env or flags), ADC credentials.
+
+### Quick usage: BigQuery loader
+
+With env vars:
+
+```sh
+export GCS_BUCKET="my-bucket"
+export GCS_PREFIX="sensor_readings"
+export BQ_PROJECT="my-project"
+export BQ_DATASET="env_readings"
+export BQ_LOCATION="US"
+
+python scripts/load_to_bigquery.py \
+  --date 2025-01-01 \
+  --source all \
+  --agg raw
+```
+
+Via flags:
+
+```sh
+python scripts/load_to_bigquery.py \
+  --project my-project \
+  --dataset env_readings \
+  --location US \
+  --bucket my-bucket \
+  --prefix sensor_readings \
+  --date 2025-01-01 \
+  --source WU \
+  --agg raw \
+  --table-prefix sensor_readings \
+  --partition-field timestamp \
+  --cluster-by native_sensor_id
+```
+
+Notes:
+
+- Authenticate locally first: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+- The loader creates the dataset if needed and appends rows by default (WRITE_APPEND).
+
 ## 🤝 Contributing
 
 1. Fork the repository
