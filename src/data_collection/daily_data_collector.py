@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from src.config.app_config import app_config
 from src.database.db_manager import HotDurhamDB
+from src.storage.gcs_uploader import GCSUploader
 from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
 
@@ -100,6 +101,7 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
         rename_map = {
             # 'cloud_account_id': 'account_id', # account the sensor belongs to
             'cloud_device_id': 'native_sensor_id',
+            'device_id': 'native_sensor_id',
             'cloud_timestamp': 'timestamp',
             # 'is_indoor': 'is_indoor',
             # 'is_public': 'is_public',
@@ -219,9 +221,9 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
         raise
 
 # --- Main Execution Logic ---
-async def run_collection_process(start_date, end_date, is_dry_run=False):
+async def run_collection_process(start_date, end_date, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs'):
     """Main process to fetch, clean, and store sensor data."""
-    log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}")
+    log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}. Aggregate: {aggregate} interval={agg_interval} sink={sink}")
     
 
 
@@ -229,12 +231,19 @@ async def run_collection_process(start_date, end_date, is_dry_run=False):
     tsi_raw_df = pd.DataFrame()
 
     # Fetch only the selected sources
-    if run_collection_process.source in ("all", "wu"):
+    source_sel = getattr(run_collection_process, 'source', 'all')
+    if source_sel in ("all", "wu"):
         async with WUClient(**app_config.wu_api_config) as wu_client:
-            wu_raw_df = await wu_client.fetch_data(start_date, end_date)
-    if run_collection_process.source in ("all", "tsi"):
+            if aggregate or agg_interval != 'h':
+                wu_raw_df = await wu_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+            else:
+                wu_raw_df = await wu_client.fetch_data(start_date, end_date)
+    if source_sel in ("all", "tsi"):
         async with TSIClient(**app_config.tsi_api_config) as tsi_client:
-            tsi_raw_df = await tsi_client.fetch_data(start_date, end_date)
+            if aggregate or agg_interval != 'h':
+                tsi_raw_df = await tsi_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+            else:
+                tsi_raw_df = await tsi_client.fetch_data(start_date, end_date)
 
     log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
 
@@ -253,16 +262,33 @@ async def run_collection_process(start_date, end_date, is_dry_run=False):
     # --- LIVE RUN MODE ---
     log.info("--- LIVE RUN MODE ---")
     try:
-        db = HotDurhamDB()
-        if not check_db_connection(db):
-            log.critical("Database connection failed. Aborting live run.")
-            return
+        wrote_any = False
+        # GCS sink
+        if sink in ("gcs", "both"):
+            gcs_cfg = app_config.gcs_config
+            if not gcs_cfg.get("bucket"):
+                log.error("GCS bucket not configured (env GCS_BUCKET). Skipping GCS upload.")
+            else:
+                uploader = GCSUploader(bucket=gcs_cfg["bucket"], prefix=gcs_cfg.get("prefix", "sensor_readings"))
+                if not wu_df.empty:
+                    uploader.upload_parquet(wu_df, source="WU", aggregated=aggregate, interval=agg_interval, ts_column="timestamp")
+                    wrote_any = True
+                if not tsi_df.empty:
+                    uploader.upload_parquet(tsi_df, source="TSI", aggregated=aggregate, interval=agg_interval, ts_column="timestamp")
+                    wrote_any = True
 
-        # The single, robust insertion function
-        insert_data_to_db(db, wu_df, tsi_df)
-        
+        # DB sink (legacy path) or fallback when GCS not configured
+        if sink in ("db", "both") or (sink == "gcs" and not wrote_any):
+            db = HotDurhamDB()
+            if not check_db_connection(db):
+                log.critical("Database connection failed. Skipping DB sink.")
+            else:
+                insert_data_to_db(db, wu_df, tsi_df)
+                wrote_any = True
+
+        if not wrote_any:
+            log.warning("Nothing was written; no sink active or dataframes empty.")
         log.info("Live run complete.")
-
     except Exception as e:
         log.error(f"An error occurred during the live run: {e}", exc_info=True)
 
@@ -272,15 +298,20 @@ if __name__ == "__main__":
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
-    parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to the database.")
+    parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to any sink.")
     parser.add_argument("--source", type=str, choices=["all", "wu", "tsi"], default="all", help="Which data source(s) to fetch: all, wu, tsi.")
+    parser.add_argument("--aggregate", dest="aggregate", action="store_true", help="Aggregate data to a time interval before sinking.")
+    parser.add_argument("--no-aggregate", dest="aggregate", action="store_false", help="Do not aggregate; keep raw data.")
+    parser.set_defaults(aggregate=False)
+    parser.add_argument("--agg-interval", type=str, default="h", help="Pandas offset alias for aggregation (e.g., 'h', '15min').")
+    parser.add_argument("--sink", type=str, choices=["gcs", "db", "both"], default="gcs", help="Destination sink: Google Cloud Storage (gcs), database (db), or both.")
     args = parser.parse_args()
 
     # Attach the source selection to the coroutine function for access inside
     run_collection_process.source = args.source
 
     try:
-        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run))
+        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.aggregate, args.agg_interval, args.sink))
     except Exception as e:
         log.critical(f"An unhandled error occurred in the main process: {e}", exc_info=True)
         sys.exit(1) # Exit with a non-zero status code to indicate failure

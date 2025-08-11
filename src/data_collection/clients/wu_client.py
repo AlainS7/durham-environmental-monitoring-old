@@ -170,13 +170,10 @@ class WUClient(BaseClient):
 
     # _process_and_filter_observations is no longer needed; validation and flattening are handled in _fetch_one
 
-    async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
+    async def fetch_data(self, start_date: str, end_date: str, aggregate: bool = False, agg_interval: str = 'h') -> pd.DataFrame:
         """
-        Fetches WU rapid (5-min) data for a given date range, aggregates to hourly summaries.
-        Uses endpoint_strategy to determine the request pattern:
-        - HOURLY: /history/hourly endpoint (per-station, per-day)
-        - MULTIDAY: /observations/all/1day endpoint (per-station, per-day)
-        - ALL: /observations/all endpoint (per-station, full date range)
+        Fetches WU observations for a date range. When aggregate is False, returns raw observations
+        with an 'obsTimeUtc' column. When True, returns resampled summaries per stationID.
         """
         if not self.api_key or not self.stations:
             log.error("Weather Underground API key or station list is not configured properly.")
@@ -197,22 +194,20 @@ class WUClient(BaseClient):
             log.warning("No valid data after concatenation.")
             return pd.DataFrame()
 
-        log.info("Converting obsTimeUtc to datetime and setting as index...")
+        log.info("Converting obsTimeUtc to datetime...")
         raw_df['obsTimeUtc'] = pd.to_datetime(raw_df['obsTimeUtc'])
-        raw_df.set_index('obsTimeUtc', inplace=True)
 
-        log.info("Preparing aggregation dictionary for hourly resampling...")
+        if not aggregate:
+            log.info("Aggregation disabled; returning raw observations DataFrame.")
+            return raw_df
+
+        # Aggregation path
+        raw_df = raw_df.set_index('obsTimeUtc')
         numeric_cols = raw_df.select_dtypes(include='number').columns.tolist()
-        # Exclude columns that should not be aggregated
         exclude_cols = ['epoch', 'lat', 'lon', 'qcStatus']
         agg_cols = [col for col in numeric_cols if col not in exclude_cols]
         agg_dict = {col: 'mean' for col in agg_cols}
-
-        log.info("Starting groupby and hourly resampling...")
-        final_df = raw_df.groupby('stationID').resample('h').agg(agg_dict)  # type: ignore
-
-        log.info("Resetting index after resampling...")
+        final_df = raw_df.groupby('stationID').resample(agg_interval).agg(agg_dict)  # type: ignore
         final_df = final_df.reset_index()
-
-        log.info(f"Successfully resampled WU data to {len(final_df)} hourly records.")
+        log.info(f"Successfully resampled WU data to {len(final_df)} records at interval '{agg_interval}'.")
         return final_df
