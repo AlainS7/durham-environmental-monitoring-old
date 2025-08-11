@@ -64,6 +64,11 @@ class Config:
         self.gcs_bucket = self._parse_env_var_value("GCS_BUCKET")
         self.gcs_prefix = os.getenv("GCS_PREFIX", "sensor_readings")
 
+        # Optional BigQuery defaults for helper script
+        self.bq_project = self._parse_env_var_value("BQ_PROJECT")
+        self.bq_dataset = self._parse_env_var_value("BQ_DATASET")
+        self.bq_location = os.getenv("BQ_LOCATION", "US")
+
         self._validate_env_vars()
 
         # Define paths to sensor configuration files
@@ -197,6 +202,14 @@ class Config:
         return {
             "bucket": self.gcs_bucket,
             "prefix": self.gcs_prefix,
+        }
+
+    @property
+    def bigquery_defaults(self):
+        return {
+            "project": self.bq_project,
+            "dataset": self.bq_dataset,
+            "location": self.bq_location,
         }
 
 # A single, global instance of the configuration
