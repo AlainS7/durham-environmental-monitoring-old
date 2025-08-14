@@ -11,14 +11,15 @@ log = logging.getLogger("bq_loader")
 
 
 def ensure_dataset(client: bigquery.Client, dataset_id: str, location: str | None = None) -> bigquery.Dataset:
-    ds_ref = bigquery.Dataset(client.dataset(dataset_id))
+    ds_ref = client.dataset(dataset_id)
     try:
         return client.get_dataset(ds_ref)
     except Exception:
         log.info(f"Creating dataset {client.project}.{dataset_id} (location={location})...")
+        ds = bigquery.Dataset(ds_ref)
         if location:
-            ds_ref.location = location
-        return client.create_dataset(ds_ref)
+            ds.location = location
+        return client.create_dataset(ds)
 
 
 def load_parquet(
@@ -44,7 +45,12 @@ def load_parquet(
     load_job = client.load_table_from_uri(uris, fq_table, job_config=job_config)
     result = load_job.result()
     dest = client.get_table(fq_table)
-    log.info(f"Loaded {result.output_rows} rows into {fq_table}. Current table rows: {dest.num_rows}")
+    rows_loaded = getattr(load_job, "output_rows", None) or getattr(result, "output_rows", None)
+    if rows_loaded is None:
+        rows_str = "unknown"
+    else:
+        rows_str = str(rows_loaded)
+    log.info(f"Loaded {rows_str} rows into {fq_table}. Current table rows: {dest.num_rows}")
 
 
 def main():
