@@ -69,7 +69,8 @@ class TSIClient(BaseClient):
                 log.info(f"TSI validated records for device {device_id} date {date_iso}: EMPTY after validation.")
                 return None
             df = pd.DataFrame(validated_records)
-            log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}, columns={list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
+            log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}")
+            log.debug(f"TSI columns: {list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
             # Rename cloud_timestamp to timestamp for downstream compatibility
             if 'cloud_timestamp' in df.columns:
                 df = df.rename(columns={'cloud_timestamp': 'timestamp'})
