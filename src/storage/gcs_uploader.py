@@ -68,6 +68,12 @@ class GCSUploader:
         if ts_column not in df.columns:
             raise ValueError(f"DataFrame missing required timestamp column '{ts_column}'")
         df = df.copy()
+        # Cope with duplicate column names which cause pyarrow.Table.from_pandas to fail.
+        # Keep the first occurrence for each duplicate column name and warn.
+        if df.columns.duplicated().any():
+            dup_names = df.columns[df.columns.duplicated()].unique().tolist()
+            log.warning(f"Duplicate column names found: {dup_names}. Keeping first occurrence of each and dropping duplicates.")
+            df = df.loc[:, ~df.columns.duplicated()]
         df[ts_column] = pd.to_datetime(df[ts_column], utc=True, errors='coerce')
         df = df.dropna(subset=[ts_column])
         if df.empty:

@@ -137,6 +137,31 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
 
+    # Consolidate duplicate column names (can happen when multiple source fields
+    # are mapped to the same target name). PyArrow will error on duplicate
+    # column labels, so coalesce duplicates by taking the first non-null value
+    # across the duplicate columns for each row and preserve the original column
+    # ordering.
+    if df.columns.duplicated().any():
+        dup_names = [name for name in df.columns[df.columns.duplicated()].unique()]
+        log.warning(f"Duplicate column names after rename: {dup_names}. Consolidating duplicates by first non-null value.")
+        names = list(df.columns)
+        seen = set()
+        new_df = pd.DataFrame(index=df.index)
+        for name in names:
+            if name in seen:
+                continue
+            # find all positions with this column label
+            indices = [i for i, n in enumerate(names) if n == name]
+            if len(indices) == 1:
+                new_df[name] = df.iloc[:, indices[0]]
+            else:
+                tmp = df.iloc[:, indices]
+                # forward-fill across columns (axis=1) then take first column
+                new_df[name] = tmp.bfill(axis=1).iloc[:, 0]
+            seen.add(name)
+        df = new_df
+
     return df
 
 
