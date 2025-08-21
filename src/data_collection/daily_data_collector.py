@@ -221,8 +221,12 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
         raise
 
 # --- Main Execution Logic ---
-async def run_collection_process(start_date, end_date, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs'):
-    """Main process to fetch, clean, and store sensor data."""
+async def run_collection_process(start_date, end_date, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs', source='all'):
+    """Main process to fetch, clean, and store sensor data.
+
+    The `source` parameter controls which data sources to fetch: 'all', 'wu', or 'tsi'.
+    Passing it explicitly avoids attaching attributes to the coroutine function.
+    """
     log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}. Aggregate: {aggregate} interval={agg_interval} sink={sink}")
     
 
@@ -231,7 +235,7 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
     tsi_raw_df = pd.DataFrame()
 
     # Fetch only the selected sources
-    source_sel = getattr(run_collection_process, 'source', 'all')
+    source_sel = source
     if source_sel in ("all", "wu"):
         async with WUClient(**app_config.wu_api_config) as wu_client:
             if aggregate or agg_interval != 'h':
@@ -307,11 +311,8 @@ if __name__ == "__main__":
     parser.add_argument("--sink", type=str, choices=["gcs", "db", "both"], default="gcs", help="Destination sink: Google Cloud Storage (gcs), database (db), or both.")
     args = parser.parse_args()
 
-    # Attach the source selection to the coroutine function for access inside
-    run_collection_process.source = args.source
-
     try:
-        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.aggregate, args.agg_interval, args.sink))
+        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run, args.aggregate, args.agg_interval, args.sink, args.source))
     except Exception as e:
         log.critical(f"An unhandled error occurred in the main process: {e}", exc_info=True)
         sys.exit(1) # Exit with a non-zero status code to indicate failure

@@ -4,6 +4,12 @@ from typing import Optional
 
 import pandas as pd
 from google.cloud import storage
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except Exception:  # pragma: no cover - import-time guard
+    pa = None
+    pq = None
 
 log = logging.getLogger(__name__)
 
@@ -72,11 +78,8 @@ class GCSUploader:
         log.info(f"Uploading Parquet to gs://{self.bucket_name}/{blob_path}...")
 
         # Write to in-memory buffer as parquet
-        try:
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-        except Exception as e:
-            raise RuntimeError("pyarrow is required for Parquet uploads. Please install pyarrow.") from e
+        if pa is None or pq is None:
+            raise RuntimeError("pyarrow is required for Parquet uploads. Please install pyarrow.")
 
         table = pa.Table.from_pandas(df)
         buf = io.BytesIO()
