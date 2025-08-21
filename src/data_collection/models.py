@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -107,7 +107,8 @@ class WUResponse(BaseModel):
 class TSIFlatRecord(BaseModel):
     cloud_account_id: Optional[str] = None
     cloud_device_id: Optional[str] = None
-    cloud_timestamp: Optional[datetime] = None
+    # The API sometimes uses 'timestamp' as the field name; accept either by using an alias.
+    cloud_timestamp: Optional[datetime] = Field(default=None, alias='timestamp')
     is_indoor: Optional[bool] = None
     is_public: Optional[bool] = None
     latitude: Optional[float] = None
