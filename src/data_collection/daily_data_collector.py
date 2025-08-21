@@ -234,20 +234,31 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
     wu_raw_df = pd.DataFrame()
     tsi_raw_df = pd.DataFrame()
 
-    # Fetch only the selected sources
+    # Fetch only the selected sources (concurrently when 'all')
     source_sel = source
-    if source_sel in ("all", "wu"):
+    if source_sel == "all":
+        async with WUClient(**app_config.wu_api_config) as wu_client, TSIClient(**app_config.tsi_api_config) as tsi_client:
+            if aggregate or agg_interval != 'h':
+                wu_task = wu_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+                tsi_task = tsi_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+            else:
+                wu_task = wu_client.fetch_data(start_date, end_date)
+                tsi_task = tsi_client.fetch_data(start_date, end_date)
+            wu_raw_df, tsi_raw_df = await asyncio.gather(wu_task, tsi_task)
+    elif source_sel == "wu":
         async with WUClient(**app_config.wu_api_config) as wu_client:
             if aggregate or agg_interval != 'h':
                 wu_raw_df = await wu_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
             else:
                 wu_raw_df = await wu_client.fetch_data(start_date, end_date)
-    if source_sel in ("all", "tsi"):
+        tsi_raw_df = pd.DataFrame()
+    elif source_sel == "tsi":
         async with TSIClient(**app_config.tsi_api_config) as tsi_client:
             if aggregate or agg_interval != 'h':
                 tsi_raw_df = await tsi_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
             else:
                 tsi_raw_df = await tsi_client.fetch_data(start_date, end_date)
+        wu_raw_df = pd.DataFrame()
 
     log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
 
