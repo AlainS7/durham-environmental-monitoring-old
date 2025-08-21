@@ -87,12 +87,10 @@ CREATE TABLE sensor_readings (
     pm_2_5 FLOAT,
     co2 FLOAT,
     latitude FLOAT,
-    longitude FLOAT,
-    PRIMARY KEY (timestamp, deployment_fk)
+    longitude FLOAT
 )
 PARTITION BY DATE(timestamp)
 CLUSTER BY deployment_fk;
-```
 
 **`deployments` (Flattened for Denormalization):**
 
