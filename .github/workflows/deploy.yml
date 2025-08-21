@@ -31,7 +31,10 @@ jobs:
         # Replace the WORKLOAD_IDENTITY_PROVIDER value with the provider
         # resource name you create with the gcloud commands (projects/NUM/locations/global/workloadIdentityPools/POOL/providers/PROVIDER)
         workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-        service_account: 'data-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+        service_account: 'github-actions-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+    - name: Set active project
+      run: gcloud config set project ${{ env.PROJECT_ID }}
 
     - name: Set up Cloud SDK
       uses: 'google-github-actions/setup-gcloud@v2'
