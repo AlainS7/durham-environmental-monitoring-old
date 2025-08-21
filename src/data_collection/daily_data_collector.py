@@ -37,8 +37,8 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
         return df
 
     log.info(f"Cleaning {len(df)} raw records from {source}.")
-    log.info(f"{source} raw columns: {list(df.columns)}")
-    log.info(f"{source} raw sample:\n{df.head().to_string(index=False)}")
+    log.debug(f"{source} raw columns: {list(df.columns)}")
+    log.debug(f"{source} raw sample:\n{df.head().to_string(index=False)}")
     
     # Standardize column names across both sources
     if source == 'WU':
