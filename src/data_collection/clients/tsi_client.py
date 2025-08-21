@@ -55,7 +55,7 @@ class TSIClient(BaseClient):
 
         # Use the flat-format endpoint
         records = await self._request("GET", "telemetry/flat-format", params=params, headers=self.headers)
-        log.info(f"TSI API returned {len(records) if records else 0} records for device {device_id} date {date_iso}.")
+        log.info(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: received {len(records) if records else 0} records")
         log.debug(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: {records if records else 'EMPTY'}")
         if records:
             validated_records = []
