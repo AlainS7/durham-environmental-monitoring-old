@@ -5,6 +5,8 @@ import os
 from typing import List
 
 from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bq_loader")
@@ -14,7 +16,7 @@ def ensure_dataset(client: bigquery.Client, dataset_id: str, location: str | Non
     ds_ref = client.dataset(dataset_id)
     try:
         return client.get_dataset(ds_ref)
-    except Exception:
+    except NotFound:
         log.info(f"Creating dataset {client.project}.{dataset_id} (location={location})...")
         ds = bigquery.Dataset(ds_ref)
         if location:
