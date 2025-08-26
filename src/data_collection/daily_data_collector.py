@@ -5,12 +5,14 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from sqlalchemy import text
+import os
 
 from src.config.app_config import app_config
 from src.database.db_manager import HotDurhamDB
 from src.storage.gcs_uploader import GCSUploader
 from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
+from src.data_collection.clients.sapiens_client import SapiensClient  # NEW
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +135,17 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
             'voc_mgm3': 'voc_mgm3'
         }
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+    elif source == 'SAPIENS':  # NEW
+        rename_map = {
+            'native_sensor_id': 'native_sensor_id',
+            'timestamp': 'timestamp',
+            'temperature': 'temperature',
+            'humidity': 'humidity',
+            'pm2_5': 'pm2_5',
+            'pm10': 'pm10',
+            'co2_ppm': 'co2_ppm'
+        }
+        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
@@ -166,12 +179,12 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
 
 
 # --- Database Insertion ---
-def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
+def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sapiens_df: pd.DataFrame):
     """
     Transforms wide-format DataFrames into a long format and upserts them
     into the sensor_readings table.
     """
-    if wu_df.empty and tsi_df.empty:
+    if wu_df.empty and tsi_df.empty and sapiens_df.empty:
         log.info("No data to insert.")
         return
 
@@ -196,7 +209,7 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
     all_readings = []
     
     # 2. Process each DataFrame (WU and TSI)
-    for df, df_type in [(wu_df, 'WU'), (tsi_df, 'TSI')]:
+    for df, df_type in [(wu_df, 'WU'), (tsi_df, 'TSI'), (sapiens_df, 'SAPIENS')]:
         if df.empty:
             continue
 
@@ -258,37 +271,46 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
 
     wu_raw_df = pd.DataFrame()
     tsi_raw_df = pd.DataFrame()
+    sapiens_raw_df = pd.DataFrame()  # NEW
 
     # Fetch only the selected sources (concurrently when 'all')
     source_sel = source
     if source_sel == "all":
-        async with WUClient(**app_config.wu_api_config) as wu_client, TSIClient(**app_config.tsi_api_config) as tsi_client:
+        async with WUClient(**app_config.wu_api_config) as wu_client, TSIClient(**app_config.tsi_api_config) as tsi_client, SapiensClient(api_key=os.getenv('SAPIENS_API_KEY')) as sapiens_client:
+            # TODO: populate sapiens_client.device_ids via config_loader helper when available
             if aggregate or agg_interval != 'h':
-                wu_task = wu_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
-                tsi_task = tsi_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+                wu_task = wu_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
+                tsi_task = tsi_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
+                sapiens_task = sapiens_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
             else:
-                wu_task = wu_client.fetch_data(start_date, end_date)
-                tsi_task = tsi_client.fetch_data(start_date, end_date)
-            wu_raw_df, tsi_raw_df = await asyncio.gather(wu_task, tsi_task)
+                wu_task = wu_client.fetch_data(start_date=start_date, end_date=end_date)
+                tsi_task = tsi_client.fetch_data(start_date=start_date, end_date=end_date)
+                sapiens_task = sapiens_client.fetch_data(start_date=start_date, end_date=end_date)
+            wu_raw_df, tsi_raw_df, sapiens_raw_df = await asyncio.gather(wu_task, tsi_task, sapiens_task)
     elif source_sel == "wu":
         async with WUClient(**app_config.wu_api_config) as wu_client:
             if aggregate or agg_interval != 'h':
-                wu_raw_df = await wu_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+                wu_raw_df = await wu_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
             else:
-                wu_raw_df = await wu_client.fetch_data(start_date, end_date)
-        tsi_raw_df = pd.DataFrame()
+                wu_raw_df = await wu_client.fetch_data(start_date=start_date, end_date=end_date)
     elif source_sel == "tsi":
         async with TSIClient(**app_config.tsi_api_config) as tsi_client:
             if aggregate or agg_interval != 'h':
-                tsi_raw_df = await tsi_client.fetch_data(start_date, end_date, aggregate=aggregate, agg_interval=agg_interval)
+                tsi_raw_df = await tsi_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
             else:
-                tsi_raw_df = await tsi_client.fetch_data(start_date, end_date)
-        wu_raw_df = pd.DataFrame()
+                tsi_raw_df = await tsi_client.fetch_data(start_date=start_date, end_date=end_date)
+    elif source_sel == "sapiens":  # NEW
+        async with SapiensClient(api_key=os.getenv('SAPIENS_API_KEY')) as sapiens_client:
+            if aggregate or agg_interval != 'h':
+                sapiens_raw_df = await sapiens_client.fetch_data(start_date=start_date, end_date=end_date, aggregate=aggregate, agg_interval=agg_interval)
+            else:
+                sapiens_raw_df = await sapiens_client.fetch_data(start_date=start_date, end_date=end_date)
 
-    log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
+    log.info(f"Fetched {len(wu_raw_df)} raw WU records, {len(tsi_raw_df)} raw TSI records, {len(sapiens_raw_df)} raw SAPIENS records.")
 
     wu_df = clean_and_transform_data(wu_raw_df, 'WU') if not wu_raw_df.empty else pd.DataFrame()
     tsi_df = clean_and_transform_data(tsi_raw_df, 'TSI') if not tsi_raw_df.empty else pd.DataFrame()
+    sapiens_df = clean_and_transform_data(sapiens_raw_df, 'SAPIENS') if not sapiens_raw_df.empty else pd.DataFrame()
 
     if is_dry_run:
         log.info("--- DRY RUN MODE ---")
@@ -296,6 +318,8 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
         print(wu_df.head().to_markdown(index=False))
         print("\n--- Cleaned TSI Data (first 5) ---")
         print(tsi_df.head().to_markdown(index=False))
+        print("\n--- Cleaned SAPIENS Data (first 5) ---")
+        print(sapiens_df.head().to_markdown(index=False))
         log.info("Dry run complete. No data was written.")
         return
 
@@ -316,6 +340,9 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
                 if not tsi_df.empty:
                     uploader.upload_parquet(tsi_df, source="TSI", aggregated=aggregate, interval=agg_interval, ts_column="timestamp")
                     wrote_any = True
+                if not sapiens_df.empty:
+                    uploader.upload_parquet(sapiens_df, source="SAPIENS", aggregated=aggregate, interval=agg_interval, ts_column="timestamp")
+                    wrote_any = True
 
         # DB sink (legacy path) or fallback when GCS not configured
         if sink in ("db", "both") or (sink == "gcs" and not wrote_any):
@@ -323,7 +350,7 @@ async def run_collection_process(start_date, end_date, is_dry_run=False, aggrega
             if not check_db_connection(db):
                 log.critical("Database connection failed. Skipping DB sink.")
             else:
-                insert_data_to_db(db, wu_df, tsi_df)
+                insert_data_to_db(db, wu_df, tsi_df, sapiens_df)
                 wrote_any = True
 
         if not wrote_any:
@@ -339,7 +366,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
     parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to any sink.")
-    parser.add_argument("--source", type=str, choices=["all", "wu", "tsi"], default="all", help="Which data source(s) to fetch: all, wu, tsi.")
+    parser.add_argument("--source", type=str, choices=["all", "wu", "tsi", "sapiens"], default="all", help="Which data source(s) to fetch: all, wu, tsi, sapiens.")
     parser.add_argument("--aggregate", dest="aggregate", action="store_true", help="Aggregate data to a time interval before sinking.")
     parser.add_argument("--no-aggregate", dest="aggregate", action="store_false", help="Do not aggregate; keep raw data.")
     parser.set_defaults(aggregate=False)
