@@ -241,15 +241,15 @@ export BQ_LOCATION="US"
 ## Scripts overview
 
 - src/data_collection/daily_data_collector.py
-  - Purpose: Fetch Weather Underground (WU) and TSI data and write to sinks.
-  - Defaults: raw (no aggregation), sink=gcs.
-  - Flags:
-    - --aggregate/--no-aggregate (default: no-aggregate)
-    - --agg-interval [pandas offset alias] (e.g., h, 15min) when aggregating
-    - --sink [gcs|db|both]
-    - --source [WU|TSI|all]
-  - Example:
-    - python -m src.data_collection.daily_data_collector --no-aggregate --sink gcs --source all --start-date 2025-01-01 --end-date 2025-01-02
+   - Purpose: Fetch Weather Underground (WU), TSI, and Sapiens data and write to sinks.
+   - Defaults: raw (no aggregation), sink=gcs.
+   - Flags:
+      - --aggregate/--no-aggregate (default: no-aggregate)
+      - --agg-interval [pandas offset alias] (e.g., h, 15min) when aggregating
+      - --sink [gcs|db|both]
+      - --source [wu|tsi|sapiens|all]
+   - Example:
+      - python -m src.data_collection.daily_data_collector --no-aggregate --sink gcs --source all --start_date 2025-01-01 --end_date 2025-01-02
 
 - scripts/load_to_bigquery.py
   - Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.

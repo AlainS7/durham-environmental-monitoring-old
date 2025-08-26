@@ -3,7 +3,7 @@ import httpx
 import logging
 import pandas as pd
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 log = logging.getLogger(__name__)
 
@@ -16,15 +16,21 @@ class BaseClient(ABC):
         self.semaphore = asyncio.Semaphore(semaphore_limit)
         self.client: Optional[httpx.AsyncClient] = None # Initialize as None, created in __aenter__
 
-    async def __aenter__(self):
-        """Asynchronous context manager entry point. Initializes the httpx.AsyncClient."""
+    async def __aenter__(self) -> "BaseClient":
+        """Initialize HTTP client and return self with precise typing."""
         self.client = httpx.AsyncClient()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Asynchronous context manager exit point. Closes the httpx.AsyncClient."""
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> Optional[bool]:
         if self.client:
             await self.client.aclose()
+        # Returning None so exceptions propagate
+        return None
 
     async def _request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None,
                        headers: Optional[Dict[str, str]] = None, json_data: Optional[Dict[str, Any]] = None) -> Optional[Any]:

@@ -53,3 +53,9 @@ def get_tsi_devices():
     prod_sensors, _ = load_sensor_configs()
     # Ensure we return a list of IDs, not a list of dicts
     return [device['id'] for device in prod_sensors.get('tsi', []) if 'id' in device]
+
+@lru_cache(maxsize=None)
+def get_sapiens_devices():
+    """Extract Sapiens device IDs from production sensor config (expects 'sapiens': [{'id': '...'}])."""
+    prod_sensors, _ = load_sensor_configs()
+    return [device['id'] for device in prod_sensors.get('sapiens', []) if 'id' in device]
