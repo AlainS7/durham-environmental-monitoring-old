@@ -22,7 +22,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -33,11 +32,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / 'src') not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Reuse existing clients & models
-from src.config.app_config import app_config
-from src.data_collection.clients.wu_client import WUClient, EndpointStrategy
-from src.data_collection.clients.tsi_client import TSIClient
-from src.utils.config_loader import get_wu_stations, get_tsi_devices
+# Reuse existing clients & models (must follow sys.path adjustment above)
+from src.config.app_config import app_config  # noqa: E402
+from src.data_collection.clients.wu_client import WUClient, EndpointStrategy  # noqa: E402
+from src.data_collection.clients.tsi_client import TSIClient  # noqa: E402
+from src.utils.config_loader import get_wu_stations, get_tsi_devices  # noqa: E402
 
 log = logging.getLogger("fetch_sample_raw")
 
