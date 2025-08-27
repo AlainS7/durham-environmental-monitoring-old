@@ -1,0 +1,61 @@
+name: Execute Transformations
+
+on:
+  schedule:
+    - cron: '25 07 * * *' # 07:25 UTC daily after ingestion & loads
+  workflow_dispatch: {}
+
+env:
+  PROJECT_ID: durham-weather-466502
+  DATASET_ID: sensors
+
+jobs:
+  run-transformations:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Install deps
+        run: |
+          uv venv
+          uv pip sync requirements.txt
+          uv pip sync requirements-dev.txt || true
+
+      - name: Auth to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run transformations
+        env:
+          BQ_PROJECT: ${{ env.PROJECT_ID }}
+        run: |
+          PROC_DATE=$(date -u -d 'yesterday' +%Y-%m-%d)
+          echo "Processing date: $PROC_DATE"
+          uv run python scripts/run_transformations.py --project $BQ_PROJECT --dataset ${{ env.DATASET_ID }} --date $PROC_DATE --execute
+      - name: Teams notify failure
+        if: failure() && env.TEAMS_WEBHOOK_URL != ''
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          python scripts/notify_teams.py \
+            --webhook "$TEAMS_WEBHOOK_URL" \
+            --title "Transformations FAILED" \
+            --text "Date: $(date -u +%Y-%m-%d)\nRepo: $GITHUB_REPOSITORY\nSHA: $GITHUB_SHA\nRun: $GITHUB_RUN_ID"
