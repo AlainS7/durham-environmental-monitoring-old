@@ -24,6 +24,11 @@ def ensure_dataset(client: bigquery.Client, dataset_id: str, location: str | Non
         return client.create_dataset(ds)
 
 
+def build_gcs_uri(bucket: str, prefix: str, source: str, agg: str, date: str) -> str:
+    """Construct the GCS URI for a source/agg/date partition."""
+    return f"gs://{bucket}/{prefix}/source={source}/agg={agg}/dt={date}/*.parquet"
+
+
 def load_parquet(
     client: bigquery.Client,
     dataset_id: str,
@@ -90,7 +95,7 @@ def main():
     cluster_fields = [f.strip() for f in args.cluster_by.split(",") if f.strip()]
 
     for src in sources:
-        uri = f"gs://{args.bucket}/{args.prefix}/source={src}/agg={args.agg}/dt={args.date}/*.parquet"
+        uri = build_gcs_uri(args.bucket, args.prefix, src, args.agg, args.date)
         table = f"{args.table_prefix}_{src.lower()}_{args.agg}"
         load_parquet(
             client,

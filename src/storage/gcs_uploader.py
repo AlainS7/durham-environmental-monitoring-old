@@ -20,12 +20,12 @@ class GCSUploader:
     Paths are partitioned by date for efficient BigQuery batch loads.
     """
 
-    def __init__(self, bucket: str, prefix: str = "sensor_readings"):
+    def __init__(self, bucket: str, prefix: str = "sensor_readings", client: Optional[storage.Client] = None):
         if not bucket:
             raise ValueError("GCS bucket must be provided")
         self.bucket_name = bucket
         self.prefix = prefix.strip("/")
-        self.client = storage.Client()
+        self.client = client or storage.Client()
         self.bucket = self.client.bucket(self.bucket_name)
 
     def _make_blob_path(

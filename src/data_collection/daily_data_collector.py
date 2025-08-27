@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import logging
 import os
+import uuid
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Tuple
@@ -136,20 +137,19 @@ def check_db_connection(db: HotDurhamDB) -> bool:
         return False
 
 
-# ------------- Core Orchestration ---------------
-async def run_collection_process(start_date: datetime | str, end_date: datetime | str, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs', source='all'):
-    log.info(f"Run collection {start_date} -> {end_date} dry={is_dry_run} aggregate={aggregate} interval={agg_interval} sink={sink} source={source}")
+###########################
+# Refactored orchestration
+###########################
+
+def _normalize_dates(start_date: datetime | str, end_date: datetime | str) -> tuple[str, str]:
+    start_str = start_date if isinstance(start_date, str) else start_date.strftime('%Y-%m-%d')
+    end_str = end_date if isinstance(end_date, str) else end_date.strftime('%Y-%m-%d')
+    return start_str, end_str
+
+
+async def _fetch_raw(start_str: str, end_str: str, source: str, aggregate: bool, agg_interval: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     wu_raw = pd.DataFrame()
     tsi_raw = pd.DataFrame()
-    # API clients expect ISO date strings (assumption based on previous implementation)
-    if isinstance(start_date, str):
-        start_str = start_date
-    else:
-        start_str = start_date.strftime('%Y-%m-%d')
-    if isinstance(end_date, str):
-        end_str = end_date
-    else:
-        end_str = end_date.strftime('%Y-%m-%d')
     if source == 'all':
         async with WUClient(**app_config.wu_api_config) as wu_client, TSIClient(**app_config.tsi_api_config) as tsi_client:
             wu_task = wu_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else wu_client.fetch_data(start_str, end_str)
@@ -161,37 +161,61 @@ async def run_collection_process(start_date: datetime | str, end_date: datetime 
     elif source == 'tsi':
         async with TSIClient(**app_config.tsi_api_config) as tsi_client:
             tsi_raw = await (tsi_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else tsi_client.fetch_data(start_str, end_str))
-    log.info(f"Fetched WU={len(wu_raw)} TSI={len(tsi_raw)} raw rows")
+    return wu_raw, tsi_raw
+
+
+def _clean(wu_raw: pd.DataFrame, tsi_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     wu_df = clean_and_transform_data(wu_raw, 'WU') if not wu_raw.empty else pd.DataFrame()
     tsi_df = clean_and_transform_data(tsi_raw, 'TSI') if not tsi_raw.empty else pd.DataFrame()
-    if is_dry_run:
-        log.info("DRY RUN: showing head only")
-        if not wu_df.empty:
-            print("WU sample:\n", wu_df.head())
-        if not tsi_df.empty:
-            print("TSI sample:\n", tsi_df.head())
-        return
+    log.info(f"Fetched WU={len(wu_raw)} TSI={len(tsi_raw)} raw rows -> cleaned WU={len(wu_df)} TSI={len(tsi_df)}")
+    return wu_df, tsi_df
 
-    def _has_ts(df: pd.DataFrame) -> bool:
-        return not df.empty and (('ts' in df.columns) or ('timestamp' in df.columns))
 
-    def _safe_upload(uploader: Any, df: pd.DataFrame, src: str) -> bool:
-        if df.empty:
-            log.info(f"Skip {src}: empty")
-            return False
-        ts_col = 'ts' if 'ts' in df.columns else ('timestamp' if 'timestamp' in df.columns else None)
-        if not ts_col:
-            log.warning(f"Skip {src}: no ts/timestamp column")
-            return False
-        try:
-            uploader.upload_parquet(df, source=src, aggregated=aggregate, interval=agg_interval, ts_column=ts_col)
-            return True
-        except ValueError as ve:
-            log.warning(f"{src} upload validation skipped: {ve}")
-        except Exception:
-            log.error(f"Unexpected {src} upload error", exc_info=True)
+def _has_ts(df: pd.DataFrame) -> bool:
+    return not df.empty and (('ts' in df.columns) or ('timestamp' in df.columns))
+
+
+def _build_uploader(bucket: str, prefix: str):
+    if os.getenv('GCS_FAKE_UPLOAD') == '1':
+        class _DummyUploader:
+            def __init__(self, bucket: str, prefix: str):
+                self.bucket_name = bucket
+                self.prefix = prefix
+            def upload_parquet(self, df: pd.DataFrame, source: str, aggregated=False, interval='h', ts_column='timestamp', extra_suffix=None):
+                if df.empty:
+                    log.info(f"[FAKE] skip empty {source}")
+                    return ''
+                use_col = ts_column if ts_column in df.columns else 'timestamp'
+                first_ts = pd.to_datetime(df[use_col]).min()
+                date_str = first_ts.strftime('%Y-%m-%d') if not pd.isna(first_ts) else 'unknown-date'
+                agg_part = interval if aggregated else 'raw'
+                path = f"{self.prefix}/source={source}/agg={agg_part}/dt={date_str}/{source}-{date_str}.parquet"
+                log.info(f"[FAKE] Would upload {len(df)} rows to gs://{self.bucket_name}/{path}")
+                return f"gs://{self.bucket_name}/{path}"
+        return _DummyUploader(bucket, prefix)
+    return GCSUploader(bucket=bucket, prefix=prefix)
+
+
+def _safe_upload(uploader: Any, df: pd.DataFrame, src: str, aggregate: bool, agg_interval: str) -> bool:
+    if df.empty:
+        log.info(f"Skip {src}: empty")
         return False
+    ts_col = 'ts' if 'ts' in df.columns else ('timestamp' if 'timestamp' in df.columns else None)
+    if not ts_col:
+        log.warning(f"Skip {src}: no ts/timestamp column")
+        return False
+    try:
+        uploader.upload_parquet(df, source=src, aggregated=aggregate, interval=agg_interval, ts_column=ts_col)
+        return True
+    except ValueError as ve:
+        log.warning(f"{src} upload validation skipped: {ve}")
+    except Exception:
+        log.error(f"Unexpected {src} upload error", exc_info=True)
+    return False
 
+
+def _sink_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sink: str, aggregate: bool, agg_interval: str) -> tuple[bool, bool]:
+    wrote_wu = wrote_tsi = False
     wrote_any = False
     if sink in ('gcs', 'both'):
         gcs_cfg = app_config.gcs_config
@@ -199,27 +223,10 @@ async def run_collection_process(start_date: datetime | str, end_date: datetime 
         if not bucket:
             log.error("No GCS bucket configured; skip GCS sink")
         else:
-            if os.getenv('GCS_FAKE_UPLOAD') == '1':
-                class _DummyUploader:
-                    def __init__(self, bucket: str, prefix: str):
-                        self.bucket_name = bucket
-                        self.prefix = prefix
-                    def upload_parquet(self, df: pd.DataFrame, source: str, aggregated=False, interval='h', ts_column='timestamp', extra_suffix=None):
-                        if df.empty:
-                            log.info(f"[FAKE] skip empty {source}")
-                            return ''
-                        use_col = ts_column if ts_column in df.columns else 'timestamp'
-                        first_ts = pd.to_datetime(df[use_col]).min()
-                        date_str = first_ts.strftime('%Y-%m-%d') if not pd.isna(first_ts) else 'unknown-date'
-                        agg_part = interval if aggregated else 'raw'
-                        path = f"{self.prefix}/source={source}/agg={agg_part}/dt={date_str}/{source}-{date_str}.parquet"
-                        log.info(f"[FAKE] Would upload {len(df)} rows to gs://{self.bucket_name}/{path}")
-                        return f"gs://{self.bucket_name}/{path}"
-                uploader = _DummyUploader(bucket, gcs_cfg.get('prefix', 'sensor_readings'))
-            else:
-                uploader = GCSUploader(bucket=bucket, prefix=gcs_cfg.get('prefix', 'sensor_readings'))
-            wrote_any = _safe_upload(uploader, wu_df, 'WU') or wrote_any
-            wrote_any = _safe_upload(uploader, tsi_df, 'TSI') or wrote_any
+            uploader = _build_uploader(bucket, gcs_cfg.get('prefix', 'sensor_readings'))
+            wrote_wu = _safe_upload(uploader, wu_df, 'WU', aggregate, agg_interval) or wrote_wu
+            wrote_tsi = _safe_upload(uploader, tsi_df, 'TSI', aggregate, agg_interval) or wrote_tsi
+            wrote_any = wrote_wu or wrote_tsi
 
     if sink in ('db', 'both') or (sink == 'gcs' and not wrote_any):
         wu_db = wu_df if _has_ts(wu_df) else pd.DataFrame()
@@ -231,13 +238,92 @@ async def run_collection_process(start_date: datetime | str, end_date: datetime 
         db = HotDurhamDB()
         if check_db_connection(db):
             insert_data_to_db(db, wu_db, tsi_db)
-            if (not wu_db.empty) or (not tsi_db.empty):
-                wrote_any = True
+            if (not wu_db.empty):
+                wrote_wu = True
+            if (not tsi_db.empty):
+                wrote_tsi = True
         else:
             log.critical("DB connection failed; skipped DB sink")
+    return wrote_wu, wrote_tsi
 
-    if not wrote_any:
+
+def _log_run_metadata(run_id: str, start_str: str, end_str: str, run_started: datetime, wu_raw: pd.DataFrame, tsi_raw: pd.DataFrame, wu_df: pd.DataFrame, tsi_df: pd.DataFrame, wrote_wu: bool, wrote_tsi: bool, aggregate: bool, agg_interval: str, sink: str, source: str):
+    if os.getenv('BQ_RUN_METADATA') != '1':
+        return
+    try:
+        from google.cloud import bigquery  # lazy import
+        bq_project = os.getenv('BQ_PROJECT') or None
+        bq_dataset = os.getenv('BQ_DATASET', 'sensors')
+        table_id = os.getenv('BQ_RUN_METADATA_TABLE', 'ingestion_runs')
+        client = bigquery.Client(project=bq_project)
+        fq = f"{client.project}.{bq_dataset}.{table_id}"
+        try:
+            client.get_table(fq)
+        except Exception:
+            schema = [
+                bigquery.SchemaField('run_id','STRING'),
+                bigquery.SchemaField('start_date','DATE'),
+                bigquery.SchemaField('end_date','DATE'),
+                bigquery.SchemaField('run_started','TIMESTAMP'),
+                bigquery.SchemaField('run_finished','TIMESTAMP'),
+                bigquery.SchemaField('wu_rows','INT64'),
+                bigquery.SchemaField('tsi_rows','INT64'),
+                bigquery.SchemaField('wu_written','BOOL'),
+                bigquery.SchemaField('tsi_written','BOOL'),
+                bigquery.SchemaField('aggregate','BOOL'),
+                bigquery.SchemaField('agg_interval','STRING'),
+                bigquery.SchemaField('sink','STRING'),
+                bigquery.SchemaField('source','STRING'),
+                bigquery.SchemaField('status','STRING'),
+            ]
+            tbl = bigquery.Table(fq, schema=schema)
+            client.create_table(tbl, exists_ok=True)
+        rows_to_insert = [{
+            'run_id': run_id,
+            'start_date': start_str,
+            'end_date': end_str,
+            'run_started': run_started,
+            'run_finished': datetime.utcnow(),
+            'wu_rows': int(len(wu_raw)),
+            'tsi_rows': int(len(tsi_raw)),
+            'wu_written': bool(not wu_df.empty and wrote_wu),
+            'tsi_written': bool(not tsi_df.empty and wrote_tsi),
+            'aggregate': bool(aggregate),
+            'agg_interval': agg_interval,
+            'sink': sink,
+            'source': source,
+            'status': 'success'
+        }]
+        errors = client.insert_rows_json(fq, rows_to_insert)
+        if errors:
+            log.error(f"Run metadata insert errors: {errors}")
+        else:
+            log.info(f"Logged run metadata to {fq} run_id={run_id}")
+    except Exception as e:
+        log.error(f"Failed to log run metadata: {e}")
+
+
+async def run_collection_process(start_date: datetime | str, end_date: datetime | str, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs', source='all'):
+    log.info(f"Run collection {start_date} -> {end_date} dry={is_dry_run} aggregate={aggregate} interval={agg_interval} sink={sink} source={source}")
+    run_id = uuid.uuid4().hex
+    run_started = datetime.utcnow()
+    start_str, end_str = _normalize_dates(start_date, end_date)
+    wu_raw, tsi_raw = await _fetch_raw(start_str, end_str, source, aggregate, agg_interval)
+    wu_df, tsi_df = _clean(wu_raw, tsi_raw)
+
+    if is_dry_run:
+        log.info("DRY RUN: showing head only")
+        if not wu_df.empty:
+            print("WU sample:\n", wu_df.head())
+        if not tsi_df.empty:
+            print("TSI sample:\n", tsi_df.head())
+        return
+
+    wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, sink, aggregate, agg_interval)
+    if not (wrote_wu or wrote_tsi):
         log.warning("No data written to any sink.")
+
+    _log_run_metadata(run_id, start_str, end_str, run_started, wu_raw, tsi_raw, wu_df, tsi_df, wrote_wu, wrote_tsi, aggregate, agg_interval, sink, source)
     log.info("Collection complete")
 
 
