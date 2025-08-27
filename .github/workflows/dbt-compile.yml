@@ -1,0 +1,44 @@
+name: dbt-compile
+on:
+  pull_request:
+    paths:
+      - 'transformations/dbt/**'
+  schedule:
+    - cron: '15 4 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Create dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<'EOF'
+          sensor_transforms:
+            target: ci
+            outputs:
+              ci:
+                type: bigquery
+                method: service-account
+                project: ${{ secrets.GCP_PROJECT_ID }}
+                dataset: ${{ vars.BQ_DATASET || 'sensors' }}
+                threads: 4
+                keyfile_json: ${{ secrets.GCP_SA_KEY_JSON }}
+                timeout_seconds: 300
+                priority: interactive
+                location: US
+          EOF
+      - name: dbt deps
+        run: dbt deps --project-dir transformations/dbt
+      - name: dbt compile
+        run: dbt compile --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
