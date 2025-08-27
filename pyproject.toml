@@ -27,6 +27,7 @@ dependencies = [
     "google-cloud-logging>=3.10.0",
     "pydantic>=2.0.0",
     "pyarrow>=16.1.0",
+    "PyYAML>=6.0.0",
 ]
 
 [project.optional-dependencies]
