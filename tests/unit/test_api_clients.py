@@ -43,12 +43,14 @@ async def test_tsi_client_fetch_data_success(mocker):
     telemetry_response = [
         {
             'cloud_device_id': 'd14rfblfk2973f196c5g',
-            'cloud_timestamp': '2025-07-27T12:00:00Z',
+            # Provide field as 'timestamp' to exercise alias mapping and downstream rename logic deterministically
+            'timestamp': '2025-07-27T12:00:00Z',
             'mcpm2x5': 15.5,
             'temperature': 26.0,
             'rh': 55.0
         }
     ]
+    # Ensure the returned device list aligns with expectation in assertions
     mocker.patch('src.data_collection.clients.tsi_client.get_tsi_devices', return_value=['12345'])
     client = TSIClient(client_id='test_id', client_secret='test_secret', auth_url='https://fake-tsi.com/auth', base_url='https://fake-tsi.com/api')
     mocker.patch.object(client, '_authenticate', side_effect=lambda: setattr(client, 'headers', {"Authorization": "Bearer fake_token", "Accept": "application/json"}) or True)
@@ -56,5 +58,7 @@ async def test_tsi_client_fetch_data_success(mocker):
     df = await client.fetch_data('2025-07-27', '2025-07-27')
 
     assert not df.empty
-    assert (df['device_id'] == '12345').all()
+    assert not df.empty, "TSI DataFrame should not be empty"
+    assert 'timestamp' in df.columns, "Timestamp column should be present after rename"
+    assert (df['device_id'] == '12345').all(), "All rows should have the test device id"
     assert df.iloc[0]['mcpm2x5'] == 15.5

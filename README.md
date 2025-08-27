@@ -1,21 +1,32 @@
+A daily GitHub Actions workflow (`daily-verify.yml`) runs the cloud pipeline verifier against the previous day's partition. It enforces:
+
+* GCS round-trip write/read
+* BigQuery dataset & table presence
+* Adaptive row counts per table
+* Schema normalization (canonical `ts` TIMESTAMP + float latitude/longitude copies)
+* Epoch diagnostics (detects seconds/millis/micros/nanos integer time columns)
+
 # Hot Durham Environmental Monitoring System
 
 A comprehensive environmental monitoring system for Durham, NC, featuring **high-resolution 15-minute interval** data collection from Weather Underground and TSI air quality sensors for accurate research and analysis.
 
 ## 🌟 Features
 
-- **High-Resolution Data Collection**: 15-minute interval data from Weather Underground and TSI sensors
-- **Daily Data Processing**: Daily summaries instead of weekly for increased accuracy
-- **Research-Grade Data**: Credible, high-granularity data suitable for academic research
-- **Enhanced Test Sensor Separation**: Advanced separation of test vs production data with robust error handling
-- **Automated Reporting**: Daily, weekly, and monthly automated reports
-- **Google Drive Integration**: Seamless cloud storage and sharing
-- **Data Visualization**: Interactive charts and analysis tools with 15-minute resolution
-- **Master Data Management**: Historical data aggregation and management
-- **Test Sensor Management**: Dedicated testing infrastructure with comprehensive validation
-- **Configuration Validation**: Automatic validation of sensor configurations before data collection
-- **Advanced Error Handling**: Robust error handling and graceful failure recovery
 
+### Continuous Verification
+
+A daily GitHub Actions workflow (`daily-verify.yml`) runs the cloud pipeline verifier against the previous day's partition. It enforces:
+* GCS round-trip write/read
+* BigQuery dataset & table presence
+* Adaptive row counts per table
+* Schema normalization (canonical `ts` TIMESTAMP + float latitude/longitude copies)
+* Epoch diagnostics (detects seconds/millis/micros/nanos integer time columns)
+
+Failures surface directly in the Actions tab and block unnoticed schema drift.
+
+### IAM Hardening
+
+See `docs/IAM_HARDENING.md` for least-privilege roles, service account layout, and Workload Identity Federation (GitHub → GCP) guidance.
 ## � Data Collection Specifications
 
 ### High-Resolution Research-Grade Data
@@ -175,6 +186,25 @@ Main configuration files:
 ### Current Configuration
 
 - **27 Test Sensors Configured**: 14 WU + 13 TSI test sensors
+
+### Quick Raw Sample Fetch (Diagnostics)
+
+Use `scripts/fetch_sample_raw.py` to pull a single day's raw data directly from a source API and inspect non-null coverage before it enters the pipeline.
+
+Examples:
+
+```sh
+WU_API_KEY=yourkey \
+python scripts/fetch_sample_raw.py --source WU --date 2025-08-20 --stations STATIONID123 --verbose --validated-out /tmp/wu_20250820.parquet
+```
+
+```sh
+TSI_CLIENT_ID=cid TSI_CLIENT_SECRET=secret TSI_AUTH_URL=https://auth.example/token \
+python scripts/fetch_sample_raw.py --source TSI --date 2025-08-20 --devices DEVICE123 --validated-out /tmp/tsi_20250820.parquet
+```
+
+Output includes a JSON summary with row counts and per-column non-null counts for fast gap analysis.
+
 - **Production Data Only**: Google Sheets contain only production sensor data
 - **Separate Storage**: Test data isolated for internal analysis
 

@@ -1,7 +1,7 @@
-"""Unit tests for scripts/test_bigquery_upload.py"""
+"""Unit tests for scripts/bq_upload_sample.py"""
 from unittest.mock import patch, MagicMock
 
-from scripts.test_bigquery_upload import build_sample_df, upload_to_bigquery
+from scripts.bq_upload_sample import build_sample_df, upload_to_bigquery
 
 
 def test_build_sample_df():
@@ -10,7 +10,7 @@ def test_build_sample_df():
     assert set(df.columns) == {"timestamp", "deployment_fk", "metric_name", "value"}
 
 
-@patch("scripts.test_bigquery_upload.bigquery.Client")
+@patch("scripts.bq_upload_sample.bigquery.Client")
 def test_upload_to_bigquery_dry_run(mock_client):
     df = build_sample_df()
     assert upload_to_bigquery(df, "some_ds", "some_table", dry_run=True) is True
@@ -18,7 +18,7 @@ def test_upload_to_bigquery_dry_run(mock_client):
     mock_client.assert_not_called()
 
 
-@patch("scripts.test_bigquery_upload.bigquery.Client")
+@patch("scripts.bq_upload_sample.bigquery.Client")
 def test_upload_to_bigquery_real(mock_client):
     mock_instance = MagicMock()
     mock_client.return_value = mock_instance
