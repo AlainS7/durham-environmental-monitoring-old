@@ -1,0 +1,9 @@
+row_thresholds:
+  sensor_readings_wu_raw: 100
+  sensor_readings_tsi_raw: 100
+  sensor_readings_long: 100
+
+metric_coverage:
+  min_fraction: 0.9
+  table: sensor_readings_long
+  timestamp_field: timestamp
