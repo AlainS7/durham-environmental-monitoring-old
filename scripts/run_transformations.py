@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import List
 import re
 
-from google.cloud import bigquery
+from google.cloud import bigquery  # type: ignore
 
 TOKEN_PATTERN = re.compile(r"\$\{(PROJECT|DATASET)\}")
 
@@ -46,10 +46,13 @@ def main():
     ap.add_argument('--execute', action='store_true', help='Execute instead of print')
     args = ap.parse_args()
 
-    if not args.project:
-        raise SystemExit("--project or BQ_PROJECT env var required")
+    # Only require / instantiate BigQuery client when executing. For a dry run we
+    # simply render and print SQL so credentials are unnecessary (helps PR CI
+    # workflows that lack GCP auth for preview).
+    if not args.project and args.execute:
+        raise SystemExit("--project or BQ_PROJECT env var required for execution")
 
-    client = bigquery.Client(project=args.project)
+    client = bigquery.Client(project=args.project) if args.execute else None
     dir_path = Path(args.dir)
     if not dir_path.exists():
         raise SystemExit(f"Directory not found: {dir_path}")
@@ -59,7 +62,8 @@ def main():
         sql = render(raw, args.project, args.dataset)
         print(f"-- {sql_file.name} --")
         if args.execute:
-            execute_sql(client, sql, args.date)
+            # mypy: client is not None in execute path
+            execute_sql(client, sql, args.date)  # type: ignore[arg-type]
             print(f"Executed {sql_file.name}")
         else:
             print(sql)
