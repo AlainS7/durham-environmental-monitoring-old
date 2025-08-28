@@ -1,275 +1,412 @@
-import asyncio
-import pandas as pd
+"""Daily data collection orchestrator for WU and TSI sources.
+
+Features:
+ - Fetch raw or aggregated data
+ - Clean/standardize column names, add canonical ts + float lat/lon copies
+ - Upload wide parquet files to GCS (partitioned path layout)
+ - Optional legacy DB insertion (wide->long melt)
+ - Resilient upload: skip dataframes missing timestamp, tolerate validation issues
+ - Local dev mode: set GCS_FAKE_UPLOAD=1 to bypass real network writes (logs intended paths)
+"""
+
+from __future__ import annotations
+
 import argparse
+import asyncio
 import logging
+import os
+import uuid
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Tuple, Optional
+
+import pandas as pd
 from sqlalchemy import text
 
 from src.config.app_config import app_config
 from src.database.db_manager import HotDurhamDB
+from src.storage.gcs_uploader import GCSUploader
 from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
 
 log = logging.getLogger(__name__)
 
-# --- Database Connection Check ---
-def check_db_connection(db: HotDurhamDB) -> bool:
-    """Checks if the database connection is valid."""
-    try:
-        with db.engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        log.info("Database connection successful.")
-        return True
-    except Exception as e:
-        log.error(f"Database connection failed: {e}")
-        return False
 
-# --- Data Cleaning and Transformation ---
+# ---------------- Cleaning -----------------
 def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
-    """
-    Cleans and standardizes column names for WU and TSI data sources.
-    This prepares the DataFrame for the later melting/unpivoting step.
-    """
     if df.empty:
         return df
-
-    log.info(f"Cleaning {len(df)} raw records from {source}.")
-    
-    # Standardize column names across both sources
-    if source == 'WU':
-        # This mapping defines all the fields we want to capture from the WU API.
-        # It renames them to standardized, database-friendly names.
+    if source == "WU":
         rename_map = {
-            # Core identifiers
-            'stationID': 'native_sensor_id', 
-            'obsTimeUtc': 'timestamp', 
-            
-            # Temperature and Humidity
-            'tempAvg': 'temperature', 
-            'tempHigh': 'temperature_high',
-            'tempLow': 'temperature_low',
-            'humidityAvg': 'humidity',
-            'humidityHigh': 'humidity_high',
-            'humidityLow': 'humidity_low',
-
-            # Precipitation
-            'precipRate': 'precip_rate',
-            'precipTotal': 'precip_total',
-
-            # Wind
-            'windspeedAvg': 'wind_speed_avg',
-            'windspeedHigh': 'wind_speed_high',
-            'windspeedLow': 'wind_speed_low',
-            'windgustAvg': 'wind_gust_avg',
-            'windgustHigh': 'wind_gust_high',
-            'windgustLow': 'wind_gust_low',
+            'stationID': 'native_sensor_id', 'obsTimeUtc': 'timestamp',
+            'tempAvg': 'temperature', 'tempHigh': 'temperature_high', 'tempLow': 'temperature_low',
+            'humidityAvg': 'humidity', 'humidityHigh': 'humidity_high', 'humidityLow': 'humidity_low',
+            'precipRate': 'precip_rate', 'precipTotal': 'precip_total',
+            'windspeedAvg': 'wind_speed_avg', 'windspeedHigh': 'wind_speed_high', 'windspeedLow': 'wind_speed_low',
+            'windgustAvg': 'wind_gust_avg', 'windgustHigh': 'wind_gust_high', 'windgustLow': 'wind_gust_low',
             'winddirAvg': 'wind_direction_avg',
-
-            # Pressure
-            'pressureMax': 'pressure_max',
-            'pressureMin': 'pressure_min',
-            'pressureTrend': 'pressure_trend',
-
-            # Radiation and UV
-            'solarRadiationHigh': 'solar_radiation',
-            'uvHigh': 'uv_high',
-
-            # Other derived metrics
-            'windchillAvg': 'wind_chill_avg',
-            'windchillHigh': 'wind_chill_high',
-            'windchillLow': 'wind_chill_low',
-            'heatindexAvg': 'heat_index_avg',
-            'heatindexHigh': 'heat_index_high',
-            'heatindexLow': 'heat_index_low',
-            'dewptAvg': 'dew_point_avg',
-            'dewptHigh': 'dew_point_high',
-            'dewptLow': 'dew_point_low',
-
-            # Quality Control
+            'pressureMax': 'pressure_max', 'pressureMin': 'pressure_min', 'pressureTrend': 'pressure_trend',
+            'solarRadiationHigh': 'solar_radiation', 'uvHigh': 'uv_high',
+            'windchillAvg': 'wind_chill_avg', 'windchillHigh': 'wind_chill_high', 'windchillLow': 'wind_chill_low',
+            'heatindexAvg': 'heat_index_avg', 'heatindexHigh': 'heat_index_high', 'heatindexLow': 'heat_index_low',
+            'dewptAvg': 'dew_point_avg', 'dewptHigh': 'dew_point_high', 'dewptLow': 'dew_point_low',
             'qcStatus': 'qc_status'
         }
-        # Only keep columns that exist in the DataFrame to avoid errors
-        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
-
-    elif source == 'TSI':
-        # Renaming for TSI flat-format data (expanded to match all provided fields)
+    else:  # TSI
         rename_map = {
-            # 'cloud_account_id': 'account_id', # account the sensor belongs to
-            'cloud_device_id': 'native_sensor_id',
-            'cloud_timestamp': 'timestamp',
-            # 'is_indoor': 'is_indoor',
-            # 'is_public': 'is_public',
-            'latitude': 'latitude',
-            'longitude': 'longitude',
-            'mcpm10': 'pm10',
-            'mcpm10_aqi': 'pm10_aqi',
-            'mcpm1x0': 'pm1_0',
-            'mcpm2x5': 'pm2_5',
-            'mcpm2x5_aqi': 'pm2_5_aqi',
-            'mcpm4x0': 'pm4_0',
-            # 'model': 'model',
-            'ncpm0x5': 'ncpm0_5',
-            'ncpm10': 'ncpm10',
-            'ncpm1x0': 'ncpm1_0',
-            'ncpm2x5': 'ncpm2_5',
-            'ncpm4x0': 'ncpm4_0',
-            'rh': 'humidity',
-            # 'serial': 'serial',
-            'temperature': 'temperature',
-            'tpsize': 'tpsize',
-            'co2_ppm': 'co2_ppm',
-            'co_ppm': 'co_ppm',
-            'baro_inhg': 'baro_inhg',
-            'o3_ppb': 'o3_ppb',
-            'no2_ppb': 'no2_ppb',
-            'so2_ppb': 'so2_ppb',
-            'ch2o_ppb': 'ch2o_ppb',
-            'voc_mgm3': 'voc_mgm3'
+            'cloud_device_id': 'native_sensor_id', 'device_id': 'native_sensor_id', 'cloud_timestamp': 'timestamp',
+            'mcpm10': 'pm10', 'mcpm10_aqi': 'pm10_aqi', 'mcpm1x0': 'pm1_0', 'mcpm2x5': 'pm2_5', 'mcpm2x5_aqi': 'pm2_5_aqi',
+            'mcpm4x0': 'ncpm4_0', 'ncpm0x5': 'ncpm0_5', 'ncpm10': 'ncpm10', 'ncpm1x0': 'ncpm1_0', 'ncpm2x5': 'ncpm2_5', 'ncpm4x0': 'ncpm4_0',
+            'rh': 'humidity', 'temperature': 'temperature', 'tpsize': 'tpsize', 'co2_ppm': 'co2_ppm', 'co_ppm': 'co_ppm',
+            'baro_inhg': 'baro_inhg', 'o3_ppb': 'o3_ppb', 'no2_ppb': 'no2_ppb', 'so2_ppb': 'so2_ppb', 'ch2o_ppb': 'ch2o_ppb', 'voc_mgm3': 'voc_mgm3'
         }
-        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
-
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
-
+        df['ts'] = df['timestamp']
+    # lat/lon float copies
+    for pair in [('latitude', 'longitude'), ('lat', 'lon')]:
+        lat_col, lon_col = pair
+        if lat_col in df.columns and lon_col in df.columns:
+            for c in pair:
+                try:
+                    df[f"{c}_f"] = pd.to_numeric(df[c], errors='coerce').astype(float)
+                except Exception:
+                    pass
     return df
 
 
-# --- Database Insertion ---
+# ------------- DB Insertion ---------------
 def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
-    """
-    Transforms wide-format DataFrames into a long format and upserts them
-    into the sensor_readings table.
-    """
     if wu_df.empty and tsi_df.empty:
         log.info("No data to insert.")
         return
-
-    # 1. Get a map of all active deployments from the database
     try:
-        with db.engine.connect() as connection:
-            deployment_map_sql = text("""
+        with db.engine.connect() as conn:
+            sql = text("""
                 SELECT d.deployment_pk, sm.native_sensor_id, sm.sensor_type
                 FROM deployments d
                 JOIN sensors_master sm ON d.sensor_fk = sm.sensor_pk
-                WHERE d.end_date IS NULL;
-            """)
-            deployment_map_df = pd.read_sql(deployment_map_sql, connection)
+                WHERE d.end_date IS NULL;""")
+            deployment_map_df = pd.read_sql(sql, conn)
     except Exception as e:
-        log.error(f"Failed to fetch deployment map: {e}", exc_info=True)
+        log.error(f"Failed to fetch deployment map: {e}")
         return
-
     if deployment_map_df.empty:
-        log.error("No active deployments found in the database. Cannot map data.")
+        log.error("No active deployments found.")
         return
-
-    all_readings = []
-    
-    # 2. Process each DataFrame (WU and TSI)
-    for df, df_type in [(wu_df, 'WU'), (tsi_df, 'TSI')]:
+    all_long = []
+    for df, typ in [(wu_df, 'WU'), (tsi_df, 'TSI')]:
         if df.empty:
             continue
-
-        # Filter deployment map for the current sensor type
-        type_map = deployment_map_df[deployment_map_df['sensor_type'] == df_type]
-        
-        # Join the data with its deployment key
-        merged_df = df.merge(type_map, on='native_sensor_id', how='inner')
-        
-        if merged_df.empty:
-            log.warning(f"No {df_type} data matched an active deployment.")
+        type_map = deployment_map_df[deployment_map_df.sensor_type == typ]
+        merged = df.merge(type_map, on='native_sensor_id', how='inner')
+        if merged.empty:
+            log.warning(f"No {typ} rows matched deployments.")
             continue
-        
-        merged_df.rename(columns={'deployment_pk': 'deployment_fk'}, inplace=True)
-        
-        # 3. Unpivot (melt) the data from wide to long format
+        merged = merged.rename(columns={'deployment_pk': 'deployment_fk'})
         id_vars = ['timestamp', 'deployment_fk']
-        # Dynamically find all metric columns to melt
-        value_vars = [col for col in merged_df.columns if col not in id_vars + ['native_sensor_id', 'sensor_type']]
-        
+        value_vars = [c for c in merged.columns if c not in id_vars + ['native_sensor_id', 'sensor_type']]
         if not value_vars:
-            log.warning(f"No metric columns found for {df_type} after merging.")
             continue
-
-        long_df = pd.melt(merged_df, id_vars=id_vars, value_vars=value_vars, var_name='metric_name', value_name='value')
-        all_readings.append(long_df)
-
-    if not all_readings:
-        log.warning("No data matched an active deployment. Nothing to insert.")
+        long_df = pd.melt(merged, id_vars=id_vars, value_vars=value_vars, var_name='metric_name', value_name='value')
+        all_long.append(long_df)
+    if not all_long:
+        log.warning("Nothing to insert after deployment matching.")
         return
-
-    # 4. Combine, clean, and prepare the final DataFrame
-    final_df = pd.concat(all_readings, ignore_index=True)
-    final_df.dropna(subset=['value'], inplace=True)
-    final_df.drop_duplicates(subset=['timestamp', 'deployment_fk', 'metric_name'], keep='last', inplace=True)
-
-    if final_df.empty:
-        log.info("Final DataFrame is empty after cleaning and de-duplication.")
+    final = pd.concat(all_long, ignore_index=True)
+    final = final.dropna(subset=['value']).drop_duplicates(subset=['timestamp', 'deployment_fk', 'metric_name'], keep='last')
+    if final.empty:
+        log.info("Final DataFrame empty after cleaning.")
         return
-        
-    # 5. Use the robust upsert method from your db_manager
     try:
-        db.insert_sensor_readings(final_df)
-        log.info(f"Successfully processed and upserted {len(final_df)} records.")
+        db.insert_sensor_readings(final)
+        log.info(f"Inserted/upserted {len(final)} sensor readings.")
     except Exception as e:
-        log.error(f"Database insertion failed during final step: {e}", exc_info=True)
+        log.error(f"DB insertion failed: {e}")
         raise
 
-# --- Main Execution Logic ---
-async def run_collection_process(start_date, end_date, is_dry_run=False):
-    """Main process to fetch, clean, and store sensor data."""
-    log.info(f"Starting data collection for {start_date} to {end_date}. Dry Run: {is_dry_run}")
-    
 
-    # Use async context managers for API clients
-    async with WUClient(**app_config.wu_api_config) as wu_client:
+def check_db_connection(db: HotDurhamDB) -> bool:
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        log.error(f"Database connectivity check failed: {e}")
+        return False
+
+
+###########################
+# Refactored orchestration
+###########################
+
+def _normalize_dates(start_date: datetime | str, end_date: datetime | str) -> tuple[str, str]:
+    start_str = start_date if isinstance(start_date, str) else start_date.strftime('%Y-%m-%d')
+    end_str = end_date if isinstance(end_date, str) else end_date.strftime('%Y-%m-%d')
+    return start_str, end_str
+
+
+async def _fetch_raw(start_str: str, end_str: str, source: str, aggregate: bool, agg_interval: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    wu_raw = pd.DataFrame()
+    tsi_raw = pd.DataFrame()
+    if source == 'all':
+        async with WUClient(**app_config.wu_api_config) as wu_client, TSIClient(**app_config.tsi_api_config) as tsi_client:
+            wu_task = wu_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else wu_client.fetch_data(start_str, end_str)
+            tsi_task = tsi_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else tsi_client.fetch_data(start_str, end_str)
+            wu_raw, tsi_raw = await asyncio.gather(wu_task, tsi_task)
+    elif source == 'wu':
+        async with WUClient(**app_config.wu_api_config) as wu_client:
+            wu_raw = await (wu_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else wu_client.fetch_data(start_str, end_str))
+    elif source == 'tsi':
         async with TSIClient(**app_config.tsi_api_config) as tsi_client:
-            wu_raw_df, tsi_raw_df = await asyncio.gather(
-                wu_client.fetch_data(start_date, end_date),
-                tsi_client.fetch_data(start_date, end_date)
-            )
-            log.info(f"Fetched {len(wu_raw_df)} raw WU records and {len(tsi_raw_df)} raw TSI records.")
+            tsi_raw = await (tsi_client.fetch_data(start_str, end_str, aggregate=aggregate, agg_interval=agg_interval) if (aggregate or agg_interval != 'h') else tsi_client.fetch_data(start_str, end_str))
+    return wu_raw, tsi_raw
 
-    # Clean and standardize both dataframes
-    wu_df = clean_and_transform_data(wu_raw_df, 'WU')
-    tsi_df = clean_and_transform_data(tsi_raw_df, 'TSI')
 
-    if is_dry_run:
-        log.info("--- DRY RUN MODE ---")
-        print("\n--- Cleaned WU Data (first 5) ---")
-        print(wu_df.head().to_markdown(index=False))
-        print("\n--- Cleaned TSI Data (first 5) ---")
-        print(tsi_df.head().to_markdown(index=False))
-        log.info("Dry run complete. No data was written.")
+def _clean(wu_raw: pd.DataFrame, tsi_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    wu_df = clean_and_transform_data(wu_raw, 'WU') if not wu_raw.empty else pd.DataFrame()
+    tsi_df = clean_and_transform_data(tsi_raw, 'TSI') if not tsi_raw.empty else pd.DataFrame()
+    log.info(f"Fetched WU={len(wu_raw)} TSI={len(tsi_raw)} raw rows -> cleaned WU={len(wu_df)} TSI={len(tsi_df)}")
+    return wu_df, tsi_df
+
+
+def _has_ts(df: pd.DataFrame) -> bool:
+    return not df.empty and (('ts' in df.columns) or ('timestamp' in df.columns))
+
+
+def _build_uploader(bucket: str, prefix: str):
+    if os.getenv('GCS_FAKE_UPLOAD') == '1':
+        class _DummyUploader:
+            def __init__(self, bucket: str, prefix: str):
+                self.bucket_name = bucket
+                self.prefix = prefix
+            def upload_parquet(self, df: pd.DataFrame, source: str, aggregated=False, interval='h', ts_column='timestamp', extra_suffix=None):
+                if df.empty:
+                    log.info(f"[FAKE] skip empty {source}")
+                    return ''
+                use_col = ts_column if ts_column in df.columns else 'timestamp'
+                first_ts = pd.to_datetime(df[use_col]).min()
+                date_str = first_ts.strftime('%Y-%m-%d') if not pd.isna(first_ts) else 'unknown-date'
+                agg_part = interval if aggregated else 'raw'
+                path = f"{self.prefix}/source={source}/agg={agg_part}/dt={date_str}/{source}-{date_str}.parquet"
+                log.info(f"[FAKE] Would upload {len(df)} rows to gs://{self.bucket_name}/{path}")
+                return f"gs://{self.bucket_name}/{path}"
+        return _DummyUploader(bucket, prefix)
+    return GCSUploader(bucket=bucket, prefix=prefix)
+
+
+def _safe_upload(uploader: Any, df: pd.DataFrame, src: str, aggregate: bool, agg_interval: str) -> bool:
+    if df.empty:
+        log.info(f"Skip {src}: empty")
+        return False
+    ts_col = 'ts' if 'ts' in df.columns else ('timestamp' if 'timestamp' in df.columns else None)
+    if not ts_col:
+        log.warning(f"Skip {src}: no ts/timestamp column")
+        return False
+    try:
+        uploader.upload_parquet(df, source=src, aggregated=aggregate, interval=agg_interval, ts_column=ts_col)
+        return True
+    except ValueError as ve:
+        log.warning(f"{src} upload validation skipped: {ve}")
+    except Exception:
+        log.error(f"Unexpected {src} upload error", exc_info=True)
+    return False
+
+
+def _sink_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sink: str, aggregate: bool, agg_interval: str) -> tuple[bool, bool]:
+    wrote_wu = wrote_tsi = False
+    wrote_any = False
+    if sink in ('gcs', 'both'):
+        gcs_cfg = app_config.gcs_config
+        bucket = gcs_cfg.get('bucket')
+        if not bucket:
+            log.error("No GCS bucket configured; skip GCS sink")
+        else:
+            uploader = _build_uploader(bucket, gcs_cfg.get('prefix', 'sensor_readings'))
+            wrote_wu = _safe_upload(uploader, wu_df, 'WU', aggregate, agg_interval) or wrote_wu
+            wrote_tsi = _safe_upload(uploader, tsi_df, 'TSI', aggregate, agg_interval) or wrote_tsi
+            wrote_any = wrote_wu or wrote_tsi
+
+    if sink in ('db', 'both') or (sink == 'gcs' and not wrote_any):
+        wu_db = wu_df if _has_ts(wu_df) else pd.DataFrame()
+        tsi_db = tsi_df if _has_ts(tsi_df) else pd.DataFrame()
+        if (not _has_ts(wu_df)) and not wu_df.empty:
+            log.warning("WU missing ts/timestamp -> not inserting")
+        if (not _has_ts(tsi_df)) and not tsi_df.empty:
+            log.warning("TSI missing ts/timestamp -> not inserting")
+        db = HotDurhamDB()
+        if check_db_connection(db):
+            insert_data_to_db(db, wu_db, tsi_db)
+            if (not wu_db.empty):
+                wrote_wu = True
+            if (not tsi_db.empty):
+                wrote_tsi = True
+        else:
+            log.critical("DB connection failed; skipped DB sink")
+    return wrote_wu, wrote_tsi
+
+
+def _log_run_metadata(run_id: str, start_str: str, end_str: str, run_started: datetime, wu_raw: pd.DataFrame, tsi_raw: pd.DataFrame, wu_df: pd.DataFrame, tsi_df: pd.DataFrame, wrote_wu: bool, wrote_tsi: bool, aggregate: bool, agg_interval: str, sink: str, source: str):
+    if os.getenv('BQ_RUN_METADATA') != '1':
+        return
+    try:
+        from google.cloud import bigquery  # lazy import
+        bq_project = os.getenv('BQ_PROJECT') or None
+        bq_dataset = os.getenv('BQ_DATASET', 'sensors')
+        table_id = os.getenv('BQ_RUN_METADATA_TABLE', 'ingestion_runs')
+        client = bigquery.Client(project=bq_project)
+        fq = f"{client.project}.{bq_dataset}.{table_id}"
+        try:
+            client.get_table(fq)
+        except Exception:
+            schema = [
+                bigquery.SchemaField('run_id','STRING'),
+                bigquery.SchemaField('start_date','DATE'),
+                bigquery.SchemaField('end_date','DATE'),
+                bigquery.SchemaField('run_started','TIMESTAMP'),
+                bigquery.SchemaField('run_finished','TIMESTAMP'),
+                bigquery.SchemaField('wu_rows','INT64'),
+                bigquery.SchemaField('tsi_rows','INT64'),
+                bigquery.SchemaField('wu_written','BOOL'),
+                bigquery.SchemaField('tsi_written','BOOL'),
+                bigquery.SchemaField('aggregate','BOOL'),
+                bigquery.SchemaField('agg_interval','STRING'),
+                bigquery.SchemaField('sink','STRING'),
+                bigquery.SchemaField('source','STRING'),
+                bigquery.SchemaField('status','STRING'),
+            ]
+            tbl = bigquery.Table(fq, schema=schema)
+            client.create_table(tbl, exists_ok=True)
+        rows_to_insert = [{
+            'run_id': run_id,
+            'start_date': start_str,
+            'end_date': end_str,
+            'run_started': run_started,
+            'run_finished': datetime.utcnow(),
+            'wu_rows': int(len(wu_raw)),
+            'tsi_rows': int(len(tsi_raw)),
+            'wu_written': bool(not wu_df.empty and wrote_wu),
+            'tsi_written': bool(not tsi_df.empty and wrote_tsi),
+            'aggregate': bool(aggregate),
+            'agg_interval': agg_interval,
+            'sink': sink,
+            'source': source,
+            'status': 'success'
+        }]
+        errors = client.insert_rows_json(fq, rows_to_insert)
+        if errors:
+            log.error(f"Run metadata insert errors: {errors}")
+        else:
+            log.info(f"Logged run metadata to {fq} run_id={run_id}")
+    except Exception as e:
+        log.error(f"Failed to log run metadata: {e}")
+
+
+@dataclass(slots=True)
+class RunConfig:
+    start_date: datetime | str
+    end_date: datetime | str
+    is_dry_run: bool = False
+    aggregate: bool = False
+    agg_interval: str = 'h'
+    sink: str = 'gcs'
+    source: str = 'all'
+
+    # Backward compat helper to allow existing call style
+    @classmethod
+    def from_legacy(cls, start: datetime | str, end: datetime | str, **kwargs):
+        return cls(start_date=start, end_date=end, **kwargs)
+
+
+def _maybe_show_samples(wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
+    if not wu_df.empty:
+        print("WU sample:\n", wu_df.head())
+    if not tsi_df.empty:
+        print("TSI sample:\n", tsi_df.head())
+
+
+async def run_collection_process(
+    start_date: datetime | str,
+    end_date: datetime | str,
+    is_dry_run: bool = False,
+    aggregate: bool = False,
+    agg_interval: str = 'h',
+    sink: str = 'gcs',
+    source: str = 'all',
+    config: Optional[RunConfig] = None,
+):
+    """Primary orchestration entrypoint.
+
+    Either supply legacy individual parameters (maintained for backward compatibility & tests)
+    or pass a RunConfig via the config parameter (preferred going forward) which reduces the
+    CodeScene flagged long argument list.
+    """
+    if config is None:
+        config = RunConfig.from_legacy(start_date, end_date, is_dry_run=is_dry_run, aggregate=aggregate, agg_interval=agg_interval, sink=sink, source=source)
+    # Local variable aliasing for readability
+    start_date = config.start_date
+    end_date = config.end_date
+    log.info(
+        "Run collection %s -> %s dry=%s aggregate=%s interval=%s sink=%s source=%s",
+        start_date, end_date, config.is_dry_run, config.aggregate, config.agg_interval, config.sink, config.source
+    )
+    run_id = uuid.uuid4().hex
+    run_started = datetime.utcnow()
+    start_str, end_str = _normalize_dates(start_date, end_date)
+    wu_raw, tsi_raw = await _fetch_raw(start_str, end_str, config.source, config.aggregate, config.agg_interval)
+    wu_df, tsi_df = _clean(wu_raw, tsi_raw)
+
+    if config.is_dry_run:
+        log.info("DRY RUN: showing head only")
+        _maybe_show_samples(wu_df, tsi_df)
         return
 
-    # --- LIVE RUN MODE ---
-    log.info("--- LIVE RUN MODE ---")
-    try:
-        db = HotDurhamDB()
-        if not check_db_connection(db):
-            log.critical("Database connection failed. Aborting live run.")
-            return
+    wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, config.sink, config.aggregate, config.agg_interval)
+    if not (wrote_wu or wrote_tsi):
+        log.warning("No data written to any sink.")
 
-        # The single, robust insertion function
-        insert_data_to_db(db, wu_df, tsi_df)
-        
-        log.info("Live run complete.")
-
-    except Exception as e:
-        log.error(f"An error occurred during the live run: {e}", exc_info=True)
+    _log_run_metadata(
+        run_id, start_str, end_str, run_started,
+        wu_raw, tsi_raw, wu_df, tsi_df,
+        wrote_wu, wrote_tsi,
+        config.aggregate, config.agg_interval, config.sink, config.source
+    )
+    log.info("Collection complete")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Data collection script for Hot Durham project.")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    parser.add_argument("--start_date", type=str, default=yesterday, help="Start date (YYYY-MM-DD).")
-    parser.add_argument("--end_date", type=str, default=yesterday, help="End date (YYYY-MM-DD).")
-    parser.add_argument("--dry_run", action="store_true", help="Fetches and cleans but does not write to the database.")
-    args = parser.parse_args()
+# ------------- CLI ---------------
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Collect daily sensor data")
+    p.add_argument('--days', type=int, default=0, help='How many days back from today (start inclusive)')
+    p.add_argument('--start', type=str, help='Explicit start date YYYY-MM-DD (overrides --days)')
+    p.add_argument('--end', type=str, help='Explicit end date YYYY-MM-DD (default today)')
+    p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--aggregate', action='store_true')
+    p.add_argument('--agg-interval', default='h')
+    p.add_argument('--sink', choices=['gcs','db','both'], default='gcs')
+    p.add_argument('--source', choices=['all','wu','tsi'], default='all')
+    return p.parse_args(argv)
 
-    try:
-        asyncio.run(run_collection_process(args.start_date, args.end_date, args.dry_run))
-    except Exception as e:
-        log.critical(f"An unhandled error occurred in the main process: {e}", exc_info=True)
-        sys.exit(1) # Exit with a non-zero status code to indicate failure
+
+def compute_date_range(args: argparse.Namespace) -> Tuple[datetime, datetime]:
+    if args.start:
+        start = datetime.strptime(args.start, '%Y-%m-%d')
+        end = datetime.strptime(args.end, '%Y-%m-%d') if args.end else datetime.utcnow()
+    else:
+        # days=0 means today only
+        end = datetime.utcnow()
+        start = end - timedelta(days=args.days)
+    return start, end
+
+
+def main(argv=None):
+    args = parse_args(argv or sys.argv[1:])
+    start, end = compute_date_range(args)
+    asyncio.run(run_collection_process(start, end, is_dry_run=args.dry_run, aggregate=args.aggregate, agg_interval=args.agg_interval, sink=args.sink, source=args.source))
+
+
+if __name__ == '__main__':  # pragma: no cover
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    main()

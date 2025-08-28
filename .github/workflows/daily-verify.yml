@@ -1,0 +1,65 @@
+name: Daily Cloud Pipeline Verification
+
+on:
+  schedule:
+    - cron: '15 6 * * *' # 06:15 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # for Workload Identity Federation (OIDC) to GCP
+
+env:
+  BQ_PROJECT: durham-weather-466502
+  BQ_DATASET: sensors
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+  GCS_PREFIX: sensor_readings
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+            python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Auth to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
+
+      - name: Run verifier for yesterday
+        run: |
+          YESTERDAY=$(date -u -d 'yesterday' +%F)
+          echo "Verifying date $YESTERDAY"
+          python scripts/verify_cloud_pipeline.py \
+            --project $BQ_PROJECT \
+            --dataset $BQ_DATASET \
+            --bucket $GCS_BUCKET \
+            --prefix $GCS_PREFIX \
+            --date $YESTERDAY \
+            --show-tables \
+            --check-rows \
+            --show-schema \
+            --epoch-diagnostics \
+            --enforce-normalized \
+            --simulate-loads \
+            --json
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verifier-logs
+          path: ./*.log

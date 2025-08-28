@@ -1,0 +1,10 @@
+name: sensor_transforms
+version: 0.1.0
+config-version: 2
+profile: sensor_transforms
+model-paths: ["models"]
+models:
+  sensor_transforms:
+    +materialized: table
+    staging:
+      +materialized: view

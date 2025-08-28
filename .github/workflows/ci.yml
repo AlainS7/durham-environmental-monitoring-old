@@ -29,12 +29,10 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v1
 
-    - name: Install dependencies
+    - name: Install dependencies (prod + dev)
       run: |
-        # Create a virtual environment
         uv venv
-        # Install dependencies from the requirements file.
-        # 'sync' is much faster than 'pip install'.
+        uv pip sync requirements.txt
         uv pip sync requirements-dev.txt
 
     - name: Scan for vulnerabilities with pip-audit
@@ -47,7 +45,7 @@ jobs:
         uv run ruff check .
 
     - name: Test with pytest
-      run: |
-        uv run python -m pytest tests/unit tests/integration
       env:
         PYTHONPATH: ${{ github.workspace }}/src
+      run: |
+        uv run python -m pytest tests/unit tests/integration -q

@@ -1,3 +1,11 @@
+A daily GitHub Actions workflow (`daily-verify.yml`) runs the cloud pipeline verifier against the previous day's partition. It enforces:
+
+* GCS round-trip write/read
+* BigQuery dataset & table presence
+* Adaptive row counts per table
+* Schema normalization (canonical `ts` TIMESTAMP + float latitude/longitude copies)
+* Epoch diagnostics (detects seconds/millis/micros/nanos integer time columns)
+
 # Hot Durham Environmental Monitoring System
 
 [![CodeScene general](https://codescene.io/images/analyzed-by-codescene-badge.svg)](https://codescene.io/projects/70050)
@@ -6,18 +14,21 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 
 ## 🌟 Features
 
-- **High-Resolution Data Collection**: 15-minute interval data from Weather Underground and TSI sensors
-- **Daily Data Processing**: Daily summaries instead of weekly for increased accuracy
-- **Research-Grade Data**: Credible, high-granularity data suitable for academic research
-- **Enhanced Test Sensor Separation**: Advanced separation of test vs production data with robust error handling
-- **Automated Reporting**: Daily, weekly, and monthly automated reports
-- **Google Drive Integration**: Seamless cloud storage and sharing
-- **Data Visualization**: Interactive charts and analysis tools with 15-minute resolution
-- **Master Data Management**: Historical data aggregation and management
-- **Test Sensor Management**: Dedicated testing infrastructure with comprehensive validation
-- **Configuration Validation**: Automatic validation of sensor configurations before data collection
-- **Advanced Error Handling**: Robust error handling and graceful failure recovery
 
+### Continuous Verification
+
+A daily GitHub Actions workflow (`daily-verify.yml`) runs the cloud pipeline verifier against the previous day's partition. It enforces:
+* GCS round-trip write/read
+* BigQuery dataset & table presence
+* Adaptive row counts per table
+* Schema normalization (canonical `ts` TIMESTAMP + float latitude/longitude copies)
+* Epoch diagnostics (detects seconds/millis/micros/nanos integer time columns)
+
+Failures surface directly in the Actions tab and block unnoticed schema drift.
+
+### IAM Hardening
+
+See `docs/IAM_HARDENING.md` for least-privilege roles, service account layout, and Workload Identity Federation (GitHub → GCP) guidance.
 ## � Data Collection Specifications
 
 ### High-Resolution Research-Grade Data
@@ -177,6 +188,37 @@ Main configuration files:
 ### Current Configuration
 
 - **27 Test Sensors Configured**: 14 WU + 13 TSI test sensors
+
+### Quick Raw Sample Fetch (Diagnostics)
+
+Use `scripts/fetch_sample_raw.py` to pull a single day's raw data directly from a source API and inspect non-null coverage before it enters the pipeline.
+
+Examples:
+
+```sh
+WU_API_KEY=yourkey \
+python scripts/fetch_sample_raw.py --source WU --date 2025-08-20 --stations STATIONID123 --verbose --validated-out /tmp/wu_20250820.parquet
+```
+
+## Maintainability Refactors (2025-08-28)
+
+Internal improvements to reduce complexity and long argument lists (CodeScene flags):
+
+- Added `RunConfig` to `daily_data_collector` (legacy params still accepted).
+- Introduced `UploadSpec` plus compatibility shim for `GCSUploader` path building & uploads.
+- Added `PartitionSpec` and `LoadSpec` in `load_to_bigquery`; retained `build_gcs_uri` shim for existing tests.
+- Decomposed `bq_normalize_day` into smaller functions (`parse`, `list_target_tables`, `build_plans`, `execute_plan`).
+- Modularized `verify_cloud_pipeline` into focused helpers (`perform_gcs_check`, `gather_row_related`, etc.).
+- All changes keep CLI behavior stable; tests and lint pass.
+
+
+```sh
+TSI_CLIENT_ID=cid TSI_CLIENT_SECRET=secret TSI_AUTH_URL=https://auth.example/token \
+python scripts/fetch_sample_raw.py --source TSI --date 2025-08-20 --devices DEVICE123 --validated-out /tmp/tsi_20250820.parquet
+```
+
+Output includes a JSON summary with row counts and per-column non-null counts for fast gap analysis.
+
 - **Production Data Only**: Google Sheets contain only production sensor data
 - **Separate Storage**: Test data isolated for internal analysis
 
@@ -212,6 +254,143 @@ Main configuration files:
 - **Google Sheets Integration**: Production-only data flow with proper column handling
 - **Configuration Validation**: Pre-collection validation prevents common errors
 - **Smart TSI Detection**: Automatic detection of available sensor ID fields
+
+## Cloud storage and BigQuery
+
+This project defaults to writing raw sensor data to Google Cloud Storage (GCS) as Parquet, organized for efficient BigQuery batch loads.
+
+- GCS layout: `gs://$GCS_BUCKET/$GCS_PREFIX/source=<WU|TSI>/agg=<raw|interval>/dt=YYYY-MM-DD/*.parquet`
+- BigQuery tables: partitioned by `timestamp`, clustered by `native_sensor_id`.
+
+Environment variables:
+
+- GCS_BUCKET: Target GCS bucket (required for GCS uploads)
+- GCS_PREFIX: Prefix within the bucket (default: sensor_readings)
+- BQ_PROJECT: BigQuery project (optional; defaults to ADC project)
+- BQ_DATASET: BigQuery dataset (required by the loader)
+- BQ_LOCATION: BigQuery location (default: US)
+- GOOGLE_APPLICATION_CREDENTIALS: Path to a service account key (if not using ADC)
+
+Example (zsh):
+
+```sh
+export GCS_BUCKET="my-bucket"
+export GCS_PREFIX="sensor_readings"
+export BQ_PROJECT="my-project"
+export BQ_DATASET="env_readings"
+export BQ_LOCATION="US"
+# export GOOGLE_APPLICATION_CREDENTIALS="$PWD/sa.json"  # if needed
+```
+
+## Scripts overview
+
+- src/data_collection/daily_data_collector.py
+  - Purpose: Fetch Weather Underground (WU) and TSI data and write to sinks.
+  - Defaults: raw (no aggregation), sink=gcs.
+  - Flags:
+    - --aggregate/--no-aggregate (default: no-aggregate)
+    - --agg-interval [pandas offset alias] (e.g., h, 15min) when aggregating
+    - --sink [gcs|db|both]
+    - --source [WU|TSI|all]
+  - Example:
+    - python -m src.data_collection.daily_data_collector --no-aggregate --sink gcs --source all --start-date 2025-01-01 --end-date 2025-01-02
+
+- scripts/load_to_bigquery.py
+  - Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.
+  - Table naming: sensor_readings_{source}_{agg} (e.g., sensor_readings_wu_raw)
+  - Partitioning: by `timestamp`; clustering: `native_sensor_id` by default.
+  - Requirements: BQ_DATASET and GCS_BUCKET (env or flags), ADC credentials.
+
+### Quick usage: BigQuery loader
+
+With env vars:
+
+```sh
+export GCS_BUCKET="my-bucket"
+export GCS_PREFIX="sensor_readings"
+export BQ_PROJECT="my-project"
+export BQ_DATASET="env_readings"
+export BQ_LOCATION="US"
+
+python scripts/load_to_bigquery.py \
+  --date 2025-01-01 \
+  --source all \
+  --agg raw
+```
+
+Via flags:
+
+```sh
+python scripts/load_to_bigquery.py \
+  --project my-project \
+  --dataset env_readings \
+  --location US \
+  --bucket my-bucket \
+  --prefix sensor_readings \
+  --date 2025-01-01 \
+  --source WU \
+  --agg raw \
+  --table-prefix sensor_readings \
+  --partition-field timestamp \
+  --cluster-by native_sensor_id
+```
+
+Notes:
+
+- Authenticate locally first: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+- The loader creates the dataset if needed and appends rows by default (WRITE_APPEND).
+
+### Idempotent Reload Features
+
+To safely re-run a day's ingestion without creating duplicates:
+
+- GCS Uploads: `GCSUploader` now skips existing blobs by default. Use `--force` (or `force=True` in code) to overwrite.
+- Partition Replace: `scripts/load_to_bigquery.py` adds `--replace-date` which deletes existing rows for the date partition before appending new data.
+
+Example reprocessing a date with overwrite:
+
+```sh
+python scripts/load_to_bigquery.py \
+   --date 2025-08-20 \
+   --source all \
+   --agg raw \
+   --replace-date
+```
+
+### MERGE-Based Upserts (Advanced)
+
+For fully idempotent corrections with field-level updates, use the merge script after landing data into a staging table.
+
+Workflow:
+1. Land raw parquet to a staging table (use a staging prefix or separate table name when loading).
+2. Run `scripts/merge_sensor_readings.py` to upsert into the canonical fact (default key: `(timestamp, deployment_fk, metric_name)`).
+3. Optionally clean the staging partition with `--cleanup`.
+
+Flags:
+- `--update-only-if-changed`: Only UPDATE when any non-key column differs (reduces slot usage & preserves modified time semantics).
+- `--cleanup`: DELETE staging rows for the processed date on success.
+
+Example end-to-end:
+
+```sh
+# Load to staging (choose a distinct target table name)
+python scripts/load_to_bigquery.py \
+   --date 2025-08-20 --source all --agg raw \
+   --table-prefix staging_sensor_readings_raw --replace-date
+
+# Merge into canonical
+python scripts/merge_sensor_readings.py \
+   --date 2025-08-20 \
+   --staging-table staging_sensor_readings_raw \
+   --target-table sensor_readings \
+   --update-only-if-changed \
+   --cleanup
+```
+
+Benefits:
+- Safe reprocessing without full partition DELETE when only a subset changed.
+- Minimizes churn and potential race conditions with downstream readers.
+- Explicit, auditable change set via MERGE semantics.
 
 ## 🤝 Contributing
 

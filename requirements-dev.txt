@@ -117,6 +117,7 @@ packaging==25.0
     #   pytest
 pandas==2.3.1
     # via tsi-data-uploader (pyproject.toml)
+tabulate
 pip==25.2
     # via
     #   pip-api
@@ -139,7 +140,7 @@ proto-plus==1.26.1
     #   google-cloud-appengine-logging
     #   google-cloud-logging
     #   google-cloud-secret-manager
-protobuf==4.25.8
+protobuf==6.30.0
     # via
     #   google-api-core
     #   google-cloud-appengine-logging
@@ -236,3 +237,5 @@ wheel==0.45.1
     # via pip-tools
 zipp==3.23.0
     # via importlib-metadata
+dbt-bigquery==1.10.1
+    # pinned to avoid long pip resolver backtracking; update deliberately via uv/pip-compile

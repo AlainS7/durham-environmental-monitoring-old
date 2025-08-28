@@ -1,0 +1,37 @@
+name: Transformations Dry Run
+
+on:
+  pull_request:
+    paths:
+      - 'transformations/sql/**'
+      - 'scripts/run_transformations.py'
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Auth to GCP (OIDC)
+        if: env.BQ_PROJECT
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
+      - name: Dry run compile
+        env:
+          BQ_PROJECT: ${{ vars.BQ_PROJECT }}
+        run: |
+          TODAY=$(date -u +%F)
+          python scripts/run_transformations.py --project $BQ_PROJECT --dataset sensors --date $TODAY

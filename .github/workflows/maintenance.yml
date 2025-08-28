@@ -37,12 +37,6 @@ jobs:
         path: logs/maintenance_*.log
         retention-days: 7
     
-    - name: Commit maintenance changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action - Maintenance"
-        git add logs/ || true
-        git diff --staged --quiet || git commit -m "Automated maintenance - $(date '+%Y-%m-%d %H:%M:%S')"
-        git push || true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Note: We intentionally do not commit generated logs back to the repo to
+  # avoid noisy commits from scheduled automation. Artifacts are uploaded
+  # above and retained for troubleshooting.
