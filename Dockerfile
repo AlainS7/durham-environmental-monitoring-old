@@ -10,13 +10,20 @@ ENV UV_VERSION=0.8.13
 ENV UV_URL=https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz
 ENV UV_SHA256=8ca3db7b2a3199171cfc0870be1f819cb853ddcec29a5fa28dae30278922b7ba
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-    curl -L $UV_URL -o uv.tar.gz && \
-    echo "$UV_SHA256  uv.tar.gz" | sha256sum -c - && \
-    tar -xzf uv.tar.gz -C /usr/local/bin uv && \
-    chmod +x /usr/local/bin/uv && \
-    rm uv.tar.gz && \
-    python -m pip install --upgrade pip setuptools wheel && \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl ca-certificates; \
+    curl -L "$UV_URL" -o uv.tar.gz; \
+    echo "$UV_SHA256  uv.tar.gz" | sha256sum -c -; \
+    mkdir -p /tmp/uv-extract; \
+    tar -xzf uv.tar.gz -C /tmp/uv-extract; \
+    # Find the uv binary anywhere inside the extracted tree
+    UV_BIN_PATH="$(find /tmp/uv-extract -type f -name uv -perm -u+x | head -n1)"; \
+    if [ -z "$UV_BIN_PATH" ]; then echo 'uv binary not found in archive' >&2; exit 1; fi; \
+    mv "$UV_BIN_PATH" /usr/local/bin/uv; \
+    chmod +x /usr/local/bin/uv; \
+    rm -rf uv.tar.gz /tmp/uv-extract; \
+    python -m pip install --upgrade pip setuptools wheel; \
     uv pip sync requirements.txt
 
 ########## Runtime stage ##########
