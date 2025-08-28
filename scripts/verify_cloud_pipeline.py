@@ -239,55 +239,79 @@ def _collect_schema(tbl) -> Dict[str, str] | Dict[str, str]:
 
 
 def _normalization_issues(tbl) -> List[str]:
+    """Return list of normalization issues for a staging/tmp table.
+
+    Decomposed into small predicate helpers to keep complexity low.
+    """
     if not tbl:
         return ["not_found"]
     field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-    issues: List[str] = []
     has_ts = field_map.get('ts') == 'TIMESTAMP'
     has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
-    if not (has_ts or has_timestamp):
-        issues.append('missing_canonical_timestamp')
-    if 'latitude' in field_map and field_map['latitude'] != 'FLOAT' and 'latitude_f' not in field_map:
-        issues.append('latitude_not_float')
-    if 'longitude' in field_map and field_map['longitude'] != 'FLOAT' and 'longitude_f' not in field_map:
-        issues.append('longitude_not_float')
-    int_time_cols = [n for n, ttype in field_map.items() if ttype == 'INTEGER' and n in ('timestamp','epoch')]
-    if (has_ts or has_timestamp) and len(int_time_cols) > 1:
-        issues.append('redundant_int_time_cols')
-    return issues
+    int_time_cols = [
+        n for n, ttype in field_map.items()
+        if ttype == 'INTEGER' and n in ('timestamp', 'epoch')
+    ]
+
+    def _missing_canonical_timestamp() -> Optional[str]:
+        return None if (has_ts or has_timestamp) else 'missing_canonical_timestamp'
+
+    def _latitude_issue() -> Optional[str]:
+        lat_t = field_map.get('latitude')
+        if lat_t and lat_t != 'FLOAT' and 'latitude_f' not in field_map:
+            return 'latitude_not_float'
+        return None
+
+    def _longitude_issue() -> Optional[str]:
+        lon_t = field_map.get('longitude')
+        if lon_t and lon_t != 'FLOAT' and 'longitude_f' not in field_map:
+            return 'longitude_not_float'
+        return None
+
+    def _redundant_epoch_ints() -> Optional[str]:
+        if (has_ts or has_timestamp) and len(int_time_cols) > 1:
+            return 'redundant_int_time_cols'
+        return None
+
+    checks = [
+        _missing_canonical_timestamp(),
+        _latitude_issue(),
+        _longitude_issue(),
+        _redundant_epoch_ints(),
+    ]
+    return [c for c in checks if c]
 
 
-def _epoch_diag_for_table(client: bigquery.Client, project: str, dataset: str, table: str, tbl) -> List[Dict[str, Any]]:
+def _epoch_scale(max_value: int) -> Tuple[str, Any]:
+    """Return (scale_label, converter_func_template) where template produces TIMESTAMP expr."""
+    if max_value < 10**12:
+        return 'seconds', lambda v: f"TIMESTAMP_SECONDS({v})"
+    if max_value < 10**15:
+        return 'milliseconds', lambda v: f"TIMESTAMP_MILLIS({v})"
+    if max_value < 10**18:
+        return 'microseconds', lambda v: f"TIMESTAMP_MICROS({v})"
+    return 'nanoseconds', lambda v: f"TIMESTAMP_MICROS(CAST(DIV({v},1000) AS INT64))"
+
+
+def _epoch_diag_for_table(client: bigquery.Client, fq_table: str, tbl) -> List[Dict[str, Any]]:
     if not tbl:
         return [{"_error": "not_found"}]
-    cand_cols = [f.name for f in tbl.schema if f.field_type.upper()=="INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)]
+    cand_cols = [
+        f.name for f in tbl.schema
+        if f.field_type.upper() == "INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)
+    ]
     diagnostics: List[Dict[str, Any]] = []
     for col in cand_cols:
-        q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{project}.{dataset}.{table}`"
-        try:
+        q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{fq_table}`"
+        try:  # pragma: no branch - single decision path
             res = list(client.query(q).result())[0]
             mn, mx, c = res['mn'], res['mx'], res['c']
             if mn is None or mx is None:
                 diagnostics.append({"column": col, "rows": c, "min": None, "max": None})
                 continue
-            # Determine scale buckets.
-            scale: str
-            if mx < 10**12:
-                scale = 'seconds'
-                conv_min = f"TIMESTAMP_SECONDS({mn})"
-                conv_max = f"TIMESTAMP_SECONDS({mx})"
-            elif mx < 10**15:
-                scale = 'milliseconds'
-                conv_min = f"TIMESTAMP_MILLIS({mn})"
-                conv_max = f"TIMESTAMP_MILLIS({mx})"
-            elif mx < 10**18:
-                scale = 'microseconds'
-                conv_min = f"TIMESTAMP_MICROS({mn})"
-                conv_max = f"TIMESTAMP_MICROS({mx})"
-            else:
-                scale = 'nanoseconds'
-                conv_min = f"TIMESTAMP_MICROS(CAST(DIV({mn},1000) AS INT64))"
-                conv_max = f"TIMESTAMP_MICROS(CAST(DIV({mx},1000) AS INT64))"
+            scale, conv = _epoch_scale(mx)
+            conv_min = conv(mn)
+            conv_max = conv(mx)
             conv_query = (
                 "SELECT "
                 f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {conv_min}) AS iso_min, "
@@ -295,11 +319,18 @@ def _epoch_diag_for_table(client: bigquery.Client, project: str, dataset: str, t
             )
             try:
                 conv_res = list(client.query(conv_query).result())[0]
-                iso_min = conv_res['iso_min']
-                iso_max = conv_res['iso_max']
-            except Exception:
+                iso_min, iso_max = conv_res['iso_min'], conv_res['iso_max']
+            except Exception:  # pragma: no cover - defensive
                 iso_min = iso_max = None
-            diagnostics.append({"column": col, "rows": c, "min": mn, "max": mx, "scale": scale, "iso_min": iso_min, "iso_max": iso_max})
+            diagnostics.append({
+                "column": col,
+                "rows": c,
+                "min": mn,
+                "max": mx,
+                "scale": scale,
+                "iso_min": iso_min,
+                "iso_max": iso_max,
+            })
         except Exception as ie:  # pragma: no cover
             diagnostics.append({"column": col, "error": str(ie)})
     return diagnostics
@@ -311,28 +342,42 @@ def _needs_norm_check(table: str) -> bool:
     return table.startswith(('staging_', 'tmp_'))
 
 
+def _per_table_optionals(t: str, tbl, args: VArgs, client: bigquery.Client) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]], Optional[List[Dict[str, Any]]]]:
+    """Return (schema, norm_issues, epoch_diagnostics) for a table (None if not requested)."""
+    schema_map: Optional[Dict[str, Any]] = None
+    norm_list: Optional[List[str]] = None
+    epoch_list: Optional[List[Dict[str, Any]]] = None
+    if args.show_schema:
+        schema_map = _collect_schema(tbl)
+    if args.enforce_normalized and _needs_norm_check(t):
+        issues = _normalization_issues(tbl)
+        if issues:
+            norm_list = issues
+    if args.epoch_diagnostics:
+        diag = _epoch_diag_for_table(client, f"{client.project}.{args.dataset}.{t}", tbl)
+        if diag:
+            epoch_list = diag
+    return schema_map, norm_list, epoch_list
+
+
 def gather_row_related(client: bigquery.Client, args: VArgs, tables: list[str]) -> Dict[str, Any]:
     if not (args.check_rows and tables):
         return {}
+    wants_table_obj = args.show_schema or args.enforce_normalized or args.epoch_diagnostics
     row_counts: Dict[str, Any] = {}
-    schemas: Dict[str, Any] = {}
-    epoch_diag: Dict[str, Any] = {}
-    norm_issues: Dict[str, Any] = {}
+    schemas: Dict[str, Any] = {} if args.show_schema else {}
+    epoch_diag: Dict[str, Any] = {} if args.epoch_diagnostics else {}
+    norm_issues: Dict[str, Any] = {} if args.enforce_normalized else {}
     for t in tables:
         row_counts[t] = table_row_count(client, args.dataset, t, args.date)
-        tbl = None
-        if args.show_schema or args.enforce_normalized or args.epoch_diagnostics:
-            tbl = _maybe_get_table(client, args.dataset, t)
-        if args.show_schema:
-            schemas[t] = _collect_schema(tbl)
-        if args.enforce_normalized and _needs_norm_check(t):
-            issues = _normalization_issues(tbl)
-            if issues:
-                norm_issues[t] = issues
-        if args.epoch_diagnostics:
-            diag = _epoch_diag_for_table(client, client.project, args.dataset, t, tbl)
-            if diag:
-                epoch_diag[t] = diag
+        tbl = _maybe_get_table(client, args.dataset, t) if wants_table_obj else None
+        schema_map, norm_list, epoch_list = _per_table_optionals(t, tbl, args, client)
+        if schema_map is not None:
+            schemas[t] = schema_map
+        if norm_list is not None:
+            norm_issues[t] = norm_list
+        if epoch_list is not None:
+            epoch_diag[t] = epoch_list
     out: Dict[str, Any] = {"row_counts": row_counts}
     if args.show_schema:
         out["schemas"] = schemas
