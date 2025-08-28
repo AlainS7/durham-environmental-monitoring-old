@@ -451,3 +451,30 @@ For questions or support, please check the documentation in the `docs/` director
 ---
 
 ### Last updated: August 2025
+
+### Ingestion Recovery (Staging Tables Missing)
+
+If freshness or staging presence checks fail (no `staging_<source>_YYYYMMDD` tables for recent dates):
+
+1. Manually execute the Cloud Run ingestion job for each missing date (oldest first) or run the local collector to GCS.
+1. Verify raw Parquet objects exist at `gs://$GCS_BUCKET/$GCS_PREFIX/source=<SRC>/agg=raw/dt=<DATE>/` for each source.
+1. Load to BigQuery staging-style tables (partitioned) if using unified loader pattern:
+
+```bash
+python scripts/load_to_bigquery.py --project "$BQ_PROJECT" --dataset sensors \
+   --bucket "$GCS_BUCKET" --date 2025-08-21 --source all --agg raw --replace-date
+```
+1. For per-source dated table pattern, confirm ingest creates `staging_<src>_<YYYYMMDD>`; if absent, re-run ingestion.
+1. After all staging tables present, merge into fact:
+
+```bash
+python scripts/merge_backfill_range.py --project "$BQ_PROJECT" --dataset sensors \
+   --start 2025-08-21 --end 2025-08-28 --sources tsi,wu
+```
+1. Re-check freshness:
+
+```bash
+python scripts/check_freshness.py --project "$BQ_PROJECT" --dataset sensors --table sensor_readings --max-lag-days 1
+```
+1. Ensure daily ingestion trigger exists (schedule Cloud Run job or add a workflow) before 07:05 UTC so downstream checks pass.
+
