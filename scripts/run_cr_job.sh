@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Require jq for JSON parsing (GitHub Actions runners include it by default)
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[run-job][error] jq is required but not installed. Install jq and retry." >&2
+  exit 10
+fi
+
 JOB_NAME=${JOB_NAME:-weather-data-uploader}
 REGION=${REGION:-us-east1}
 : "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
