@@ -21,15 +21,30 @@ class DummyUploader:
     def upload_parquet(self, df, source, aggregated, interval, ts_column, **kw):
         self.uploads.append((source, len(df)))
 
+
+class DummyDB:
+    def __init__(self, *a, **k):
+        class _Engine:
+            def connect(self):
+                class _Conn:
+                    def __enter__(self): return self
+                    def __exit__(self, *exc): return False
+                    def execute(self, *a, **k): return None
+                return _Conn()
+        self.engine = _Engine()
+    def insert_sensor_readings(self, df):
+        return True
+
 # Patch clients and uploader builder
 
 def test_run_collection_process_gcs(monkeypatch):
     monkeypatch.setattr(dc, 'WUClient', lambda **cfg: DummyWU())
     monkeypatch.setattr(dc, 'TSIClient', lambda **cfg: DummyTSI())
     monkeypatch.setattr(dc, '_build_uploader', lambda bucket, prefix: DummyUploader())
-    # disable DB path
-    monkeypatch.setenv('GCS_FAKE_UPLOAD', '0')
-    # run
+    monkeypatch.setattr(dc, 'HotDurhamDB', DummyDB)
+    # ensure bucket config so GCS path executes; force fake upload to avoid pyarrow if missing
+    monkeypatch.setenv('GCS_FAKE_UPLOAD', '1')
+    # run with gcs sink only to avoid DB connection attempt
     asyncio.run(dc.run_collection_process(datetime(2025,8,26), datetime(2025,8,26), sink='gcs', source='all'))
 
 

@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from src.storage.gcs_uploader import GCSUploader
 
@@ -50,6 +51,8 @@ def test_make_blob_path_aggregated_custom_interval():
 
 
 def test_upload_parquet_invokes_blob():
+    # Skip this test if pyarrow isn't available in the test environment
+    pytest.importorskip("pyarrow")
     df = build_df()
     # Inject pyarrow stand-ins by monkeypatching module attributes if missing
     uploader = GCSUploader(bucket='b', prefix='sensor_readings', client=DummyClient())  # type: ignore[arg-type]
