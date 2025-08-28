@@ -49,18 +49,17 @@ python --version  # Should show 3.11.x
 ### 3. Install Dependencies
 
 ```bash
-# Upgrade pip
+# With uv (preferred)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv
+source .venv/bin/activate
+uv pip sync requirements.txt
+uv pip sync requirements-dev.txt
+
+# Or with pip
 pip install --upgrade pip
-
-# Install production dependencies
 pip install -r requirements.txt
-pip install -r requirements_python311.txt
-
-# Install development dependencies
-pip install -r requirements-dev.txt  # If available
-
-# Or install common development tools
-pip install pytest pytest-cov black isort flake8 mypy pre-commit
+pip install -r requirements-dev.txt
 ```
 
 ### 4. Environment Configuration

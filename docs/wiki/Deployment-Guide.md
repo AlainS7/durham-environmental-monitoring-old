@@ -67,10 +67,17 @@ cd hot-durham
 python3.11 -m venv venv
 source venv/bin/activate
 
-# Install Python dependencies
+# Install Python dependencies (uv preferred)
+curl -LsSf https://astral.sh/uv/install.sh | sh || true
+uv venv || true
+source .venv/bin/activate || true
+uv pip sync requirements.txt || true
+uv pip sync requirements-dev.txt || true
+
+# Fallback (pip)
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install -r requirements_python311.txt
+pip install -r requirements-dev.txt || true
 
 # Install production dependencies
 pip install gunicorn uvicorn[standard]
@@ -596,3 +603,5 @@ CACHE_CONFIG = {
 *This deployment guide is maintained for the latest version of Hot Durham. For specific deployment questions, consult the [FAQ](FAQ.md) or [Common Issues](Common-Issues.md) guides.*
 
 *Last updated: June 15, 2025*
+
+> NOTE: This deployment guide references a legacy web/dashboard stack. Current repository focus is data ingestion + BigQuery + dbt workflows; adapt or trim components (nginx, gunicorn, Redis) if unused.

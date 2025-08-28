@@ -32,16 +32,19 @@ cd hot-durham
 Set up your development environment:
 
 ```bash
-# Create virtual environment
+# Preferred (uv)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv
+source .venv/bin/activate
+uv pip sync requirements.txt
+uv pip sync requirements-dev.txt
+
+# Or classic virtualenv + pip
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
-pip install -r requirements_python311.txt
-
-# Install development dependencies
-pip install -r requirements-dev.txt  # If available
+pip install -r requirements-dev.txt
 ```
 
 ### 2. Create a Branch
