@@ -1,0 +1,62 @@
+name: Daily Ingestion (Cloud Run Job)
+
+on:
+  schedule:
+    - cron: '50 6 * * *' # 06:50 UTC before staging presence (07:05)
+  workflow_dispatch:
+    inputs:
+      job_name:
+        description: 'Cloud Run Job name'
+        required: false
+        default: weather-data-uploader
+      region:
+        description: 'Region'
+        required: false
+        default: us-east1
+
+env:
+  PROJECT_ID: durham-weather-466502
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_VERIFIER_SA }}'
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute ingestion job
+        env:
+          JOB_NAME: ${{ github.event.inputs.job_name || 'weather-data-uploader' }}
+          REGION: ${{ github.event.inputs.region || 'us-east1' }}
+        run: |
+          bash scripts/run_cr_job.sh
+
+      - name: Upload execution log (always)
+        if: always()
+        run: |
+          echo "Ingestion workflow completed at $(date -u)" > ingestion_summary.log
+          ls -1 *.log 2>/dev/null || true
+        shell: bash
+
+      - name: Artifact logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-logs
+          path: |
+            *.log
+            ingestion_summary.log
