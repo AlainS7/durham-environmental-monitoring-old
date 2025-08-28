@@ -86,6 +86,7 @@ class GCSUploader:
 
         Preferred use: pass an UploadSpec via spec=...
         Backward-compatible legacy usage: positional/keyword args (source, aggregated, interval, ts_column, extra_suffix)
+    Idempotency: by default, skips uploading if the exact blob path already exists. Override with force=True.
         """
         # Backward compatibility path detection
         spec: UploadSpec
@@ -120,7 +121,22 @@ class GCSUploader:
             return ""
 
         blob_path = self._build_blob_path(df, spec)
-        log.info(f"Uploading Parquet to gs://{self.bucket_name}/{blob_path}...")
+        blob = self.bucket.blob(blob_path)
+
+        force = legacy_kwargs.get('force', False)
+        blob_exists = False
+        try:
+            # Some test dummies may not implement exists(); treat as non-existent.
+            exists_method = getattr(blob, 'exists', None)
+            if callable(exists_method):
+                blob_exists = bool(exists_method())
+        except Exception:  # pragma: no cover - defensive
+            blob_exists = False
+        if not force and blob_exists:  # Skip if already present
+            log.info(f"Skip upload (exists): gs://{self.bucket_name}/{blob_path}")
+            return f"gs://{self.bucket_name}/{blob_path}"
+
+        log.info(f"Uploading Parquet to gs://{self.bucket_name}/{blob_path}... (force={force})")
 
         # Write to in-memory buffer as parquet
         if pa is None or pq is None:
@@ -131,7 +147,6 @@ class GCSUploader:
         pq.write_table(table, buf, compression="snappy")
         buf.seek(0)
 
-        blob = self.bucket.blob(blob_path)
         blob.upload_from_file(buf, content_type="application/octet-stream")
         log.info("Upload complete.")
         return f"gs://{self.bucket_name}/{blob_path}"
