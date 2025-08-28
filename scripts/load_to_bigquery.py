@@ -94,6 +94,7 @@ def main():
 
     parser.add_argument("--write", choices=["WRITE_APPEND", "WRITE_TRUNCATE", "WRITE_EMPTY"], default="WRITE_APPEND")
     parser.add_argument("--create", choices=["CREATE_IF_NEEDED", "CREATE_NEVER"], default="CREATE_IF_NEEDED")
+    parser.add_argument("--replace-date", action="store_true", help="Before loading, delete existing partition rows for --date in target tables (idempotent rerun)")
 
     args = parser.parse_args()
 
@@ -109,9 +110,25 @@ def main():
     sources = ["WU", "TSI"] if args.source == "all" else [args.source]
     cluster_fields = [f.strip() for f in args.cluster_by.split(",") if f.strip()]
 
+    # Optional partition replacement (DELETE) per table we'll touch
+    # Only applies when write mode is APPEND and date given.
+    def _delete_partition(table_id: str):
+        if not args.date:
+            return
+        fq = f"{client.project}.{args.dataset}.{table_id}"
+        delete_sql = f"DELETE FROM `{fq}` WHERE DATE({args.partition_field}) = @d"
+        try:
+            job = client.query(delete_sql, job_config=bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter('d', 'DATE', args.date)]))
+            job.result()
+            log.info(f"Deleted existing rows for {args.date} in {fq}")
+        except Exception as e:
+            log.warning(f"Partition delete skipped/failed for {fq}: {e}")
+
     for src in sources:
         part = PartitionSpec(bucket=args.bucket, prefix=args.prefix, source=src, aggregation=args.agg, date=args.date)
         table = f"{args.table_prefix}_{src.lower()}_{args.agg}"
+        if args.replace_date and args.write == "WRITE_APPEND":
+            _delete_partition(table)
         load_parquet(
             client,
             LoadSpec(
