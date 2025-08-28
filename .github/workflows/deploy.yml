@@ -98,12 +98,4 @@ jobs:
 
     - name: Sanity checks (temporary)
       run: |
-        echo "Verify gcloud authenticated and can access resources"
-        # show active account
-        gcloud auth list --filter=status:ACTIVE --format="value(account)" || true
-        # list bucket (non-destructive)
-        gcloud storage ls gs://sensor-data-to-bigquery || true
-        # list secret versions (non-sensitive metadata)
-        gcloud secrets versions list prod-db-credentials --project=${{ env.PROJECT_ID }} --limit=5 || true
-        # list BigQuery tables in dataset `sensors` (non-destructive)
-        bq --project_id=${{ env.PROJECT_ID }} ls --max_results=50 durham-weather-466502:sensors || true
+        bash scripts/ci_sanity_check.sh || true
