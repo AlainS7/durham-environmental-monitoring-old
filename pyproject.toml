@@ -28,6 +28,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "pyarrow>=16.1.0",
     "PyYAML>=6.0.0",
+    # Explicit protobuf range to satisfy both google-cloud-* (<7) and dbt-adapters (>=6,<7)
+    "protobuf>=6.0.0,<7.0.0",
 ]
 
 [project.optional-dependencies]
