@@ -13,7 +13,7 @@ Run the built-in diagnostics to identify common issues:
 python quick_start.py --health-check
 
 # Verify configuration
-python scripts/production_manager.py --validate-config
+python scripts/verify_cloud_pipeline.py --date 2025-08-27
 
 # Test API connections
 python -c "from src.utils.api_client import APIClient; print('API OK' if APIClient().test_connection() else 'API Failed')"
@@ -37,9 +37,17 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 
-# Reinstall dependencies
+# Reinstall dependencies (uv preferred)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv
+source .venv/bin/activate
+uv pip sync requirements.txt
+uv pip sync requirements-dev.txt || true
+
+# Or with pip
 pip install --upgrade pip
-pip install -r requirements_python311.txt
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### Issue: Missing Dependencies
@@ -49,9 +57,11 @@ pip install -r requirements_python311.txt
 
 **Solutions:**
 ```bash
-# Install all requirements
+# Install all requirements (prefer uv)
+uv pip sync requirements.txt || true
+
+# Or pip fallback
 pip install -r requirements.txt
-pip install -r requirements_python311.txt
 
 # For specific missing modules
 pip install module_name
