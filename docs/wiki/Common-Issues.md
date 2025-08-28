@@ -13,7 +13,7 @@ Run the built-in diagnostics to identify common issues:
 python quick_start.py --health-check
 
 # Verify configuration
-python scripts/production_manager.py --validate-config
+python scripts/verify_cloud_pipeline.py --date 2025-08-27
 
 # Test API connections
 python -c "from src.utils.api_client import APIClient; print('API OK' if APIClient().test_connection() else 'API Failed')"
@@ -23,9 +23,9 @@ python -c "from src.utils.api_client import APIClient; print('API OK' if APIClie
 
 ### Issue: Python Version Compatibility
 **Symptoms:**
-- `ModuleNotFoundError` during installation
-- Syntax errors on startup
-- Import failures
+* `ModuleNotFoundError` during installation
+* Syntax errors on startup
+* Import failures
 
 **Solutions:**
 ```bash
@@ -37,21 +37,31 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 
-# Reinstall dependencies
+# Reinstall dependencies (uv preferred)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv
+source .venv/bin/activate
+uv pip sync requirements.txt
+uv pip sync requirements-dev.txt || true
+
+# Or with pip
 pip install --upgrade pip
-pip install -r requirements_python311.txt
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### Issue: Missing Dependencies
 **Symptoms:**
-- Import errors for specific modules
-- "No module named..." errors
+* Import errors for specific modules
+* "No module named..." errors
 
 **Solutions:**
 ```bash
-# Install all requirements
+# Install all requirements (prefer uv)
+uv pip sync requirements.txt || true
+
+# Or pip fallback
 pip install -r requirements.txt
-pip install -r requirements_python311.txt
 
 # For specific missing modules
 pip install module_name
@@ -62,9 +72,9 @@ pip install --upgrade -r requirements.txt
 
 ### Issue: Permission Errors
 **Symptoms:**
-- Cannot create files or directories
-- Database access denied
-- Log file creation failures
+* Cannot create files or directories
+* Database access denied
+* Log file creation failures
 
 **Solutions:**
 ```bash
@@ -82,9 +92,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Weather Underground API Failures
 **Symptoms:**
-- "401 Unauthorized" errors
-- Empty weather data responses
-- Rate limiting messages
+* "401 Unauthorized" errors
+* Empty weather data responses
+* Rate limiting messages
 
 **Solutions:**
 1. **Check API Key:**
@@ -100,15 +110,15 @@ mkdir -p logs temp data processed
    ```
 
 3. **Check Rate Limits:**
-   - Review API usage quotas
-   - Adjust polling intervals in configuration
-   - Implement caching to reduce API calls
+   * Review API usage quotas
+   * Adjust polling intervals in configuration
+   * Implement caching to reduce API calls
 
 ### Issue: TSI Sensor Connection Problems
 **Symptoms:**
-- Sensor timeout errors
-- Inconsistent data readings
-- Connection refused messages
+* Sensor timeout errors
+* Inconsistent data readings
+* Connection refused messages
 
 **Solutions:**
 1. **Network Connectivity:**
@@ -125,15 +135,15 @@ mkdir -p logs temp data processed
    ```
 
 3. **Firewall Issues:**
-   - Check firewall rules
-   - Verify port accessibility
-   - Test from different network locations
+   * Check firewall rules
+   * Verify port accessibility
+   * Test from different network locations
 
 ### Issue: Google Sheets Integration Errors
 **Symptoms:**
-- Authentication failures
-- Permission denied errors
-- Sheet not found errors
+* Authentication failures
+* Permission denied errors
+* Sheet not found errors
 
 **Solutions:**
 1. **Credentials Verification:**
@@ -144,17 +154,17 @@ mkdir -p logs temp data processed
    ```
 
 2. **Sheet Permissions:**
-   - Verify service account has access to sheets
-   - Check sheet sharing settings
-   - Ensure correct sheet IDs in configuration
+   * Verify service account has access to sheets
+   * Check sheet sharing settings
+   * Ensure correct sheet IDs in configuration
 
 ## 💾 Database Issues
 
 ### Issue: Database Connection Failures
 **Symptoms:**
-- "Database connection refused"
-- Timeout errors during queries
-- "Table doesn't exist" errors
+* "Database connection refused"
+* Timeout errors during queries
+* "Table doesn't exist" errors
 
 **Solutions:**
 1. **Connection Testing:**
@@ -179,9 +189,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Data Import/Export Problems
 **Symptoms:**
-- CSV export failures
-- Data format errors
-- Missing historical data
+* CSV export failures
+* Data format errors
+* Missing historical data
 
 **Solutions:**
 1. **File Path Issues:**
@@ -203,9 +213,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Dashboard Not Loading
 **Symptoms:**
-- Blank dashboard pages
-- 500 Internal Server Error
-- CSS/JavaScript not loading
+* Blank dashboard pages
+* 500 Internal Server Error
+* CSS/JavaScript not loading
 
 **Solutions:**
 1. **Service Status:**
@@ -223,15 +233,15 @@ mkdir -p logs temp data processed
    ```
 
 3. **Browser Cache:**
-   - Clear browser cache and cookies
-   - Try incognito/private browsing mode
-   - Check browser developer console for errors
+   * Clear browser cache and cookies
+   * Try incognito/private browsing mode
+   * Check browser developer console for errors
 
 ### Issue: Real-time Updates Not Working
 **Symptoms:**
-- Stale data in dashboard
-- Charts not updating
-- WebSocket connection errors
+* Stale data in dashboard
+* Charts not updating
+* WebSocket connection errors
 
 **Solutions:**
 1. **WebSocket Configuration:**
@@ -241,17 +251,17 @@ mkdir -p logs temp data processed
    ```
 
 2. **Firewall/Proxy Issues:**
-   - Check WebSocket ports are open
-   - Verify proxy settings don't block WebSocket connections
-   - Test from different network locations
+   * Check WebSocket ports are open
+   * Verify proxy settings don't block WebSocket connections
+   * Test from different network locations
 
 ## 📊 Data Processing Issues
 
 ### Issue: Anomaly Detection False Positives
 **Symptoms:**
-- Too many alert notifications
-- Normal variations flagged as anomalies
-- System performance degradation
+* Too many alert notifications
+* Normal variations flagged as anomalies
+* System performance degradation
 
 **Solutions:**
 1. **Threshold Adjustment:**
@@ -270,9 +280,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Report Generation Failures
 **Symptoms:**
-- PDF generation errors
-- Incomplete reports
-- Missing charts or data
+* PDF generation errors
+* Incomplete reports
+* Missing charts or data
 
 **Solutions:**
 1. **Dependencies Check:**
@@ -292,9 +302,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Slow Data Processing
 **Symptoms:**
-- Long response times
-- High memory usage
-- CPU usage spikes
+* Long response times
+* High memory usage
+* CPU usage spikes
 
 **Solutions:**
 1. **Resource Monitoring:**
@@ -322,9 +332,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Memory Leaks
 **Symptoms:**
-- Gradually increasing memory usage
-- System becoming unresponsive
-- Out of memory errors
+* Gradually increasing memory usage
+* System becoming unresponsive
+* Out of memory errors
 
 **Solutions:**
 1. **Memory Profiling:**
@@ -345,9 +355,9 @@ mkdir -p logs temp data processed
 
 ### Issue: API Key Exposure
 **Symptoms:**
-- API keys visible in logs
-- Credentials in version control
-- Unauthorized API access
+* API keys visible in logs
+* Credentials in version control
+* Unauthorized API access
 
 **Solutions:**
 1. **Immediate Actions:**
@@ -366,9 +376,9 @@ mkdir -p logs temp data processed
 
 ### Issue: Unauthorized Access
 **Symptoms:**
-- Unexpected data modifications
-- Unknown user sessions
-- Suspicious API activity
+* Unexpected data modifications
+* Unknown user sessions
+* Suspicious API activity
 
 **Solutions:**
 1. **Access Review:**
@@ -406,16 +416,18 @@ print(f'Packages: {[str(d) for d in pkg_resources.working_set]}')
 ```
 
 ### When to Seek Help
-- After trying multiple solutions from this guide
-- For persistent issues affecting system stability
-- When encountering errors not covered here
-- For security-related concerns
+
+* After trying multiple solutions from this guide
+* For persistent issues affecting system stability
+* When encountering errors not covered here
+* For security-related concerns
 
 ### Support Resources
-- [FAQ](FAQ.md) - Frequently asked questions
-- [GitHub Issues](https://github.com/your-org/hot-durham/issues) - Bug reports and feature requests
-- [Development Team Contact] - Direct technical support
-- [Community Forums] - Community assistance
+
+* [FAQ](FAQ.md) - Frequently asked questions
+* [GitHub Issues](https://github.com/your-org/hot-durham/issues) - Bug reports and feature requests
+* [Development Team Contact] - Direct technical support
+* [Community Forums] - Community assistance
 
 ---
 
