@@ -299,22 +299,44 @@ export BQ_LOCATION="US"
 
 ## Scripts overview
 
-- src/data_collection/daily_data_collector.py
-  - Purpose: Fetch Weather Underground (WU) and TSI data and write to sinks.
-  - Defaults: raw (no aggregation), sink=gcs.
-  - Flags:
-    - --aggregate/--no-aggregate (default: no-aggregate)
-    - --agg-interval [pandas offset alias] (e.g., h, 15min) when aggregating
-    - --sink [gcs|db|both]
-    - --source [WU|TSI|all]
-  - Example:
-    - python -m src.data_collection.daily_data_collector --no-aggregate --sink gcs --source all --start-date 2025-01-01 --end-date 2025-01-02
+### daily_data_collector.py
 
-- scripts/load_to_bigquery.py
-  - Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.
-  - Table naming: sensor_readings_{source}_{agg} (e.g., sensor_readings_wu_raw)
-  - Partitioning: by `timestamp`; clustering: `native_sensor_id` by default.
-  - Requirements: BQ_DATASET and GCS_BUCKET (env or flags), ADC credentials.
+Path: `src/data_collection/daily_data_collector.py`
+
+Purpose: Fetch Weather Underground (WU) and TSI data and write to configured sinks.
+
+Defaults: raw (no aggregation), sink=gcs.
+
+Key flags:
+
+* `--aggregate/--no-aggregate` (default: no-aggregate)
+* `--agg-interval <pandas offset>` (e.g. `h`, `15min`) when aggregating
+* `--sink {gcs,db,both}`
+* `--source {WU,TSI,all}`
+* `--start-date / --end-date` (ISO date) for bounded backfill
+
+Example:
+
+```sh
+python -m src.data_collection.daily_data_collector \
+   --no-aggregate \
+   --sink gcs \
+   --source all \
+   --start-date 2025-01-01 \
+   --end-date 2025-01-02
+```
+
+### load_to_bigquery.py
+
+Path: `scripts/load_to_bigquery.py`
+
+Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.
+
+Table naming: `sensor_readings_{source}_{agg}` (e.g. `sensor_readings_wu_raw`).
+
+Partitioning: by `timestamp`; clustering: `native_sensor_id` (default).
+
+Requirements: `BQ_DATASET` and `GCS_BUCKET` (env or flags), ADC credentials.
 
 ### Quick usage: BigQuery loader
 
@@ -352,15 +374,15 @@ python scripts/load_to_bigquery.py \
 
 Notes:
 
-- Authenticate locally first: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
-- The loader creates the dataset if needed and appends rows by default (WRITE_APPEND).
+* Authenticate locally first: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+* The loader creates the dataset if needed and appends rows by default (WRITE_APPEND).
 
 ### Idempotent Reload Features
 
 To safely re-run a day's ingestion without creating duplicates:
 
-- GCS Uploads: `GCSUploader` now skips existing blobs by default. Use `--force` (or `force=True` in code) to overwrite.
-- Partition Replace: `scripts/load_to_bigquery.py` adds `--replace-date` which deletes existing rows for the date partition before appending new data.
+* GCS Uploads: `GCSUploader` now skips existing blobs by default. Use `--force` (or `force=True` in code) to overwrite.
+* Partition Replace: `scripts/load_to_bigquery.py` adds `--replace-date` which deletes existing rows for the date partition before appending new data.
 
 Example reprocessing a date with overwrite:
 
@@ -377,13 +399,15 @@ python scripts/load_to_bigquery.py \
 For fully idempotent corrections with field-level updates, use the merge script after landing data into a staging table.
 
 Workflow:
+
 1. Land raw parquet to a staging table (use a staging prefix or separate table name when loading).
 2. Run `scripts/merge_sensor_readings.py` to upsert into the canonical fact (default key: `(timestamp, deployment_fk, metric_name)`).
 3. Optionally clean the staging partition with `--cleanup`.
 
 Flags:
-- `--update-only-if-changed`: Only UPDATE when any non-key column differs (reduces slot usage & preserves modified time semantics).
-- `--cleanup`: DELETE staging rows for the processed date on success.
+
+* `--update-only-if-changed`: Only UPDATE when any non-key column differs (reduces slot usage & preserves modified time semantics).
+* `--cleanup`: DELETE staging rows for the processed date on success.
 
 Example end-to-end:
 
@@ -403,9 +427,10 @@ python scripts/merge_sensor_readings.py \
 ```
 
 Benefits:
-- Safe reprocessing without full partition DELETE when only a subset changed.
-- Minimizes churn and potential race conditions with downstream readers.
-- Explicit, auditable change set via MERGE semantics.
+
+* Safe reprocessing without full partition DELETE when only a subset changed.
+* Minimizes churn and potential race conditions with downstream readers.
+* Explicit, auditable change set via MERGE semantics.
 
 ## 🤝 Contributing
 
