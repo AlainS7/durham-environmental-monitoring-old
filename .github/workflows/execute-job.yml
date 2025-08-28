@@ -1,0 +1,43 @@
+name: Execute Cloud Run Job
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_name:
+        description: "Cloud Run Job name"
+        required: false
+        default: weather-data-uploader
+      region:
+        description: "Region"
+        required: false
+        default: us-east1
+
+env:
+  PROJECT_ID: durham-weather-466502
+
+jobs:
+  run-job:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: 'projects/441117079833/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Job
+        env:
+          JOB_NAME: ${{ github.event.inputs.job_name }}
+          REGION: ${{ github.event.inputs.region }}
+        run: |
+          bash scripts/run_cr_job.sh
