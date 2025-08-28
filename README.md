@@ -338,6 +338,58 @@ Notes:
 - Authenticate locally first: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
 - The loader creates the dataset if needed and appends rows by default (WRITE_APPEND).
 
+### Idempotent Reload Features
+
+To safely re-run a day's ingestion without creating duplicates:
+
+- GCS Uploads: `GCSUploader` now skips existing blobs by default. Use `--force` (or `force=True` in code) to overwrite.
+- Partition Replace: `scripts/load_to_bigquery.py` adds `--replace-date` which deletes existing rows for the date partition before appending new data.
+
+Example reprocessing a date with overwrite:
+
+```sh
+python scripts/load_to_bigquery.py \
+   --date 2025-08-20 \
+   --source all \
+   --agg raw \
+   --replace-date
+```
+
+### MERGE-Based Upserts (Advanced)
+
+For fully idempotent corrections with field-level updates, use the merge script after landing data into a staging table.
+
+Workflow:
+1. Land raw parquet to a staging table (use a staging prefix or separate table name when loading).
+2. Run `scripts/merge_sensor_readings.py` to upsert into the canonical fact (default key: `(timestamp, deployment_fk, metric_name)`).
+3. Optionally clean the staging partition with `--cleanup`.
+
+Flags:
+- `--update-only-if-changed`: Only UPDATE when any non-key column differs (reduces slot usage & preserves modified time semantics).
+- `--cleanup`: DELETE staging rows for the processed date on success.
+
+Example end-to-end:
+
+```sh
+# Load to staging (choose a distinct target table name)
+python scripts/load_to_bigquery.py \
+   --date 2025-08-20 --source all --agg raw \
+   --table-prefix staging_sensor_readings_raw --replace-date
+
+# Merge into canonical
+python scripts/merge_sensor_readings.py \
+   --date 2025-08-20 \
+   --staging-table staging_sensor_readings_raw \
+   --target-table sensor_readings \
+   --update-only-if-changed \
+   --cleanup
+```
+
+Benefits:
+- Safe reprocessing without full partition DELETE when only a subset changed.
+- Minimizes churn and potential race conditions with downstream readers.
+- Explicit, auditable change set via MERGE semantics.
+
 ## 🤝 Contributing
 
 1. Fork the repository
