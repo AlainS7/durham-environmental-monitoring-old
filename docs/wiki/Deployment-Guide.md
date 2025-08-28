@@ -14,26 +14,26 @@ This guide covers deploying the Hot Durham Environmental Monitoring System to pr
 ## 🔧 Pre-Deployment Checklist
 
 ### System Requirements
-- [ ] **Operating System**: Ubuntu 20.04+ or CentOS 8+
-- [ ] **Python**: Version 3.11 or higher
-- [ ] **Memory**: 8GB RAM minimum (16GB recommended)
-- [ ] **Storage**: 50GB free space minimum
-- [ ] **Network**: Stable internet connection
-- [ ] **Ports**: 80, 443, 5000 (configurable)
+* [ ] **Operating System**: Ubuntu 20.04+ or CentOS 8+
+* [ ] **Python**: Version 3.11 or higher
+* [ ] **Memory**: 8GB RAM minimum (16GB recommended)
+* [ ] **Storage**: 50GB free space minimum
+* [ ] **Network**: Stable internet connection
+* [ ] **Ports**: 80, 443, 5000 (configurable)
 
 ### Security Requirements
-- [ ] SSL/TLS certificates configured
-- [ ] Firewall rules implemented
-- [ ] API keys secured
-- [ ] Database credentials encrypted
-- [ ] Backup strategy in place
+* [ ] SSL/TLS certificates configured
+* [ ] Firewall rules implemented
+* [ ] API keys secured
+* [ ] Database credentials encrypted
+* [ ] Backup strategy in place
 
 ### Dependencies
-- [ ] System packages updated
-- [ ] Python virtual environment ready
-- [ ] Database server configured
-- [ ] Web server (nginx/apache) installed
-- [ ] Process supervisor (systemd/supervisor) available
+* [ ] System packages updated
+* [ ] Python virtual environment ready
+* [ ] Database server configured
+* [ ] Web server (nginx/apache) installed
+* [ ] Process supervisor (systemd/supervisor) available
 
 ## 🖥️ Traditional Server Deployment
 
@@ -585,18 +585,18 @@ CACHE_CONFIG = {
 
 ## 📋 Post-Deployment Checklist
 
-- [ ] Application starts successfully
-- [ ] Database connections working
-- [ ] API endpoints responding
-- [ ] Dashboard loads correctly
-- [ ] SSL certificates valid
-- [ ] Monitoring configured
-- [ ] Backups automated
-- [ ] Log rotation configured
-- [ ] Security headers implemented
-- [ ] Firewall rules applied
-- [ ] Health checks passing
-- [ ] Documentation updated
+* [ ] Application starts successfully
+* [ ] Database connections working
+* [ ] API endpoints responding
+* [ ] Dashboard loads correctly
+* [ ] SSL certificates valid
+* [ ] Monitoring configured
+* [ ] Backups automated
+* [ ] Log rotation configured
+* [ ] Security headers implemented
+* [ ] Firewall rules applied
+* [ ] Health checks passing
+* [ ] Documentation updated
 
 ---
 

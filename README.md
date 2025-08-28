@@ -14,10 +14,10 @@ A comprehensive environmental monitoring system for Durham, NC, featuring **high
 
 ## 🌟 Features
 
-
 ### Continuous Verification
 
 A daily GitHub Actions workflow (`daily-verify.yml`) runs the cloud pipeline verifier against the previous day's partition. It enforces:
+
 * GCS round-trip write/read
 * BigQuery dataset & table presence
 * Adaptive row counts per table
@@ -71,9 +71,9 @@ See `docs/IAM_HARDENING.md` for least-privilege roles, service account layout, a
    ```
 
 4. **Configure Credentials**:
-   - Add Google API credentials to `creds/google_creds.json`
-   - Add Weather Underground API key to `creds/wu_api_key.json`
-   - Add TSI credentials to `creds/tsi_creds.json`
+   * Add Google API credentials to `creds/google_creds.json`
+   * Add Weather Underground API key to `creds/wu_api_key.json`
+   * Add TSI credentials to `creds/tsi_creds.json`
 
 5. **Run Data Collection**:
 
