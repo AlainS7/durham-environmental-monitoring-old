@@ -42,11 +42,17 @@ jobs:
       - name: dbt deps
         run: dbt deps --project-dir transformations/dbt
       - name: dbt run
-        run: dbt run --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
+        run: >
+          dbt run --project-dir transformations/dbt --profiles-dir ~/.dbt
+          --vars "{\"proc_date\": \"{{ run_started_at.strftime('%Y-%m-%d') }}\", \"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
       - name: dbt test
-        run: dbt test --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
+        run: >
+          dbt test --project-dir transformations/dbt --profiles-dir ~/.dbt
+          --vars "{\"proc_date\": \"{{ run_started_at.strftime('%Y-%m-%d') }}\", \"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
       - name: dbt source freshness
-        run: dbt source freshness --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{project: '${{ secrets.GCP_PROJECT_ID }}'}"
+        run: >
+          dbt source freshness --project-dir transformations/dbt --profiles-dir ~/.dbt
+          --vars "{\"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
