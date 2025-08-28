@@ -56,5 +56,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source
 COPY . .
 
+# Ensure application root is on Python path
+ENV PYTHONPATH=/app
+
 # Default command
 CMD ["python", "src/data_collection/daily_data_collector.py"]
