@@ -3,7 +3,7 @@ set -euo pipefail
 
 JOB_NAME=${JOB_NAME:-weather-data-uploader}
 REGION=${REGION:-us-east1}
-PROJECT_ID=${PROJECT_ID:-durham-weather-466502}
+: "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
 POLL_DELAY=5
 MAX_WAIT=${MAX_WAIT:-600}
 
