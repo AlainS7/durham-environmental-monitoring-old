@@ -1,0 +1,66 @@
+name: dbt-run-test
+on:
+  schedule:
+    - cron: '5 5 * * *'
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'transformations/dbt/**'
+
+jobs:
+  run-dbt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install base + dbt deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dbt.txt
+      - name: Create dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<'EOF'
+          sensor_transforms:
+            target: ci
+            outputs:
+              ci:
+                type: bigquery
+                method: service-account
+                project: ${{ secrets.GCP_PROJECT_ID }}
+                dataset: ${{ vars.BQ_DATASET || 'sensors' }}
+                threads: 4
+                keyfile_json: ${{ secrets.GCP_SA_KEY_JSON }}
+                timeout_seconds: 300
+                priority: interactive
+                location: US
+          EOF
+      - name: dbt deps
+        run: dbt deps --project-dir transformations/dbt
+      - name: dbt run
+        run: dbt run --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
+      - name: dbt test
+        run: dbt test --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
+      - name: dbt source freshness
+        run: dbt source freshness --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{project: '${{ secrets.GCP_PROJECT_ID }}'}"
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: |
+            transformations/dbt/target/*.json
+            transformations/dbt/target/run_results.json
+      - name: Teams notify failure
+        if: failure() && env.TEAMS_WEBHOOK_URL != ''
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          python scripts/notify_teams.py \
+            --webhook "$TEAMS_WEBHOOK_URL" \
+            --title "dbt workflow FAILED" \
+            --text "Repo: $GITHUB_REPOSITORY\nSHA: $GITHUB_SHA\nRun: $GITHUB_RUN_ID"

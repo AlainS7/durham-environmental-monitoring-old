@@ -4,7 +4,7 @@ The Hot Durham Environmental Monitoring System provides a comprehensive REST API
 
 ## Base URL
 
-```
+```plaintext
 Production: https://api.hotdurham.org/v1
 Development: http://localhost:8080/api/v1
 ```
@@ -27,6 +27,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -42,6 +43,7 @@ Response:
 - **Admin Users**: No limits
 
 Rate limit headers are included in responses:
+
 ```http
 X-RateLimit-Limit: 100
 X-RateLimit-Remaining: 95
@@ -59,6 +61,7 @@ GET /api/v1/health
 ```
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -81,12 +84,14 @@ GET /api/v1/sensors
 ```
 
 **Query Parameters:**
+
 - `type` (optional): Filter by sensor type (`temperature`, `humidity`, `pressure`)
 - `status` (optional): Filter by status (`active`, `inactive`, `maintenance`)
 - `limit` (optional): Number of results (default: 50, max: 100)
 - `offset` (optional): Pagination offset (default: 0)
 
 **Response:**
+
 ```json
 {
   "sensors": [
@@ -121,6 +126,7 @@ GET /api/v1/sensors/{sensor_id}
 ```
 
 **Response:**
+
 ```json
 {
   "id": "sensor_001",
@@ -160,10 +166,12 @@ GET /api/v1/data/latest
 ```
 
 **Query Parameters:**
+
 - `sensors` (optional): Comma-separated sensor IDs
 - `types` (optional): Comma-separated data types
 
 **Response:**
+
 ```json
 {
   "readings": [
@@ -195,6 +203,7 @@ GET /api/v1/data/historical
 ```
 
 **Query Parameters:**
+
 - `sensors` (required): Comma-separated sensor IDs
 - `start_time` (required): ISO 8601 timestamp
 - `end_time` (required): ISO 8601 timestamp
@@ -202,11 +211,13 @@ GET /api/v1/data/historical
 - `aggregation` (optional): Aggregation function (`avg`, `min`, `max`, `sum`)
 
 **Example:**
+
 ```http
 GET /api/v1/data/historical?sensors=sensor_001,sensor_002&start_time=2025-06-14T00:00:00Z&end_time=2025-06-15T00:00:00Z&interval=1h&aggregation=avg
 ```
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -249,6 +260,7 @@ POST /api/v1/data/export
 ```
 
 **Request Body:**
+
 ```json
 {
   "sensors": ["sensor_001", "sensor_002"],
@@ -263,6 +275,7 @@ POST /api/v1/data/export
 ```
 
 **Response:**
+
 ```json
 {
   "export_id": "export_12345",
@@ -279,6 +292,7 @@ GET /api/v1/data/export/{export_id}
 ```
 
 **Response:**
+
 ```json
 {
   "export_id": "export_12345",
@@ -300,9 +314,11 @@ GET /api/v1/sensors/{sensor_id}/stats
 ```
 
 **Query Parameters:**
+
 - `period` (optional): Time period (`24h`, `7d`, `30d`, `1y`)
 
 **Response:**
+
 ```json
 {
   "sensor_id": "sensor_001",
@@ -335,6 +351,7 @@ GET /api/v1/analytics/summary
 ```
 
 **Response:**
+
 ```json
 {
   "overview": {
@@ -365,6 +382,7 @@ PUT /api/v1/sensors/{sensor_id}/config
 ```
 
 **Request Body:**
+
 ```json
 {
   "sampling_rate": 300,
@@ -380,6 +398,7 @@ PUT /api/v1/sensors/{sensor_id}/config
 ```
 
 **Response:**
+
 ```json
 {
   "sensor_id": "sensor_001",

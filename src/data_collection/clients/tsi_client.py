@@ -55,6 +55,8 @@ class TSIClient(BaseClient):
 
         # Use the flat-format endpoint
         records = await self._request("GET", "telemetry/flat-format", params=params, headers=self.headers)
+        log.info(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: received {len(records) if records else 0} records")
+        log.debug(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: {records if records else 'EMPTY'}")
         if records:
             validated_records = []
             for rec in records:
@@ -64,18 +66,24 @@ class TSIClient(BaseClient):
                 except pydantic.ValidationError as e:
                     log.error(f"TSI API response validation failed for record: {e}")
             if not validated_records:
+                log.info(f"TSI validated records for device {device_id} date {date_iso}: EMPTY after validation.")
                 return None
             df = pd.DataFrame(validated_records)
+            log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}")
+            log.debug(f"TSI columns: {list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
             # Rename cloud_timestamp to timestamp for downstream compatibility
             if 'cloud_timestamp' in df.columns:
                 df = df.rename(columns={'cloud_timestamp': 'timestamp'})
             df['device_id'] = device_id
             return df
+        else:
+            log.info(f"TSI API returned no records for device {device_id} date {date_iso}.")
         return None
 
-    async def fetch_data(self, start_date: str, end_date: str) -> pd.DataFrame:
+    async def fetch_data(self, start_date: str, end_date: str, aggregate: bool = False, agg_interval: str = 'h') -> pd.DataFrame:
         """
-        Fetches TSI data for a given date range and aggregates it into hourly summaries.
+        Fetches TSI data for a given date range, optionally aggregates into summaries.
+        When aggregate is False, returns raw flat-format observations with a 'timestamp' column.
         """
         if not await self._authenticate():
             log.error("TSI authentication failed. No data will be fetched.")
@@ -87,7 +95,7 @@ class TSIClient(BaseClient):
         tasks = [self._fetch_one_day(dev_id, date_str) for dev_id, date_str in requests]
 
         log.info(f"Starting async fetch for {len(tasks)} device-date combinations...")
-        all_results = []
+        all_results: list[pd.DataFrame] = []
         from tqdm import tqdm
         for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching TSI Data"):
             result = await future
@@ -106,19 +114,23 @@ class TSIClient(BaseClient):
             log.warning("No valid data after concatenation.")
             return pd.DataFrame()
 
-        log.info("Converting timestamp to datetime and setting as index...")
+        log.info("Converting timestamp to datetime...")
         raw_df['timestamp'] = pd.to_datetime(raw_df['timestamp'])
-        raw_df.set_index('timestamp', inplace=True)
+        # Drop rows with missing timestamps to avoid NaTType errors during resampling
+        raw_df = raw_df.dropna(subset=['timestamp'])
+        if raw_df.empty:
+            log.warning("No valid data after dropping rows with missing timestamps.")
+            return pd.DataFrame()
 
-        log.info("Preparing aggregation dictionary for hourly resampling...")
+        if not aggregate:
+            log.info("Aggregation disabled; returning raw TSI DataFrame.")
+            return raw_df
+
+        # Aggregation path
+        raw_df = raw_df.set_index('timestamp')
         numeric_cols = raw_df.select_dtypes(include='number').columns.tolist()
         agg_dict = {col: 'mean' for col in numeric_cols}
-
-        log.info("Starting groupby and hourly resampling...")
-        final_df = raw_df.groupby('device_id').resample('h').agg(agg_dict)  # type: ignore
-
-        log.info("Resetting index after resampling...")
+        final_df = raw_df.groupby('device_id').resample(agg_interval).agg(agg_dict)  # type: ignore
         final_df = final_df.reset_index()
-
-        log.info(f"Successfully resampled TSI data to {len(final_df)} hourly records.")
+        log.info(f"Successfully resampled TSI data to {len(final_df)} records at interval '{agg_interval}'.")
         return final_df

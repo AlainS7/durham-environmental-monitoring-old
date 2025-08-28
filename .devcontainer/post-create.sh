@@ -18,16 +18,20 @@ echo "Creating Python virtual environment in .venv..."
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Upgrade pip and install dependencies inside the venv
-echo "Installing Python dependencies from requirements.txt in venv..."
-pip install --upgrade pip
-pip install -r requirements.txt
+
+# Install uv (fast Python package manager)
+echo "Installing uv..."
+pip install uv
+
+# Install Python dependencies using uv inside the venv
+echo "Installing Python dependencies from requirements.txt and requirements-dev.txt using uv in venv..."
+uv pip install -r requirements.txt
 if [ -f "requirements-dev.txt" ]; then
-    pip install -r requirements-dev.txt
+    uv pip install -r requirements-dev.txt
 fi
 
 # Ensure ruff is installed (redundant if in requirements, but safe)
-pip install ruff
+uv pip install ruff
 
 # Install supervisord and Cloud SQL Auth Proxy if not already installed
 if ! command -v supervisord &> /dev/null; then
@@ -84,6 +88,12 @@ echo 'export DATABASE_URL=$(gcloud secrets versions access latest --secret=DATAB
 # supervisord -c /workspaces/tsi-data-uploader/.devcontainer/supervisord.conf
 
 echo "Post-create setup complete."
+
+# Ensure PYTHONPATH is set for all shells in Codespace
+echo 'export PYTHONPATH=$PWD' >> ~/.bashrc
+echo 'export PYTHONPATH=$PWD' >> ~/.zshrc
+echo 'export PYTHONPATH=$PWD' >> /etc/profile.d/pythonpath.sh
+chmod +x /etc/profile.d/pythonpath.sh
 echo "--------------------------------------------------------"
 echo "To connect to your database:"
 echo "1. Make sure you have set the GCP_SERVICE_ACCOUNT_KEY Codespace secret with your service account JSON key."

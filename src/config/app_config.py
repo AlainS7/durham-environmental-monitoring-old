@@ -60,6 +60,14 @@ class Config:
         self.db_creds_secret_id = self._parse_env_var_value("DB_CREDS_SECRET_ID")
         self.tsi_creds_secret_id = self._parse_env_var_value("TSI_CREDS_SECRET_ID")
         self.wu_api_key_secret_id = self._parse_env_var_value("WU_API_KEY_SECRET_ID")
+        # GCS configuration (no secrets required)
+        self.gcs_bucket = self._parse_env_var_value("GCS_BUCKET")
+        self.gcs_prefix = os.getenv("GCS_PREFIX", "sensor_readings")
+
+        # Optional BigQuery defaults for helper script
+        self.bq_project = self._parse_env_var_value("BQ_PROJECT")
+        self.bq_dataset = self._parse_env_var_value("BQ_DATASET")
+        self.bq_location = os.getenv("BQ_LOCATION", "US")
 
         self._validate_env_vars()
 
@@ -187,6 +195,22 @@ class Config:
             f"@{creds['DB_HOST']}:{creds['DB_PORT']}"
             f"/{creds['DB_NAME']}"
         )
+
+    @property
+    def gcs_config(self):
+        """Returns GCS upload configuration required by the uploader."""
+        return {
+            "bucket": self.gcs_bucket,
+            "prefix": self.gcs_prefix,
+        }
+
+    @property
+    def bigquery_defaults(self):
+        return {
+            "project": self.bq_project,
+            "dataset": self.bq_dataset,
+            "location": self.bq_location,
+        }
 
 # A single, global instance of the configuration
 app_config = Config()
