@@ -17,7 +17,8 @@ import sys
 import uuid
 import io
 import re
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Dict, Any
 
 import pandas as pd
 
@@ -168,180 +169,190 @@ def simulate_load_paths(bucket: str, prefix: str, date: str) -> List[str]:
     return paths
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Verify GCS + BigQuery integration")
-    parser.add_argument('--project', default=os.getenv('BQ_PROJECT'))
-    parser.add_argument('--dataset', required=True, help='BigQuery dataset ID')
-    parser.add_argument('--location', default=os.getenv('BQ_LOCATION', 'US'))
-    parser.add_argument('--bucket', required=True, help='GCS bucket')
-    parser.add_argument('--prefix', default=os.getenv('GCS_PREFIX', 'sensor_readings'))
-    parser.add_argument('--date', help='Partition date (YYYY-MM-DD) to inspect row counts')
-    parser.add_argument('--create-dataset', action='store_true', help='Create dataset if missing')
-    parser.add_argument('--show-tables', action='store_true', help='List tables')
-    parser.add_argument('--check-rows', action='store_true', help='Fetch row counts (with optional --date filter)')
-    parser.add_argument('--show-schema', action='store_true', help='Show schema per table when listing tables')
-    parser.add_argument('--epoch-diagnostics', action='store_true', help='Analyze INT timestamp-like columns (epoch secs/millis)')
-    parser.add_argument('--enforce-normalized', action='store_true', help='Fail if staging/tmp tables lack ts TIMESTAMP or float lat/lon')
-    parser.add_argument('--simulate-loads', action='store_true', help='Show expected load URIs for date')
-    parser.add_argument('--json', action='store_true', help='Emit machine-readable JSON summary')
-    parser.add_argument('--skip-gcs', action='store_true', help='Skip GCS round trip test')
+@dataclass(slots=True)
+class VArgs:
+    project: str | None
+    dataset: str
+    location: str
+    bucket: str
+    prefix: str
+    date: Optional[str]
+    create_dataset: bool
+    show_tables: bool
+    check_rows: bool
+    show_schema: bool
+    epoch_diagnostics: bool
+    enforce_normalized: bool
+    simulate_loads: bool
+    emit_json: bool
+    skip_gcs: bool
 
-    args = parser.parse_args()
 
-    client = bigquery.Client(project=args.project)  # ADC project fallback
+def parse_args() -> VArgs:
+    p = argparse.ArgumentParser(description="Verify GCS + BigQuery integration")
+    p.add_argument('--project', default=os.getenv('BQ_PROJECT'))
+    p.add_argument('--dataset', required=True, help='BigQuery dataset ID')
+    p.add_argument('--location', default=os.getenv('BQ_LOCATION', 'US'))
+    p.add_argument('--bucket', required=True, help='GCS bucket')
+    p.add_argument('--prefix', default=os.getenv('GCS_PREFIX', 'sensor_readings'))
+    p.add_argument('--date', help='Partition date (YYYY-MM-DD) to inspect row counts')
+    p.add_argument('--create-dataset', action='store_true', help='Create dataset if missing')
+    p.add_argument('--show-tables', action='store_true', help='List tables')
+    p.add_argument('--check-rows', action='store_true', help='Fetch row counts (with optional --date filter)')
+    p.add_argument('--show-schema', action='store_true', help='Show schema per table when listing tables')
+    p.add_argument('--epoch-diagnostics', action='store_true', help='Analyze INT timestamp-like columns (epoch secs/millis)')
+    p.add_argument('--enforce-normalized', action='store_true', help='Fail if staging/tmp tables lack ts TIMESTAMP or float lat/lon')
+    p.add_argument('--simulate-loads', action='store_true', help='Show expected load URIs for date')
+    p.add_argument('--json', action='store_true', help='Emit machine-readable JSON summary')
+    p.add_argument('--skip-gcs', action='store_true', help='Skip GCS round trip test')
+    a = p.parse_args()
+    return VArgs(a.project, a.dataset, a.location, a.bucket, a.prefix, a.date, a.create_dataset, a.show_tables,
+                 a.check_rows, a.show_schema, a.epoch_diagnostics, a.enforce_normalized, a.simulate_loads, a.json, a.skip_gcs)
 
-    summary: dict = {"steps": {}}
 
-    # 1. GCS round trip
-    if args.skip_gcs:
-        gcs_res = {"ok": True, "skipped": True}
-    else:
-        gcs_res = check_gcs_round_trip(args.bucket, args.prefix)
-    summary['steps']['gcs_round_trip'] = gcs_res
-    if not gcs_res.get('ok'):
-        log.error(f"GCS round trip failed: {gcs_res}")
+def perform_gcs_check(args: VArgs) -> dict:
+    return {"ok": True, "skipped": True} if args.skip_gcs else check_gcs_round_trip(args.bucket, args.prefix)
 
-    # 2. Dataset
-    ds_res = ensure_dataset(client, args.dataset, args.location, args.create_dataset)
-    summary['steps']['dataset'] = ds_res
-    if not ds_res.get('ok'):
-        log.error(f"Dataset check failed: {ds_res}")
 
-    # 3. Tables list
-    tables = []
-    if args.show_tables:
-        try:
-            tables = list_tables(client, args.dataset)
-        except Exception as e:
-            log.error(f"List tables failed: {e}")
-        summary['steps']['tables'] = tables
+def maybe_list_tables(client: bigquery.Client, args: VArgs) -> list[str]:
+    if not args.show_tables:
+        return []
+    try:
+        return list_tables(client, args.dataset)
+    except Exception as e:
+        log.error(f"List tables failed: {e}")
+        return []
 
-    # 4. Row counts
-    if args.check_rows and tables:
-        row_counts = {}
-        schemas = {}
-        epoch_diag: dict = {}
-        norm_issues: dict = {}
-        for t in tables:
-            row_counts[t] = table_row_count(client, args.dataset, t, args.date)
-            if args.show_schema:
-                try:
-                    tbl = client.get_table(f"{args.dataset}.{t}")
-                    schemas[t] = {f.name: f.field_type for f in tbl.schema}
-                except Exception as e:
-                    schemas[t] = {"_error": str(e)}
-            if args.enforce_normalized and (t.startswith('staging_') or t.startswith('tmp_')):
-                # Skip analytical / derived tables
-                if t.startswith('tmp_unpivot_') or t.startswith('snapshot_') or t.startswith('view_'):
-                    pass
-                else:
-                    try:
-                        tbl = client.get_table(f"{args.dataset}.{t}")
-                        field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-                        issues = []
-                        # Accept either ts or timestamp TIMESTAMP
-                        has_ts = field_map.get('ts') == 'TIMESTAMP'
-                        has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
-                        if not (has_ts or has_timestamp):
-                            issues.append('missing_canonical_timestamp')
-                        if 'latitude' in field_map and field_map['latitude'] != 'FLOAT' and 'latitude_f' not in field_map:
-                            issues.append('latitude_not_float')
-                        if 'longitude' in field_map and field_map['longitude'] != 'FLOAT' and 'longitude_f' not in field_map:
-                            issues.append('longitude_not_float')
-                        int_time_cols = [n for n, ttype in field_map.items() if ttype == 'INTEGER' and n in ('timestamp','epoch')]
-                        if (has_ts or has_timestamp) and len(int_time_cols) > 1:
-                            issues.append('redundant_int_time_cols')
-                        if issues:
-                            norm_issues[t] = issues
-                    except Exception as e:
-                        norm_issues[t] = [f'_error:{e}']
-            if args.epoch_diagnostics:
-                try:
-                    tbl = client.get_table(f"{args.dataset}.{t}")
-                    # Identify INT64 columns matching time patterns
-                    cand_cols = [f.name for f in tbl.schema if f.field_type.upper()=="INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)]
-                    if cand_cols:
-                        diag_cols = []
-                        for col in cand_cols:
-                            q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{client.project}.{args.dataset}.{t}`"
-                            try:
-                                res = list(client.query(q).result())[0]
-                                mn = res['mn']
-                                mx = res['mx']
-                                c = res['c']
-                                if mn is None or mx is None:
-                                    diag_cols.append({"column": col, "rows": c, "min": None, "max": None})
-                                    continue
-                                # Determine scale by magnitude (rough thresholds):
-                                # seconds < 1e12, millis < 1e15, micros < 1e18, nanos >= 1e18
-                                if mx < 10**12:
-                                    scale = 'seconds'
-                                    convert_expr_min = f"TIMESTAMP_SECONDS({mn})"
-                                    convert_expr_max = f"TIMESTAMP_SECONDS({mx})"
-                                elif mx < 10**15:
-                                    scale = 'milliseconds'
-                                    convert_expr_min = f"TIMESTAMP_MILLIS({mn})"
-                                    convert_expr_max = f"TIMESTAMP_MILLIS({mx})"
-                                elif mx < 10**18:
-                                    scale = 'microseconds'
-                                    # BigQuery: no TIMESTAMP_MICROS literal function; use TIMESTAMP_MICROS()
-                                    convert_expr_min = f"TIMESTAMP_MICROS({mn})"
-                                    convert_expr_max = f"TIMESTAMP_MICROS({mx})"
-                                else:
-                                    scale = 'nanoseconds'
-                                    # Convert by dividing to micros then TIMESTAMP_MICROS (integer division)
-                                    convert_expr_min = f"TIMESTAMP_MICROS(CAST(DIV({mn},1000) AS INT64))"
-                                    convert_expr_max = f"TIMESTAMP_MICROS(CAST(DIV({mx},1000) AS INT64))"
-                                conv_query = (
-                                    "SELECT "
-                                    f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_min}) AS iso_min, "
-                                    f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_max}) AS iso_max"
-                                )
-                                try:
-                                    conv_res = list(client.query(conv_query).result())[0]
-                                    iso_min = conv_res['iso_min']
-                                    iso_max = conv_res['iso_max']
-                                except Exception:
-                                    iso_min = iso_max = None
-                                diag_cols.append({
-                                    "column": col,
-                                    "rows": c,
-                                    "min": mn,
-                                    "max": mx,
-                                    "scale": scale,
-                                    "iso_min": iso_min,
-                                    "iso_max": iso_max
-                                })
-                            except Exception as ie:
-                                diag_cols.append({"column": col, "error": str(ie)})
-                        if diag_cols:
-                            epoch_diag[t] = diag_cols
-                except Exception as e:
-                    epoch_diag[t] = [{"_error": str(e)}]
-        summary['steps']['row_counts'] = row_counts
+
+def gather_row_related(client: bigquery.Client, args: VArgs, tables: list[str]) -> Dict[str, Any]:
+    if not (args.check_rows and tables):
+        return {}
+    row_counts: Dict[str, Any] = {}
+    schemas: Dict[str, Any] = {}
+    epoch_diag: Dict[str, Any] = {}
+    norm_issues: Dict[str, Any] = {}
+    for t in tables:
+        row_counts[t] = table_row_count(client, args.dataset, t, args.date)
         if args.show_schema:
-            summary['steps']['schemas'] = schemas
+            try:
+                tbl = client.get_table(f"{args.dataset}.{t}")
+                schemas[t] = {f.name: f.field_type for f in tbl.schema}
+            except Exception as e:
+                schemas[t] = {"_error": str(e)}
+        if args.enforce_normalized and (t.startswith('staging_') or t.startswith('tmp_')) and not (
+            t.startswith('tmp_unpivot_') or t.startswith('snapshot_') or t.startswith('view_')
+        ):
+            try:
+                tbl = client.get_table(f"{args.dataset}.{t}")
+                field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+                issues = []
+                has_ts = field_map.get('ts') == 'TIMESTAMP'
+                has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
+                if not (has_ts or has_timestamp):
+                    issues.append('missing_canonical_timestamp')
+                if 'latitude' in field_map and field_map['latitude'] != 'FLOAT' and 'latitude_f' not in field_map:
+                    issues.append('latitude_not_float')
+                if 'longitude' in field_map and field_map['longitude'] != 'FLOAT' and 'longitude_f' not in field_map:
+                    issues.append('longitude_not_float')
+                int_time_cols = [n for n, ttype in field_map.items() if ttype == 'INTEGER' and n in ('timestamp','epoch')]
+                if (has_ts or has_timestamp) and len(int_time_cols) > 1:
+                    issues.append('redundant_int_time_cols')
+                if issues:
+                    norm_issues[t] = issues
+            except Exception as e:
+                norm_issues[t] = [f'_error:{e}']
         if args.epoch_diagnostics:
-            summary['steps']['epoch_diagnostics'] = epoch_diag
-        if args.enforce_normalized:
-            summary['steps']['normalization_issues'] = norm_issues
+            try:
+                tbl = client.get_table(f"{args.dataset}.{t}")
+                cand_cols = [f.name for f in tbl.schema if f.field_type.upper()=="INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)]
+                if cand_cols:
+                    diag_cols = []
+                    for col in cand_cols:
+                        q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{client.project}.{args.dataset}.{t}`"
+                        try:
+                            res = list(client.query(q).result())[0]
+                            mn, mx, c = res['mn'], res['mx'], res['c']
+                            if mn is None or mx is None:
+                                diag_cols.append({"column": col, "rows": c, "min": None, "max": None})
+                                continue
+                            if mx < 10**12:
+                                scale = 'seconds'
+                                convert_expr_min = f"TIMESTAMP_SECONDS({mn})"
+                                convert_expr_max = f"TIMESTAMP_SECONDS({mx})"
+                            elif mx < 10**15:
+                                scale = 'milliseconds'
+                                convert_expr_min = f"TIMESTAMP_MILLIS({mn})"
+                                convert_expr_max = f"TIMESTAMP_MILLIS({mx})"
+                            elif mx < 10**18:
+                                scale = 'microseconds'
+                                convert_expr_min = f"TIMESTAMP_MICROS({mn})"
+                                convert_expr_max = f"TIMESTAMP_MICROS({mx})"
+                            else:
+                                scale = 'nanoseconds'
+                                convert_expr_min = f"TIMESTAMP_MICROS(CAST(DIV({mn},1000) AS INT64))"
+                                convert_expr_max = f"TIMESTAMP_MICROS(CAST(DIV({mx},1000) AS INT64))"
+                            conv_query = (
+                                "SELECT "
+                                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_min}) AS iso_min, "
+                                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_max}) AS iso_max"
+                            )
+                            try:
+                                conv_res = list(client.query(conv_query).result())[0]
+                                iso_min = conv_res['iso_min']
+                                iso_max = conv_res['iso_max']
+                            except Exception:
+                                iso_min = iso_max = None
+                            diag_cols.append({"column": col, "rows": c, "min": mn, "max": mx, "scale": scale, "iso_min": iso_min, "iso_max": iso_max})
+                        except Exception as ie:
+                            diag_cols.append({"column": col, "error": str(ie)})
+                    if diag_cols:
+                        epoch_diag[t] = diag_cols
+            except Exception as e:
+                epoch_diag[t] = [{"_error": str(e)}]
+    out: Dict[str, Any] = {"row_counts": row_counts}
+    if args.show_schema:
+        out["schemas"] = schemas
+    if args.epoch_diagnostics:
+        out["epoch_diagnostics"] = epoch_diag
+    if args.enforce_normalized:
+        out["normalization_issues"] = norm_issues
+    return out
 
-    # 5. Simulated load URIs
+
+def finalize(summary: Dict[str, Any], args: VArgs):
     if args.simulate_loads and args.date:
         summary['steps']['load_uris'] = simulate_load_paths(args.bucket, args.prefix, args.date)
-
-    if args.json:
+    if args.emit_json:
         import json
         print(json.dumps(summary, default=str, indent=2))
     else:
         for k, v in summary['steps'].items():
             log.info(f"{k}: {v}")
-
+    gcs_res = summary['steps']['gcs_round_trip']
+    ds_res = summary['steps']['dataset']
     failed = any([not gcs_res.get('ok'), not ds_res.get('ok')])
     if args.enforce_normalized and summary['steps'].get('normalization_issues'):
         if any(summary['steps']['normalization_issues'].values()):
             failed = True
     sys.exit(1 if failed else 0)
+
+
+def main():
+    args = parse_args()
+    client = bigquery.Client(project=args.project)
+    summary: Dict[str, Any] = {"steps": {}}
+    summary['steps']['gcs_round_trip'] = perform_gcs_check(args)
+    if not summary['steps']['gcs_round_trip'].get('ok'):
+        log.error(f"GCS round trip failed: {summary['steps']['gcs_round_trip']}")
+    summary['steps']['dataset'] = ensure_dataset(client, args.dataset, args.location, args.create_dataset)
+    if not summary['steps']['dataset'].get('ok'):
+        log.error(f"Dataset check failed: {summary['steps']['dataset']}")
+    tables = maybe_list_tables(client, args)
+    if tables:
+        summary['steps']['tables'] = tables
+    row_bundle = gather_row_related(client, args, tables)
+    summary['steps'].update(row_bundle)
+    finalize(summary, args)
 
 if __name__ == '__main__':
     main()

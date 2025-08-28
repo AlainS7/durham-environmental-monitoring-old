@@ -198,6 +198,18 @@ WU_API_KEY=yourkey \
 python scripts/fetch_sample_raw.py --source WU --date 2025-08-20 --stations STATIONID123 --verbose --validated-out /tmp/wu_20250820.parquet
 ```
 
+## Maintainability Refactors (2025-08-28)
+
+Internal improvements to reduce complexity and long argument lists (CodeScene flags):
+
+- Added `RunConfig` to `daily_data_collector` (legacy params still accepted).
+- Introduced `UploadSpec` plus compatibility shim for `GCSUploader` path building & uploads.
+- Added `PartitionSpec` and `LoadSpec` in `load_to_bigquery`; retained `build_gcs_uri` shim for existing tests.
+- Decomposed `bq_normalize_day` into smaller functions (`parse`, `list_target_tables`, `build_plans`, `execute_plan`).
+- Modularized `verify_cloud_pipeline` into focused helpers (`perform_gcs_check`, `gather_row_related`, etc.).
+- All changes keep CLI behavior stable; tests and lint pass.
+
+
 ```sh
 TSI_CLIENT_ID=cid TSI_CLIENT_SECRET=secret TSI_AUTH_URL=https://auth.example/token \
 python scripts/fetch_sample_raw.py --source TSI --date 2025-08-20 --devices DEVICE123 --validated-out /tmp/tsi_20250820.parquet

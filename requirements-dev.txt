@@ -237,4 +237,5 @@ wheel==0.45.1
     # via pip-tools
 zipp==3.23.0
     # via importlib-metadata
-dbt-bigquery>=1.8.0
+dbt-bigquery==1.10.1
+    # pinned to avoid long pip resolver backtracking; update deliberately via uv/pip-compile
