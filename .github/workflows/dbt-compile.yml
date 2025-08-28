@@ -16,10 +16,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install deps
+      - name: Install base deps
         run: |
           pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r requirements.txt
+          pip install -r requirements-dbt.txt
       - name: Create dbt profile
         run: |
           mkdir -p ~/.dbt
