@@ -9,7 +9,15 @@ fi
 
 JOB_NAME=${JOB_NAME:-weather-data-uploader}
 REGION=${REGION:-us-east1}
-: "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
+
+# Allow PROJECT_ID to be auto-detected if not explicitly provided
+if [ "${PROJECT_ID:-}" = "" ]; then
+  AUTO_PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
+  if [ -n "$AUTO_PROJECT_ID" ] && [ "$AUTO_PROJECT_ID" != "(unset)" ]; then
+    PROJECT_ID="$AUTO_PROJECT_ID"
+  fi
+fi
+: "${PROJECT_ID:?PROJECT_ID environment variable must be set (export PROJECT_ID or set gcloud config)}"
 POLL_DELAY=5
 MAX_WAIT=${MAX_WAIT:-600}
 
