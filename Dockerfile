@@ -24,7 +24,8 @@ RUN set -eux; \
     chmod +x /usr/local/bin/uv; \
     rm -rf uv.tar.gz /tmp/uv-extract; \
     python -m pip install --upgrade pip setuptools wheel; \
-    uv pip sync requirements.txt
+    # Install dependencies into the system environment (no virtualenv inside container)
+    uv pip sync requirements.txt --system
 
 ########## Runtime stage ##########
 FROM python:3.11-slim AS runtime
