@@ -1,5 +1,5 @@
 ########## Builder stage ##########
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 # Copy only requirement files for dependency resolution
 WORKDIR /deps
@@ -20,16 +20,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     uv pip sync requirements.txt
 
 ########## Runtime stage ##########
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 # Set the working directory in the container
 WORKDIR /app
 
 # Install system dependencies for WeasyPrint (PDF generation)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info && \
-    rm -rf /var/lib/apt/lists/*
+## NOTE:
+##  - Some Debian testing images (trixie/sid) briefly renamed/obsoleted libgdk-pixbuf2.0-0 in favor of split packages.
+##  - We pin to the bookworm variant for stability and keep the original package list.
+##  - If the package name changes upstream again, add an OR fallback.
+RUN set -eux; \
+        apt-get update; \
+        # Try primary package list; if gdk-pixbuf package name changes, attempt a fallback.
+        if ! apt-get install -y --no-install-recommends \
+                libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info; then \
+                echo 'Primary install failed, attempting fallback for gdk-pixbuf package name' >&2; \
+                apt-get install -y --no-install-recommends \
+                    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-xlib-2.0-0 libffi-dev shared-mime-info; \
+        fi; \
+        rm -rf /var/lib/apt/lists/*
 
 # Copy Python site-packages and binaries from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
