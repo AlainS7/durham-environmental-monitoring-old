@@ -2,7 +2,8 @@
 import argparse
 import logging
 import os
-from typing import List
+from dataclasses import dataclass
+from typing import Sequence
 
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -24,32 +25,41 @@ def ensure_dataset(client: bigquery.Client, dataset_id: str, location: str | Non
         return client.create_dataset(ds)
 
 
-def build_gcs_uri(bucket: str, prefix: str, source: str, agg: str, date: str) -> str:
-    """Construct the GCS URI for a source/agg/date partition."""
-    return f"gs://{bucket}/{prefix}/source={source}/agg={agg}/dt={date}/*.parquet"
+@dataclass(slots=True)
+class PartitionSpec:
+    bucket: str
+    prefix: str
+    source: str
+    aggregation: str
+    date: str  # YYYY-MM-DD
+
+    def uri_glob(self) -> str:
+        return f"gs://{self.bucket}/{self.prefix}/source={self.source}/agg={self.aggregation}/dt={self.date}/*.parquet"
 
 
-def load_parquet(
-    client: bigquery.Client,
-    dataset_id: str,
-    table_id: str,
-    uris: List[str],
-    partition_field: str = "timestamp",
-    clustering_fields: List[str] | None = None,
-    write_disposition: str = "WRITE_APPEND",
-    create_disposition: str = "CREATE_IF_NEEDED",
-):
-    fq_table = f"{client.project}.{dataset_id}.{table_id}"
-    log.info(f"Loading into {fq_table} from {len(uris)} URI(s)...")
+@dataclass(slots=True)
+class LoadSpec:
+    dataset_id: str
+    table_id: str
+    uris: Sequence[str]
+    partition_field: str = "timestamp"
+    clustering_fields: Sequence[str] | None = None
+    write_disposition: str = "WRITE_APPEND"
+    create_disposition: str = "CREATE_IF_NEEDED"
+
+
+def load_parquet(client: bigquery.Client, spec: LoadSpec):
+    fq_table = f"{client.project}.{spec.dataset_id}.{spec.table_id}"
+    log.info(f"Loading into {fq_table} from {len(spec.uris)} URI(s)...")
     job_config = bigquery.LoadJobConfig()
     job_config.source_format = bigquery.SourceFormat.PARQUET
-    job_config.write_disposition = getattr(bigquery.WriteDisposition, write_disposition)
-    job_config.create_disposition = getattr(bigquery.CreateDisposition, create_disposition)
-    job_config.time_partitioning = bigquery.TimePartitioning(type_=bigquery.TimePartitioningType.DAY, field=partition_field)
-    if clustering_fields:
-        job_config.clustering_fields = clustering_fields
+    job_config.write_disposition = getattr(bigquery.WriteDisposition, spec.write_disposition)
+    job_config.create_disposition = getattr(bigquery.CreateDisposition, spec.create_disposition)
+    job_config.time_partitioning = bigquery.TimePartitioning(type_=bigquery.TimePartitioningType.DAY, field=spec.partition_field)
+    if spec.clustering_fields:
+        job_config.clustering_fields = list(spec.clustering_fields)
 
-    load_job = client.load_table_from_uri(uris, fq_table, job_config=job_config)
+    load_job = client.load_table_from_uri(list(spec.uris), fq_table, job_config=job_config)
     result = load_job.result()
     dest = client.get_table(fq_table)
     rows_loaded = getattr(load_job, "output_rows", None) or getattr(result, "output_rows", None)
@@ -58,6 +68,11 @@ def load_parquet(
     else:
         rows_str = str(rows_loaded)
     log.info(f"Loaded {rows_str} rows into {fq_table}. Current table rows: {dest.num_rows}")
+
+
+# Backward-compatible shim for tests importing build_gcs_uri
+def build_gcs_uri(bucket: str, prefix: str, source: str, agg: str, date: str) -> str:  # pragma: no cover - simple wrapper
+    return PartitionSpec(bucket=bucket, prefix=prefix, source=source, aggregation=agg, date=date).uri_glob()
 
 
 def main():
@@ -95,17 +110,19 @@ def main():
     cluster_fields = [f.strip() for f in args.cluster_by.split(",") if f.strip()]
 
     for src in sources:
-        uri = build_gcs_uri(args.bucket, args.prefix, src, args.agg, args.date)
+        part = PartitionSpec(bucket=args.bucket, prefix=args.prefix, source=src, aggregation=args.agg, date=args.date)
         table = f"{args.table_prefix}_{src.lower()}_{args.agg}"
         load_parquet(
             client,
-            dataset_id=args.dataset,
-            table_id=table,
-            uris=[uri],
-            partition_field=args.partition_field,
-            clustering_fields=cluster_fields,
-            write_disposition=args.write,
-            create_disposition=args.create,
+            LoadSpec(
+                dataset_id=args.dataset,
+                table_id=table,
+                uris=[part.uri_glob()],
+                partition_field=args.partition_field,
+                clustering_fields=cluster_fields,
+                write_disposition=args.write,
+                create_disposition=args.create,
+            )
         )
 
 

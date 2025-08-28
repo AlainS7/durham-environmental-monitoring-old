@@ -16,6 +16,7 @@ import argparse
 import re
 from typing import List
 from google.cloud import bigquery
+from dataclasses import dataclass
 
 TIME_COL_CANDIDATES_NS = ["timestamp"]  # high-res ints (ns/us/ms) when very large
 EPOCH_SECONDS_COL = "epoch"
@@ -78,45 +79,61 @@ def plan_for_table(client: bigquery.Client, dataset: str, table_id: str) -> List
     return alterations
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Normalize a day's staging tables (timestamp + lat/lon)")
-    parser.add_argument('--project', required=False, default=None)
-    parser.add_argument('--dataset', required=True)
-    parser.add_argument('--date', required=True, help='Date YYYY-MM-DD')
-    parser.add_argument('--execute', action='store_true', help='Execute changes (otherwise dry-run)')
-    parser.add_argument('--drop-int-time', action='store_true', help='Drop original integer timestamp/epoch columns once ts added')
-    parser.add_argument('--drop-original-latlon', action='store_true', help='Drop original latitude/longitude if *_f columns created')
-    args = parser.parse_args()
+@dataclass(slots=True)
+class Args:
+    project: str | None
+    dataset: str
+    date: str
+    execute: bool
+    drop_int_time: bool
+    drop_original_latlon: bool
 
-    client = bigquery.Client(project=args.project)
-    ymd = args.date.replace('-', '')
+
+def parse() -> Args:
+    p = argparse.ArgumentParser(description="Normalize a day's staging tables (timestamp + lat/lon)")
+    p.add_argument('--project', required=False, default=None)
+    p.add_argument('--dataset', required=True)
+    p.add_argument('--date', required=True, help='Date YYYY-MM-DD')
+    p.add_argument('--execute', action='store_true', help='Execute changes (otherwise dry-run)')
+    p.add_argument('--drop-int-time', action='store_true', help='Drop original integer timestamp/epoch columns once ts added')
+    p.add_argument('--drop-original-latlon', action='store_true', help='Drop original latitude/longitude if *_f columns created')
+    a = p.parse_args()
+    return Args(a.project, a.dataset, a.date, a.execute, a.drop_int_time, a.drop_original_latlon)
+
+
+def list_target_tables(client: bigquery.Client, dataset: str, date: str) -> list[str]:
+    ymd = date.replace('-', '')
     pattern = re.compile(rf'^(staging|tmp)_(wu|tsi)_.*{ymd}$', re.IGNORECASE)
-    tables = [t.table_id for t in client.list_tables(args.dataset) if pattern.match(t.table_id)]
+    return [t.table_id for t in client.list_tables(dataset) if pattern.match(t.table_id)]
 
+
+def build_plans(client: bigquery.Client, args: Args, tables: list[str]) -> tuple[dict[str, List[str]], set[str]]:
     plans: dict[str, List[str]] = {}
     cleanup_only: set[str] = set()
     for t in tables:
         stmts = plan_for_table(client, args.dataset, t)
         if stmts:
             plans[t] = stmts
-        else:
-            # Consider cleanup-only if drop flags requested
-            if args.execute and (args.drop_int_time or args.drop_original_latlon):
-                tbl = client.get_table(f"{args.dataset}.{t}")
-                field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-                needs_int_drop = args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP' and any(field_map.get(c)=='INTEGER' for c in ['timestamp','epoch']))
-                needs_latlon_drop = False
-                if args.drop_original_latlon:
-                    for col in ['latitude','longitude']:
-                        if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
-                            needs_latlon_drop = True
-                if needs_int_drop or needs_latlon_drop:
-                    cleanup_only.add(t)
+            continue
+        # Consider cleanup-only if drop flags requested
+        if args.execute and (args.drop_int_time or args.drop_original_latlon):
+            tbl = client.get_table(f"{args.dataset}.{t}")
+            field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+            needs_int_drop = args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP' and any(field_map.get(c)=='INTEGER' for c in ['timestamp','epoch']))
+            needs_latlon_drop = False
+            if args.drop_original_latlon:
+                for col in ['latitude','longitude']:
+                    if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
+                        needs_latlon_drop = True
+            if needs_int_drop or needs_latlon_drop:
+                cleanup_only.add(t)
+    return plans, cleanup_only
 
+
+def print_plan(args: Args, plans: dict[str, List[str]], cleanup_only: set[str]):
     if not plans and not cleanup_only:
         print('No normalization actions required.')
-        return
-
+        return False
     for table, stmts in plans.items():
         print(f"-- Table: {table}")
         for s in stmts:
@@ -127,44 +144,58 @@ def main():
             print("CLEANUP: drop integer timestamp/epoch columns")
         if args.drop_original_latlon:
             print("CLEANUP: drop original latitude/longitude columns")
+    return True
 
+
+def execute_plan(client: bigquery.Client, args: Args, plans: dict[str, List[str]], cleanup_only: set[str]):
+    # Execute add/update/backfill
+    for table, stmts in plans.items():
+        for s in stmts:
+            if s.startswith('ADD COLUMN'):
+                alter_sql = f"ALTER TABLE `{client.project}.{args.dataset}.{table}` {s}"
+                client.query(alter_sql).result()
+            elif s.startswith('UPDATE '):
+                client.query(s).result()
+        # Optional cleanup
+        tbl = client.get_table(f"{args.dataset}.{table}")
+        field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+        if args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP'):
+            for col in ['timestamp','epoch']:
+                if col in field_map and field_map[col]=='INTEGER':
+                    client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
+        if args.drop_original_latlon:
+            tbl = client.get_table(f"{args.dataset}.{table}")
+            field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+            for col in ['latitude','longitude']:
+                if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
+                    client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
+    # Cleanup-only tables
+    for table in cleanup_only:
+        tbl = client.get_table(f"{args.dataset}.{table}")
+        field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+        if args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP'):
+            for col in ['timestamp','epoch']:
+                if col in field_map and field_map[col]=='INTEGER':
+                    client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
+        if args.drop_original_latlon:
+            tbl = client.get_table(f"{args.dataset}.{table}")
+            field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+            for col in ['latitude','longitude']:
+                if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
+                    client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
+    print('Normalization executed.')
+
+
+def main():
+    args = parse()
+    client = bigquery.Client(project=args.project)
+    tables = list_target_tables(client, args.dataset, args.date)
+    plans, cleanup_only = build_plans(client, args, tables)
+    any_plan = print_plan(args, plans, cleanup_only)
+    if not any_plan:
+        return
     if args.execute:
-        # Execute add/update/backfill
-        for table, stmts in plans.items():
-            for s in stmts:
-                if s.startswith('ADD COLUMN'):
-                    alter_sql = f"ALTER TABLE `{client.project}.{args.dataset}.{table}` {s}"
-                    client.query(alter_sql).result()
-                elif s.startswith('UPDATE '):
-                    client.query(s).result()
-            # Optional cleanup
-            tbl = client.get_table(f"{args.dataset}.{table}")
-            field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-            if args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP'):
-                for col in ['timestamp','epoch']:
-                    if col in field_map and field_map[col]=='INTEGER':
-                        client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
-            if args.drop_original_latlon:
-                tbl = client.get_table(f"{args.dataset}.{table}")
-                field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-                for col in ['latitude','longitude']:
-                    if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
-                        client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
-        # Cleanup-only tables
-        for table in cleanup_only:
-            tbl = client.get_table(f"{args.dataset}.{table}")
-            field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-            if args.drop_int_time and ('ts' in field_map and field_map['ts']=='TIMESTAMP'):
-                for col in ['timestamp','epoch']:
-                    if col in field_map and field_map[col]=='INTEGER':
-                        client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
-            if args.drop_original_latlon:
-                tbl = client.get_table(f"{args.dataset}.{table}")
-                field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-                for col in ['latitude','longitude']:
-                    if col in field_map and f'{col}_f' in field_map and field_map[col] != 'FLOAT':
-                        client.query(f"ALTER TABLE `{client.project}.{args.dataset}.{table}` DROP COLUMN {col}").result()
-        print('Normalization executed.')
+        execute_plan(client, args, plans, cleanup_only)
     else:
         print('Dry-run (no changes made). Use --execute to apply.')
 

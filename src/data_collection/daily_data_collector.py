@@ -17,8 +17,9 @@ import logging
 import os
 import uuid
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 
 import pandas as pd
 from sqlalchemy import text
@@ -303,27 +304,75 @@ def _log_run_metadata(run_id: str, start_str: str, end_str: str, run_started: da
         log.error(f"Failed to log run metadata: {e}")
 
 
-async def run_collection_process(start_date: datetime | str, end_date: datetime | str, is_dry_run=False, aggregate=False, agg_interval='h', sink='gcs', source='all'):
-    log.info(f"Run collection {start_date} -> {end_date} dry={is_dry_run} aggregate={aggregate} interval={agg_interval} sink={sink} source={source}")
+@dataclass(slots=True)
+class RunConfig:
+    start_date: datetime | str
+    end_date: datetime | str
+    is_dry_run: bool = False
+    aggregate: bool = False
+    agg_interval: str = 'h'
+    sink: str = 'gcs'
+    source: str = 'all'
+
+    # Backward compat helper to allow existing call style
+    @classmethod
+    def from_legacy(cls, start: datetime | str, end: datetime | str, **kwargs):
+        return cls(start_date=start, end_date=end, **kwargs)
+
+
+def _maybe_show_samples(wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
+    if not wu_df.empty:
+        print("WU sample:\n", wu_df.head())
+    if not tsi_df.empty:
+        print("TSI sample:\n", tsi_df.head())
+
+
+async def run_collection_process(
+    start_date: datetime | str,
+    end_date: datetime | str,
+    is_dry_run: bool = False,
+    aggregate: bool = False,
+    agg_interval: str = 'h',
+    sink: str = 'gcs',
+    source: str = 'all',
+    config: Optional[RunConfig] = None,
+):
+    """Primary orchestration entrypoint.
+
+    Either supply legacy individual parameters (maintained for backward compatibility & tests)
+    or pass a RunConfig via the config parameter (preferred going forward) which reduces the
+    CodeScene flagged long argument list.
+    """
+    if config is None:
+        config = RunConfig.from_legacy(start_date, end_date, is_dry_run=is_dry_run, aggregate=aggregate, agg_interval=agg_interval, sink=sink, source=source)
+    # Local variable aliasing for readability
+    start_date = config.start_date
+    end_date = config.end_date
+    log.info(
+        "Run collection %s -> %s dry=%s aggregate=%s interval=%s sink=%s source=%s",
+        start_date, end_date, config.is_dry_run, config.aggregate, config.agg_interval, config.sink, config.source
+    )
     run_id = uuid.uuid4().hex
     run_started = datetime.utcnow()
     start_str, end_str = _normalize_dates(start_date, end_date)
-    wu_raw, tsi_raw = await _fetch_raw(start_str, end_str, source, aggregate, agg_interval)
+    wu_raw, tsi_raw = await _fetch_raw(start_str, end_str, config.source, config.aggregate, config.agg_interval)
     wu_df, tsi_df = _clean(wu_raw, tsi_raw)
 
-    if is_dry_run:
+    if config.is_dry_run:
         log.info("DRY RUN: showing head only")
-        if not wu_df.empty:
-            print("WU sample:\n", wu_df.head())
-        if not tsi_df.empty:
-            print("TSI sample:\n", tsi_df.head())
+        _maybe_show_samples(wu_df, tsi_df)
         return
 
-    wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, sink, aggregate, agg_interval)
+    wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, config.sink, config.aggregate, config.agg_interval)
     if not (wrote_wu or wrote_tsi):
         log.warning("No data written to any sink.")
 
-    _log_run_metadata(run_id, start_str, end_str, run_started, wu_raw, tsi_raw, wu_df, tsi_df, wrote_wu, wrote_tsi, aggregate, agg_interval, sink, source)
+    _log_run_metadata(
+        run_id, start_str, end_str, run_started,
+        wu_raw, tsi_raw, wu_df, tsi_df,
+        wrote_wu, wrote_tsi,
+        config.aggregate, config.agg_interval, config.sink, config.source
+    )
     log.info("Collection complete")
 
 
