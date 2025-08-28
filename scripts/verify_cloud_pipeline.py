@@ -238,48 +238,62 @@ def _collect_schema(tbl) -> Dict[str, str] | Dict[str, str]:
     return {f.name: f.field_type for f in tbl.schema}
 
 
-def _normalization_issues(tbl) -> List[str]:
-    """Return list of normalization issues for a staging/tmp table.
-
-    Decomposed into small predicate helpers to keep complexity low.
-    """
+def _norm_field_map(tbl) -> Optional[Dict[str, str]]:
     if not tbl:
-        return ["not_found"]
-    field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-    has_ts = field_map.get('ts') == 'TIMESTAMP'
-    has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
-    int_time_cols = [
-        n for n, ttype in field_map.items()
-        if ttype == 'INTEGER' and n in ('timestamp', 'epoch')
-    ]
-
-    def _missing_canonical_timestamp() -> Optional[str]:
-        return None if (has_ts or has_timestamp) else 'missing_canonical_timestamp'
-
-    def _latitude_issue() -> Optional[str]:
-        lat_t = field_map.get('latitude')
-        if lat_t and lat_t != 'FLOAT' and 'latitude_f' not in field_map:
-            return 'latitude_not_float'
         return None
+    return {f.name: f.field_type.upper() for f in tbl.schema}
 
-    def _longitude_issue() -> Optional[str]:
-        lon_t = field_map.get('longitude')
-        if lon_t and lon_t != 'FLOAT' and 'longitude_f' not in field_map:
-            return 'longitude_not_float'
+
+def _norm_missing_canonical(field_map: Dict[str, str]) -> Optional[str]:
+    if field_map.get('ts') == 'TIMESTAMP' or field_map.get('timestamp') == 'TIMESTAMP':
         return None
+    return 'missing_canonical_timestamp'
 
-    def _redundant_epoch_ints() -> Optional[str]:
-        if (has_ts or has_timestamp) and len(int_time_cols) > 1:
-            return 'redundant_int_time_cols'
+
+def _norm_lat_issue(field_map: Dict[str, str]) -> Optional[str]:
+    lat_t = field_map.get('latitude')
+    if lat_t and lat_t != 'FLOAT' and 'latitude_f' not in field_map:
+        return 'latitude_not_float'
+    return None
+
+
+def _norm_lon_issue(field_map: Dict[str, str]) -> Optional[str]:
+    lon_t = field_map.get('longitude')
+    if lon_t and lon_t != 'FLOAT' and 'longitude_f' not in field_map:
+        return 'longitude_not_float'
+    return None
+
+
+def _norm_redundant_epoch_ints(field_map: Dict[str, str]) -> Optional[str]:
+    has_ts = field_map.get('ts') == 'TIMESTAMP' or field_map.get('timestamp') == 'TIMESTAMP'
+    if not has_ts:
         return None
+    count_ints = sum(1 for n, t in field_map.items() if t == 'INTEGER' and n in ('timestamp', 'epoch'))
+    if count_ints > 1:
+        return 'redundant_int_time_cols'
+    return None
 
-    checks = [
-        _missing_canonical_timestamp(),
-        _latitude_issue(),
-        _longitude_issue(),
-        _redundant_epoch_ints(),
-    ]
-    return [c for c in checks if c]
+
+NORMALIZATION_CHECKS = (
+    _norm_missing_canonical,
+    _norm_lat_issue,
+    _norm_lon_issue,
+    _norm_redundant_epoch_ints,
+)
+
+
+def _normalization_issues(tbl) -> List[str]:
+    if not tbl:
+        return ['not_found']
+    field_map = _norm_field_map(tbl)
+    if field_map is None:
+        return ['not_found']
+    out: List[str] = []
+    for checker in NORMALIZATION_CHECKS:
+        issue = checker(field_map)
+        if issue:
+            out.append(issue)
+    return out
 
 
 def _epoch_scale(max_value: int) -> Tuple[str, Any]:
@@ -342,49 +356,59 @@ def _needs_norm_check(table: str) -> bool:
     return table.startswith(('staging_', 'tmp_'))
 
 
-def _per_table_optionals(t: str, tbl, args: VArgs, client: bigquery.Client) -> Tuple[Optional[Dict[str, Any]], Optional[List[str]], Optional[List[Dict[str, Any]]]]:
-    """Return (schema, norm_issues, epoch_diagnostics) for a table (None if not requested)."""
-    schema_map: Optional[Dict[str, Any]] = None
-    norm_list: Optional[List[str]] = None
-    epoch_list: Optional[List[Dict[str, Any]]] = None
+def _process_schema(t: str, tbl, args: VArgs, out: Dict[str, Any]):  # minimal branching
     if args.show_schema:
-        schema_map = _collect_schema(tbl)
+        out[t] = _collect_schema(tbl)
+
+
+def _process_norm(t: str, tbl, args: VArgs, out: Dict[str, Any]):
     if args.enforce_normalized and _needs_norm_check(t):
         issues = _normalization_issues(tbl)
         if issues:
-            norm_list = issues
+            out[t] = issues
+
+
+def _process_epoch(t: str, tbl, args: VArgs, client: bigquery.Client, out: Dict[str, Any]):
     if args.epoch_diagnostics:
         diag = _epoch_diag_for_table(client, f"{client.project}.{args.dataset}.{t}", tbl)
         if diag:
-            epoch_list = diag
-    return schema_map, norm_list, epoch_list
+            out[t] = diag
 
 
 def gather_row_related(client: bigquery.Client, args: VArgs, tables: list[str]) -> Dict[str, Any]:
     if not (args.check_rows and tables):
         return {}
-    wants_table_obj = args.show_schema or args.enforce_normalized or args.epoch_diagnostics
     row_counts: Dict[str, Any] = {}
-    schemas: Dict[str, Any] = {} if args.show_schema else {}
-    epoch_diag: Dict[str, Any] = {} if args.epoch_diagnostics else {}
-    norm_issues: Dict[str, Any] = {} if args.enforce_normalized else {}
+    schemas: Dict[str, Any] = {}
+    epoch_diag: Dict[str, Any] = {}
+    norm_issues: Dict[str, Any] = {}
+
+    processors = []
+    if args.show_schema:
+        processors.append('schema')
+    if args.enforce_normalized:
+        processors.append('norm')
+    if args.epoch_diagnostics:
+        processors.append('epoch')
+
+    wants_table_obj = bool(processors)
     for t in tables:
         row_counts[t] = table_row_count(client, args.dataset, t, args.date)
         tbl = _maybe_get_table(client, args.dataset, t) if wants_table_obj else None
-        schema_map, norm_list, epoch_list = _per_table_optionals(t, tbl, args, client)
-        if schema_map is not None:
-            schemas[t] = schema_map
-        if norm_list is not None:
-            norm_issues[t] = norm_list
-        if epoch_list is not None:
-            epoch_diag[t] = epoch_list
+        for proc in processors:
+            if proc == 'schema':
+                _process_schema(t, tbl, args, schemas)
+            elif proc == 'norm':
+                _process_norm(t, tbl, args, norm_issues)
+            elif proc == 'epoch':
+                _process_epoch(t, tbl, args, client, epoch_diag)
     out: Dict[str, Any] = {"row_counts": row_counts}
     if args.show_schema:
-        out["schemas"] = schemas
+        out['schemas'] = schemas
     if args.epoch_diagnostics:
-        out["epoch_diagnostics"] = epoch_diag
+        out['epoch_diagnostics'] = epoch_diag
     if args.enforce_normalized:
-        out["normalization_issues"] = norm_issues
+        out['normalization_issues'] = norm_issues
     return out
 
 
