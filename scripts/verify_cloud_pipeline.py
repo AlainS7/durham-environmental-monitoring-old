@@ -224,6 +224,93 @@ def maybe_list_tables(client: bigquery.Client, args: VArgs) -> list[str]:
         return []
 
 
+def _maybe_get_table(client: bigquery.Client, dataset: str, table: str):
+    try:
+        return client.get_table(f"{dataset}.{table}")
+    except Exception as e:  # pragma: no cover - defensive
+        log.debug(f"get_table failed for {dataset}.{table}: {e}")
+        return None
+
+
+def _collect_schema(tbl) -> Dict[str, str] | Dict[str, str]:
+    if not tbl:
+        return {"_error": "not_found"}
+    return {f.name: f.field_type for f in tbl.schema}
+
+
+def _normalization_issues(tbl) -> List[str]:
+    if not tbl:
+        return ["not_found"]
+    field_map = {f.name: f.field_type.upper() for f in tbl.schema}
+    issues: List[str] = []
+    has_ts = field_map.get('ts') == 'TIMESTAMP'
+    has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
+    if not (has_ts or has_timestamp):
+        issues.append('missing_canonical_timestamp')
+    if 'latitude' in field_map and field_map['latitude'] != 'FLOAT' and 'latitude_f' not in field_map:
+        issues.append('latitude_not_float')
+    if 'longitude' in field_map and field_map['longitude'] != 'FLOAT' and 'longitude_f' not in field_map:
+        issues.append('longitude_not_float')
+    int_time_cols = [n for n, ttype in field_map.items() if ttype == 'INTEGER' and n in ('timestamp','epoch')]
+    if (has_ts or has_timestamp) and len(int_time_cols) > 1:
+        issues.append('redundant_int_time_cols')
+    return issues
+
+
+def _epoch_diag_for_table(client: bigquery.Client, project: str, dataset: str, table: str, tbl) -> List[Dict[str, Any]]:
+    if not tbl:
+        return [{"_error": "not_found"}]
+    cand_cols = [f.name for f in tbl.schema if f.field_type.upper()=="INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)]
+    diagnostics: List[Dict[str, Any]] = []
+    for col in cand_cols:
+        q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{project}.{dataset}.{table}`"
+        try:
+            res = list(client.query(q).result())[0]
+            mn, mx, c = res['mn'], res['mx'], res['c']
+            if mn is None or mx is None:
+                diagnostics.append({"column": col, "rows": c, "min": None, "max": None})
+                continue
+            # Determine scale buckets.
+            scale: str
+            if mx < 10**12:
+                scale = 'seconds'
+                conv_min = f"TIMESTAMP_SECONDS({mn})"
+                conv_max = f"TIMESTAMP_SECONDS({mx})"
+            elif mx < 10**15:
+                scale = 'milliseconds'
+                conv_min = f"TIMESTAMP_MILLIS({mn})"
+                conv_max = f"TIMESTAMP_MILLIS({mx})"
+            elif mx < 10**18:
+                scale = 'microseconds'
+                conv_min = f"TIMESTAMP_MICROS({mn})"
+                conv_max = f"TIMESTAMP_MICROS({mx})"
+            else:
+                scale = 'nanoseconds'
+                conv_min = f"TIMESTAMP_MICROS(CAST(DIV({mn},1000) AS INT64))"
+                conv_max = f"TIMESTAMP_MICROS(CAST(DIV({mx},1000) AS INT64))"
+            conv_query = (
+                "SELECT "
+                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {conv_min}) AS iso_min, "
+                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {conv_max}) AS iso_max"
+            )
+            try:
+                conv_res = list(client.query(conv_query).result())[0]
+                iso_min = conv_res['iso_min']
+                iso_max = conv_res['iso_max']
+            except Exception:
+                iso_min = iso_max = None
+            diagnostics.append({"column": col, "rows": c, "min": mn, "max": mx, "scale": scale, "iso_min": iso_min, "iso_max": iso_max})
+        except Exception as ie:  # pragma: no cover
+            diagnostics.append({"column": col, "error": str(ie)})
+    return diagnostics
+
+
+def _needs_norm_check(table: str) -> bool:
+    if table.startswith(('tmp_unpivot_', 'snapshot_', 'view_')):
+        return False
+    return table.startswith(('staging_', 'tmp_'))
+
+
 def gather_row_related(client: bigquery.Client, args: VArgs, tables: list[str]) -> Dict[str, Any]:
     if not (args.check_rows and tables):
         return {}
@@ -233,82 +320,19 @@ def gather_row_related(client: bigquery.Client, args: VArgs, tables: list[str]) 
     norm_issues: Dict[str, Any] = {}
     for t in tables:
         row_counts[t] = table_row_count(client, args.dataset, t, args.date)
+        tbl = None
+        if args.show_schema or args.enforce_normalized or args.epoch_diagnostics:
+            tbl = _maybe_get_table(client, args.dataset, t)
         if args.show_schema:
-            try:
-                tbl = client.get_table(f"{args.dataset}.{t}")
-                schemas[t] = {f.name: f.field_type for f in tbl.schema}
-            except Exception as e:
-                schemas[t] = {"_error": str(e)}
-        if args.enforce_normalized and (t.startswith('staging_') or t.startswith('tmp_')) and not (
-            t.startswith('tmp_unpivot_') or t.startswith('snapshot_') or t.startswith('view_')
-        ):
-            try:
-                tbl = client.get_table(f"{args.dataset}.{t}")
-                field_map = {f.name: f.field_type.upper() for f in tbl.schema}
-                issues = []
-                has_ts = field_map.get('ts') == 'TIMESTAMP'
-                has_timestamp = field_map.get('timestamp') == 'TIMESTAMP'
-                if not (has_ts or has_timestamp):
-                    issues.append('missing_canonical_timestamp')
-                if 'latitude' in field_map and field_map['latitude'] != 'FLOAT' and 'latitude_f' not in field_map:
-                    issues.append('latitude_not_float')
-                if 'longitude' in field_map and field_map['longitude'] != 'FLOAT' and 'longitude_f' not in field_map:
-                    issues.append('longitude_not_float')
-                int_time_cols = [n for n, ttype in field_map.items() if ttype == 'INTEGER' and n in ('timestamp','epoch')]
-                if (has_ts or has_timestamp) and len(int_time_cols) > 1:
-                    issues.append('redundant_int_time_cols')
-                if issues:
-                    norm_issues[t] = issues
-            except Exception as e:
-                norm_issues[t] = [f'_error:{e}']
+            schemas[t] = _collect_schema(tbl)
+        if args.enforce_normalized and _needs_norm_check(t):
+            issues = _normalization_issues(tbl)
+            if issues:
+                norm_issues[t] = issues
         if args.epoch_diagnostics:
-            try:
-                tbl = client.get_table(f"{args.dataset}.{t}")
-                cand_cols = [f.name for f in tbl.schema if f.field_type.upper()=="INTEGER" and EPOCH_CANDIDATE_RE.search(f.name)]
-                if cand_cols:
-                    diag_cols = []
-                    for col in cand_cols:
-                        q = f"SELECT MIN(`{col}`) mn, MAX(`{col}`) mx, COUNT(*) c FROM `{client.project}.{args.dataset}.{t}`"
-                        try:
-                            res = list(client.query(q).result())[0]
-                            mn, mx, c = res['mn'], res['mx'], res['c']
-                            if mn is None or mx is None:
-                                diag_cols.append({"column": col, "rows": c, "min": None, "max": None})
-                                continue
-                            if mx < 10**12:
-                                scale = 'seconds'
-                                convert_expr_min = f"TIMESTAMP_SECONDS({mn})"
-                                convert_expr_max = f"TIMESTAMP_SECONDS({mx})"
-                            elif mx < 10**15:
-                                scale = 'milliseconds'
-                                convert_expr_min = f"TIMESTAMP_MILLIS({mn})"
-                                convert_expr_max = f"TIMESTAMP_MILLIS({mx})"
-                            elif mx < 10**18:
-                                scale = 'microseconds'
-                                convert_expr_min = f"TIMESTAMP_MICROS({mn})"
-                                convert_expr_max = f"TIMESTAMP_MICROS({mx})"
-                            else:
-                                scale = 'nanoseconds'
-                                convert_expr_min = f"TIMESTAMP_MICROS(CAST(DIV({mn},1000) AS INT64))"
-                                convert_expr_max = f"TIMESTAMP_MICROS(CAST(DIV({mx},1000) AS INT64))"
-                            conv_query = (
-                                "SELECT "
-                                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_min}) AS iso_min, "
-                                f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', {convert_expr_max}) AS iso_max"
-                            )
-                            try:
-                                conv_res = list(client.query(conv_query).result())[0]
-                                iso_min = conv_res['iso_min']
-                                iso_max = conv_res['iso_max']
-                            except Exception:
-                                iso_min = iso_max = None
-                            diag_cols.append({"column": col, "rows": c, "min": mn, "max": mx, "scale": scale, "iso_min": iso_min, "iso_max": iso_max})
-                        except Exception as ie:
-                            diag_cols.append({"column": col, "error": str(ie)})
-                    if diag_cols:
-                        epoch_diag[t] = diag_cols
-            except Exception as e:
-                epoch_diag[t] = [{"_error": str(e)}]
+            diag = _epoch_diag_for_table(client, client.project, args.dataset, t, tbl)
+            if diag:
+                epoch_diag[t] = diag
     out: Dict[str, Any] = {"row_counts": row_counts}
     if args.show_schema:
         out["schemas"] = schemas
