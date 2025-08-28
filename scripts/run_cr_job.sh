@@ -83,3 +83,18 @@ log "Fetching last 200 log lines (if available)"
 gcloud logging read "resource.type=cloud_run_job AND resource.labels.execution_name=$EXEC_ID" --project "$PROJECT_ID" --limit=200 --format="value(textPayload)" 2>/dev/null || log "No logs retrieved"
 
 log "Done."
+
+# Optional: trigger BigQuery merge backfill for yesterday (uncomment to enable)
+# if command -v python >/dev/null 2>&1; then
+#   YESTERDAY=$(date -u -d 'yesterday' +%F)
+#   PROJECT_ENV=${BQ_PROJECT:-$PROJECT_ID}
+#   if [ -n "${PROJECT_ENV}" ]; then
+#     echo "[run-job] (optional) Running merge backfill for $YESTERDAY"
+#     python scripts/merge_sensor_readings.py \
+#       --project "$PROJECT_ENV" \
+#       --dataset sensors \
+#       --date "$YESTERDAY" \
+#       --auto-detect-staging \
+#       --update-only-if-changed || echo "[run-job][warn] merge step failed (non-blocking)"
+#   fi
+# fi
