@@ -19,18 +19,20 @@ log "Started execution: $EXEC_ID"
 
 elapsed=0
 while true; do
-  STATUS=$(gcloud run jobs executions describe "$EXEC_ID" --region "$REGION" --project "$PROJECT_ID" --format="value(status.conditions[?type='Completed'].state)" 2>/dev/null || true)
-  LASTMSG=$(gcloud run jobs executions describe "$EXEC_ID" --region "$REGION" --project "$PROJECT_ID" --format="value(status.conditions[?type='Completed'].message)" 2>/dev/null || true)
+  EXECUTION_JSON=$(gcloud run jobs executions describe "$EXEC_ID" --region "$REGION" --project "$PROJECT_ID" --format="json" 2>/dev/null || echo "{}")
+  STATUS=$(echo "$EXECUTION_JSON" | jq -r '(.status.conditions[]? | select(.type=="Completed") | .state) // empty')
+  LASTMSG=$(echo "$EXECUTION_JSON" | jq -r '(.status.conditions[]? | select(.type=="Completed") | .message) // empty')
+
   log "Status: ${STATUS:-unknown} ${LASTMSG} (t=${elapsed}s)"
-  if [ "$STATUS" = True ]; then
+  if [ "$STATUS" = "True" ]; then
     # Check success vs failure count
-    FAILED=$(gcloud run jobs executions describe "$EXEC_ID" --region "$REGION" --project "$PROJECT_ID" --format="value(failedCount)" 2>/dev/null || echo 0)
+    FAILED=$(echo "$EXECUTION_JSON" | jq -r '.failedCount // 0')
     if [ "${FAILED:-0}" -gt 0 ]; then
       err "Execution completed with failed tasks (failedCount=$FAILED)."; exit 2
     fi
     log "Execution succeeded."; break
   fi
-  if [ "$STATUS" = False ]; then
+  if [ "$STATUS" = "False" ]; then
     err "Execution ended in failure state: $LASTMSG"; exit 3
   fi
   if [ $elapsed -ge $MAX_WAIT ]; then
