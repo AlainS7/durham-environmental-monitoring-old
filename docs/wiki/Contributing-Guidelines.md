@@ -5,6 +5,7 @@ Thank you for your interest in contributing to the Hot Durham Environmental Moni
 ## 🤝 Ways to Contribute
 
 ### Code Contributions
+
 * Bug fixes and improvements
 * New features and enhancements
 * Performance optimizations
@@ -12,6 +13,7 @@ Thank you for your interest in contributing to the Hot Durham Environmental Moni
 * Test coverage improvements
 
 ### Non-Code Contributions
+
 * Bug reports and feature requests
 * Documentation improvements
 * User experience feedback
@@ -139,6 +141,7 @@ def process_sensor_data(data: dict, sensor_type: str) -> dict:
 ### 1. Planning Your Contribution
 
 Before starting work:
+
 * Check existing issues and pull requests
 * Create or comment on relevant issues
 * Discuss major changes with maintainers
@@ -172,6 +175,7 @@ git commit -m "docs: update API documentation"
 ### 1. Before Submitting
 
 Ensure your contribution:
+
 * [ ] Follows code style guidelines
 * [ ] Includes appropriate tests
 * [ ] Passes all existing tests
@@ -220,6 +224,7 @@ Closes #123 (if applicable)
 When reporting bugs, please include:
 
 ### Required Information
+
 * **Environment**: OS, Python version, system specs
 * **Version**: Hot Durham version or commit hash
 * **Description**: Clear description of the issue
@@ -251,13 +256,11 @@ What you expected to happen
 What actually happened
 
 **Logs/Error Messages**
-```
-Include relevant logs or error messages
-```
+
+    Include relevant logs or error messages
 
 **Additional Context**
 Any other relevant information
-```
 
 ## 💡 Feature Requests
 
@@ -272,6 +275,7 @@ For new feature requests:
 ## 🔒 Security Issues
 
 For security-related issues:
+
 * **DO NOT** create public issues
 * Email security concerns to: [security@hotdurham.org]
 * Include detailed information about the vulnerability
@@ -280,6 +284,7 @@ For security-related issues:
 ## 🏆 Recognition
 
 Contributors will be recognized:
+
 * Listed in project contributors
 * Credited in release notes
 * Badge/recognition for significant contributions
@@ -307,12 +312,14 @@ We are committed to providing a welcoming and inclusive environment:
 ## 🔄 Maintenance and Support
 
 ### Project Maintenance
+
 * Regular dependency updates
 * Security patch management
 * Performance monitoring
 * Documentation maintenance
 
 ### Long-term Support
+
 * Bug fixes for stable releases
 * Security updates
 * Migration guides for major changes
@@ -322,4 +329,4 @@ We are committed to providing a welcoming and inclusive environment:
 
 Thank you for contributing to Hot Durham! Your efforts help make environmental monitoring more accessible and effective for everyone.
 
-*Last updated: June 15, 2025*
+Last updated: June 15, 2025
