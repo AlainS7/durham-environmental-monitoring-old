@@ -1,598 +1,325 @@
 # Deployment Guide
 
-This guide covers deploying the Hot Durham Environmental Monitoring System to production environments.
+This guide provides instructions for deploying the Hot Durham Environmental Monitoring System. It covers infrastructure setup, application configuration, and deployment processes.
 
 ## 🚀 Deployment Overview
 
-### Deployment Options
+The deployment includes:
 
-1. **Traditional Server Deployment** - Direct installation on Linux servers
-2. **Docker Containerization** - Containerized deployment with Docker
-3. **Cloud Platform Deployment** - AWS, Google Cloud, or Azure
-4. **Kubernetes Orchestration** - Scalable container orchestration
+* Backend API services
+* Data ingestion pipelines
+* BigQuery datasets and tables
+* Scheduled jobs and monitoring
+* Optional dashboard components
 
-## 🔧 Pre-Deployment Checklist
+## 📦 Prerequisites
 
-### System Requirements
-- [ ] **Operating System**: Ubuntu 20.04+ or CentOS 8+
-- [ ] **Python**: Version 3.11 or higher
-- [ ] **Memory**: 8GB RAM minimum (16GB recommended)
-- [ ] **Storage**: 50GB free space minimum
-- [ ] **Network**: Stable internet connection
-- [ ] **Ports**: 80, 443, 5000 (configurable)
+Before deploying, ensure you have:
 
-### Security Requirements
-- [ ] SSL/TLS certificates configured
-- [ ] Firewall rules implemented
-- [ ] API keys secured
-- [ ] Database credentials encrypted
-- [ ] Backup strategy in place
+* Google Cloud Project with billing enabled
+* BigQuery and Cloud Storage APIs activated
+* Service account with appropriate permissions
+* Terraform installed (for infrastructure as code)
+* Python 3.11 environment
+* Access to secrets and configuration files
 
-### Dependencies
-- [ ] System packages updated
-- [ ] Python virtual environment ready
-- [ ] Database server configured
-- [ ] Web server (nginx/apache) installed
-- [ ] Process supervisor (systemd/supervisor) available
+## 🏗️ Infrastructure Provisioning (Terraform)
 
-## 🖥️ Traditional Server Deployment
+Infrastructure is managed with Terraform located in `infra/terraform/`.
 
-### Step 1: Server Preparation
+### 1. Initialize Terraform
 
 ```bash
-# Update system packages
-sudo apt update && sudo apt upgrade -y
-
-# Install system dependencies
-sudo apt install -y python3.11 python3.11-venv python3-pip \
-    nginx postgresql postgresql-contrib redis-server \
-    supervisor git curl wget
-
-# Create application user
-sudo useradd -m -s /bin/bash hotdurham
-sudo usermod -aG sudo hotdurham
+cd infra/terraform
+terraform init
 ```
 
-### Step 2: Application Setup
+### 2. Review and Customize Variables
+
+Edit `variables.tf` or create a `terraform.tfvars` file to set:
+
+* `project_id`
+* `region`
+* `dataset_name`
+* `gcs_bucket_name`
+* `environment` (e.g., `production`, `development`)
+
+### 3. Validate and Plan
 
 ```bash
-# Switch to application user
-sudo su - hotdurham
-
-# Clone repository
-git clone https://github.com/your-org/hot-durham.git
-cd hot-durham
-
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install Python dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements_python311.txt
-
-# Install production dependencies
-pip install gunicorn uvicorn[standard]
+terraform validate
+terraform plan -out=tfplan
 ```
 
-### Step 3: Configuration
+### 4. Apply Infrastructure Changes
 
 ```bash
-# Create production configuration
-cp config/environments/development.py config/environments/production.py
-
-# Edit production settings
-nano config/environments/production.py
+terraform apply tfplan
 ```
 
-Production configuration template:
+## 🗄️ Database / BigQuery Setup
+
+BigQuery schemas are defined in `database/schema.sql`.
+
+### 1. Create Dataset (if not managed by Terraform)
+
+```bash
+bq --location=US mk -d hot_durham_dataset
+```
+
+### 2. Apply Schema
+
+```bash
+bq query --use_legacy_sql=false < database/schema.sql
+```
+
+### 3. Validate Tables
+
+```bash
+bq ls hot_durham_dataset
+```
+
+## 🔐 Secrets & Configuration
+
+Configuration files are stored under `config/`.
+
+### 1. Service Account Keys
+
+Store service account JSON securely and set environment variables:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+```
+
+### 2. Environment Configuration
+
+Select environment via configuration modules:
 
 ```python
-# config/environments/production.py
-import os
-
-# Database Configuration
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://user:password@localhost/hotdurham')
-
-# API Configuration
-WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
-TSI_API_ENDPOINT = os.getenv('TSI_API_ENDPOINT')
-
-# Security
-SECRET_KEY = os.getenv('SECRET_KEY')
-ALLOWED_HOSTS = ['your-domain.com', 'api.your-domain.com']
-
-# Logging
-LOG_LEVEL = 'INFO'
-LOG_FILE = '/var/log/hotdurham/app.log'
-
-# Performance
-DEBUG = False
-CACHE_ENABLED = True
-CACHE_TTL = 300
-
-# Monitoring
-ENABLE_METRICS = True
-METRICS_PORT = 8080
+from config.environments import development, production
 ```
 
-### Step 4: Database Setup
+### 3. Sensitive Values
+
+* Store in Secret Manager where possible
+* Avoid committing secrets to version control
+* Rotate keys regularly
+
+## 🧪 Pre-Deployment Checks
+
+Run verification scripts before deploying to production:
 
 ```bash
-# Create database
-sudo -u postgres createdb hotdurham
-sudo -u postgres createuser --interactive hotdurham
-
-# Initialize database schema
-python src/database/init_db.py --env production
-
-# Run migrations
-python scripts/migrate_database.py
+python scripts/verify_cloud_pipeline.py
+python scripts/check_metric_coverage.py
+python scripts/check_row_thresholds.py
 ```
 
-### Step 5: Environment Variables
+## 📥 Data Ingestion Deployment
+
+Data ingestion scripts pull raw sensor data and load it into BigQuery.
+
+### 1. Fetch Sample Raw Data
 
 ```bash
-# Create environment file
-cat > .env << EOF
-ENVIRONMENT=production
-DATABASE_URL=postgresql://hotdurham:password@localhost/hotdurham
-WEATHER_API_KEY=your_weather_api_key
-TSI_API_ENDPOINT=https://your-tsi-endpoint.com
-SECRET_KEY=your_secret_key_here
-REDIS_URL=redis://localhost:6379/0
-EOF
-
-# Secure environment file
-chmod 600 .env
+python scripts/fetch_sample_raw.py --sensor all --limit 100
 ```
 
-### Step 6: Web Server Configuration
-
-Create nginx configuration:
-
-```nginx
-# /etc/nginx/sites-available/hotdurham
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    # Redirect HTTP to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-    
-    # SSL Configuration
-    ssl_certificate /etc/ssl/certs/your-domain.crt;
-    ssl_certificate_key /etc/ssl/private/your-domain.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512;
-    
-    # Static files
-    location /static/ {
-        alias /home/hotdurham/hot-durham/static/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    # API endpoints
-    location /api/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    # Dashboard
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
-Enable the site:
+### 2. Upload Sample to BigQuery
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/hotdurham /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+python scripts/bq_upload_sample.py --date 2025-08-20
 ```
 
-### Step 7: Process Management
-
-Create systemd service:
-
-```ini
-# /etc/systemd/system/hotdurham.service
-[Unit]
-Description=Hot Durham Environmental Monitoring System
-After=network.target
-
-[Service]
-Type=exec
-User=hotdurham
-Group=hotdurham
-WorkingDirectory=/home/hotdurham/hot-durham
-Environment=PATH=/home/hotdurham/hot-durham/venv/bin
-ExecStart=/home/hotdurham/hot-durham/venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 4 --timeout 120 src.monitoring.dashboard:app
-ExecReload=/bin/kill -s HUP $MAINPID
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Create background worker service:
-
-```ini
-# /etc/systemd/system/hotdurham-worker.service
-[Unit]
-Description=Hot Durham Background Worker
-After=network.target
-
-[Service]
-Type=exec
-User=hotdurham
-Group=hotdurham
-WorkingDirectory=/home/hotdurham/hot-durham
-Environment=PATH=/home/hotdurham/hot-durham/venv/bin
-ExecStart=/home/hotdurham/hot-durham/venv/bin/python scripts/production_manager.py --worker
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start services:
+### 3. Merge Sensor Readings
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable hotdurham hotdurham-worker
-sudo systemctl start hotdurham hotdurham-worker
+python scripts/merge_sensor_readings.py --start 2025-08-19 --end 2025-08-20
 ```
 
-## 🐳 Docker Deployment
+## 🔄 Transformations (dbt)
 
-### Dockerfile
+Run dbt transformations after raw data is loaded.
 
-```dockerfile
-FROM python:3.11-slim
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements*.txt ./
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r requirements_python311.txt
-
-# Copy application code
-COPY . .
-
-# Create non-root user
-RUN groupadd -r hotdurham && useradd -r -g hotdurham hotdurham
-RUN chown -R hotdurham:hotdurham /app
-USER hotdurham
-
-# Expose port
-EXPOSE 5000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5000/health || exit 1
-
-# Run application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "src.monitoring.dashboard:app"]
-```
-
-### Docker Compose
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  app:
-    build: .
-    ports:
-      - "5000:5000"
-    environment:
-      - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://hotdurham:password@db:5432/hotdurham
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
-    restart: unless-stopped
-
-  worker:
-    build: .
-    command: python scripts/production_manager.py --worker
-    environment:
-      - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://hotdurham:password@db:5432/hotdurham
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
-    restart: unless-stopped
-
-  db:
-    image: postgres:13
-    environment:
-      - POSTGRES_DB=hotdurham
-      - POSTGRES_USER=hotdurham
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  redis:
-    image: redis:6-alpine
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./ssl:/etc/ssl
-    depends_on:
-      - app
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-```
-
-Deploy with Docker Compose:
+### 1. Install Dependencies
 
 ```bash
-# Build and start services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Scale workers
-docker-compose up -d --scale worker=3
+uv pip sync requirements.txt
+uv pip sync requirements-dbt.txt
 ```
 
-## ☁️ Cloud Platform Deployment
-
-### AWS Deployment
-
-**Using AWS ECS:**
+### 2. Compile Models
 
 ```bash
-# Install AWS CLI
-pip install awscli
-
-# Configure AWS credentials
-aws configure
-
-# Create ECS cluster
-aws ecs create-cluster --cluster-name hotdurham-cluster
-
-# Build and push Docker image
-docker build -t hotdurham .
-docker tag hotdurham:latest your-account.dkr.ecr.region.amazonaws.com/hotdurham:latest
-docker push your-account.dkr.ecr.region.amazonaws.com/hotdurham:latest
+dbt compile --profiles-dir .
 ```
 
-**Using AWS Elastic Beanstalk:**
+### 3. Run and Test
 
 ```bash
-# Install EB CLI
-pip install awsebcli
-
-# Initialize Elastic Beanstalk application
-eb init
-
-# Deploy application
-eb create production
-eb deploy
+dbt run --profiles-dir .
+dbt test --profiles-dir .
 ```
 
-### Google Cloud Platform
+## 🧹 Idempotent Reload / Partition Replace
+
+To reload a single partition/day:
 
 ```bash
-# Install gcloud CLI
-curl https://sdk.cloud.google.com | bash
-
-# Initialize gcloud
-gcloud init
-
-# Deploy to Google Cloud Run
-gcloud run deploy hotdurham \
-  --image gcr.io/your-project/hotdurham \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
+python scripts/load_to_bigquery.py --replace-date 2025-08-20
 ```
 
-## 🔍 Monitoring and Maintenance
+## 🔁 Incremental MERGE Upserts
 
-### Health Checks
+Incrementally upsert latest data:
+
+```bash
+python scripts/load_to_bigquery.py --incremental --days 1
+```
+
+## 📊 Monitoring & Alerts
+
+Monitoring scripts help validate data quality.
+
+```bash
+python scripts/verify_db_data.py
+python scripts/compare_metrics.py
+python scripts/notify_teams.py --channel ops
+```
+
+## 🛠️ Maintenance Jobs
+
+Scheduled maintenance tasks:
+
+* Data transformation runs (dbt)
+* Data quality checks
+* Metric coverage reports
+* Alert notifications
+* Partition reprocessing
+
+## 🧪 Health Checks
+
+Example health check function for services:
 
 ```python
-# health_check.py
 import requests
-import sys
 
-def check_health():
+def check_health(url: str, timeout: float = 3.0) -> bool:
+    """Return True if service at url responds with 200 OK within timeout."""
     try:
-        response = requests.get('http://localhost:5000/health', timeout=10)
-        if response.status_code == 200:
-            print("✓ Application is healthy")
-            return True
-    except Exception as e:
-        print(f"✗ Health check failed: {e}")
+        resp = requests.get(url, timeout=timeout)
+        return resp.status_code == 200
+    except requests.RequestException:
         return False
-
-if __name__ == "__main__":
-    sys.exit(0 if check_health() else 1)
 ```
 
-### Automated Backups
+Run:
 
 ```bash
-#!/bin/bash
-# backup.sh
-
-# Database backup
-pg_dump hotdurham > /backup/db_$(date +%Y%m%d_%H%M%S).sql
-
-# Application data backup
-tar -czf /backup/data_$(date +%Y%m%d_%H%M%S).tar.gz data/ logs/
-
-# Cleanup old backups (keep 30 days)
-find /backup -name "*.sql" -mtime +30 -delete
-find /backup -name "*.tar.gz" -mtime +30 -delete
+python -c "from health import check_health; print(check_health('https://example.com/health'))"
 ```
 
-### Log Rotation
+## 🔍 Troubleshooting
+
+Common issues and fixes:
+
+### 1. Authentication Errors
 
 ```bash
-# /etc/logrotate.d/hotdurham
-/home/hotdurham/hot-durham/logs/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    copytruncate
-}
+# Ensure GOOGLE_APPLICATION_CREDENTIALS is set
+echo $GOOGLE_APPLICATION_CREDENTIALS
+# Activate service account
+gcloud auth activate-service-account --key-file $GOOGLE_APPLICATION_CREDENTIALS
 ```
 
-## 🔒 Security Hardening
-
-### SSL/TLS Configuration
+### 2. Permission Denied (BigQuery)
 
 ```bash
-# Generate SSL certificate (Let's Encrypt)
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
+# Check IAM roles
+gcloud projects get-iam-policy $PROJECT_ID | grep SERVICE_ACCOUNT_EMAIL
 ```
 
-### Firewall Configuration
+### 3. Missing Tables
 
 ```bash
-# Configure UFW firewall
-sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw deny 5000/tcp  # Block direct access to app port
-sudo ufw enable
+bq ls hot_durham_dataset
+# Re-apply schema if missing
+bq query --use_legacy_sql=false < database/schema.sql
 ```
 
-### Security Headers
+### 4. dbt Profile Issues
 
-Add to nginx configuration:
-
-```nginx
-# Security headers
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-XSS-Protection "1; mode=block" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header Referrer-Policy "no-referrer-when-downgrade" always;
-add_header Content-Security-Policy "default-src 'self'" always;
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```bash
+# Validate dbt profile
+dbt debug --profiles-dir .
 ```
 
-## 🚨 Troubleshooting Deployment
+### 5. Network/Timeout Issues
 
-### Common Issues
-
-1. **Service won't start:**
-   ```bash
-   sudo systemctl status hotdurham
-   sudo journalctl -u hotdurham -f
-   ```
-
-2. **Database connection errors:**
-   ```bash
-   sudo -u postgres psql -c "\l"
-   python -c "from src.database.db_manager import DatabaseManager; DatabaseManager().test_connection()"
-   ```
-
-3. **Permission issues:**
-   ```bash
-   sudo chown -R hotdurham:hotdurham /home/hotdurham/hot-durham
-   chmod +x scripts/*.py
-   ```
-
-### Performance Tuning
-
-```python
-# production_tuning.py
-import os
-
-# Gunicorn workers calculation
-workers = (os.cpu_count() * 2) + 1
-
-# Database connection pool
-DB_POOL_SIZE = 20
-DB_MAX_OVERFLOW = 30
-
-# Caching configuration
-CACHE_CONFIG = {
-    'CACHE_TYPE': 'redis',
-    'CACHE_REDIS_URL': 'redis://localhost:6379/0',
-    'CACHE_DEFAULT_TIMEOUT': 300
-}
+```bash
+# Test connectivity
+ping -c 3 api.example.com || true
+# Retry with backoff (example snippet)
+python - <<'PY'
+import time, requests
+for attempt in range(3):
+    try:
+        r = requests.get('https://api.example.com/health', timeout=5)
+        print('OK', r.status_code); break
+    except Exception as e:
+        print('Attempt', attempt+1, 'failed:', e); time.sleep(2**attempt)
+else:
+    raise SystemExit('Service unreachable')
+PY
 ```
 
-## 📋 Post-Deployment Checklist
+## 📦 Deployment Automation (Optional)
 
-- [ ] Application starts successfully
-- [ ] Database connections working
-- [ ] API endpoints responding
-- [ ] Dashboard loads correctly
-- [ ] SSL certificates valid
-- [ ] Monitoring configured
-- [ ] Backups automated
-- [ ] Log rotation configured
-- [ ] Security headers implemented
-- [ ] Firewall rules applied
-- [ ] Health checks passing
-- [ ] Documentation updated
+Consider adding CI/CD steps:
+
+* Automated tests on push
+* dbt run/test workflows
+* Scheduled ingestion jobs
+* Lint & style checks
+
+## 🧾 Post-Deployment Verification
+
+Run these checks after deployment:
+
+```bash
+python scripts/verify_cloud_pipeline.py
+python scripts/compare_metrics.py
+python scripts/notify_teams.py --channel ops --summary
+```
+
+## 🗂️ Rollback Strategy
+
+If deployment causes issues:
+
+* Revert to previous Git commit
+* Re-run stable ingestion & dbt transformations
+* Restore backup tables / partitions
+* Document root cause and mitigation
+
+## 🔐 Security Hardening (Summary)
+
+* Principle of least privilege for service accounts
+* Rotate credentials and keys
+* Enable audit logging
+* Restrict network access where possible
+* Keep dependencies updated
+
+## 📅 Scheduled Jobs
+
+Maintain a schedule for:
+
+* Hourly ingestion (if near-real-time)
+* Daily transformations
+* Weekly metric audits
+* Monthly dependency updates
 
 ---
 
-*This deployment guide is maintained for the latest version of Hot Durham. For specific deployment questions, consult the [FAQ](FAQ.md) or [Common Issues](Common-Issues.md) guides.*
+Deployment complete. Monitor logs and metrics to ensure ongoing system health.
 
-*Last updated: June 15, 2025*
+Last updated: June 15, 2025
