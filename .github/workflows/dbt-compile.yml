@@ -42,4 +42,7 @@ jobs:
       - name: dbt deps
         run: dbt deps --project-dir transformations/dbt
       - name: dbt compile
-        run: dbt compile --project-dir transformations/dbt --profiles-dir ~/.dbt --vars "{proc_date: '{{ '{{' }} run_started_at.strftime('%Y-%m-%d') {{ '}}' }}, project: '${{ secrets.GCP_PROJECT_ID }}'}"
+        # Use folded style to avoid complex escaping; pass vars as JSON string.
+        run: >
+          dbt compile --project-dir transformations/dbt --profiles-dir ~/.dbt
+          --vars "{\"proc_date\": \"{{ run_started_at.strftime('%Y-%m-%d') }}\", \"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
