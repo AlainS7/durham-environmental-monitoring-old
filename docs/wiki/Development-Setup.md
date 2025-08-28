@@ -5,16 +5,16 @@ This guide will help you set up a local development environment for the Hot Durh
 ## 🛠️ Prerequisites
 
 ### Required Software
-- **Python 3.11+** - Primary programming language
-- **Git** - Version control
-- **Code Editor** - VS Code, PyCharm, or your preferred IDE
-- **Terminal/Command Line** - For running commands
+* **Python 3.11+** - Primary programming language
+* **Git** - Version control
+* **Code Editor** - VS Code, PyCharm, or your preferred IDE
+* **Terminal/Command Line** - For running commands
 
 ### Optional but Recommended
-- **Docker** - For containerized development
-- **PostgreSQL** - Production database (SQLite used for development)
-- **Redis** - Caching and task queue
-- **Node.js** - For frontend tooling (if applicable)
+* **Docker** - For containerized development
+* **PostgreSQL** - Production database (SQLite used for development)
+* **Redis** - Caching and task queue
+* **Node.js** - For frontend tooling (if applicable)
 
 ## 📥 Initial Setup
 
@@ -171,10 +171,10 @@ mypy src/
 ```
 
 **PyCharm Configuration:**
-- Set Python interpreter to `./venv/bin/python`
-- Enable Black formatter
-- Configure pytest as test runner
-- Set up flake8 as external tool
+* Set Python interpreter to `./venv/bin/python`
+* Enable Black formatter
+* Configure pytest as test runner
+* Set up flake8 as external tool
 
 ### Git Configuration
 
@@ -316,9 +316,9 @@ python scripts/production_manager.py --worker
 
 ### Access the Application
 
-- **Dashboard**: http://localhost:5000
-- **API**: http://localhost:5000/api
-- **Health Check**: http://localhost:5000/health
+* **Dashboard**: http://localhost:5000
+* **API**: http://localhost:5000/api
+* **Health Check**: http://localhost:5000/health
 
 ### Development Workflow
 
@@ -328,9 +328,9 @@ python scripts/production_manager.py --worker
    ```
 
 2. **Make Changes**
-   - Edit code
-   - Add tests
-   - Update documentation
+   * Edit code
+   * Add tests
+   * Update documentation
 
 3. **Test Changes**
    ```bash
@@ -419,19 +419,19 @@ python -c "import pstats; pstats.Stats('profile.stats').sort_stats('cumulative')
 ## 📚 Learning Resources
 
 ### Project Documentation
-- [Architecture Overview](Architecture-Overview.md)
-- [API Documentation](API-Documentation.md)
-- [Configuration Reference](Configuration-Reference.md)
+* [Architecture Overview](Architecture-Overview.md)
+* [API Documentation](API-Documentation.md)
+* [Configuration Reference](Configuration-Reference.md)
 
 ### Python Resources
-- [Python 3.11 Documentation](https://docs.python.org/3.11/)
-- [Flask Documentation](https://flask.palletsprojects.com/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
+* [Python 3.11 Documentation](https://docs.python.org/3.11/)
+* [Flask Documentation](https://flask.palletsprojects.com/)
+* [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
 
 ### Development Best Practices
-- [PEP 8 Style Guide](https://pep8.org/)
-- [Python Type Hints](https://docs.python.org/3/library/typing.html)
-- [pytest Documentation](https://docs.pytest.org/)
+* [PEP 8 Style Guide](https://pep8.org/)
+* [Python Type Hints](https://docs.python.org/3/library/typing.html)
+* [pytest Documentation](https://docs.pytest.org/)
 
 ## 🤝 Contributing
 
@@ -442,11 +442,11 @@ python -c "import pstats; pstats.Stats('profile.stats').sort_stats('cumulative')
 4. Check existing issues and pull requests
 
 ### Development Standards
-- Follow PEP 8 style guidelines
-- Write comprehensive tests
-- Document new features
-- Use type hints
-- Keep commits atomic and well-described
+* Follow PEP 8 style guidelines
+* Write comprehensive tests
+* Document new features
+* Use type hints
+* Keep commits atomic and well-described
 
 ---
 
