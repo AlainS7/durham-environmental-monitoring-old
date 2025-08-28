@@ -28,21 +28,44 @@ while true; do
   EXECUTION_JSON=$(gcloud run jobs executions describe "$EXEC_ID" --region "$REGION" --project "$PROJECT_ID" --format="json" 2>/dev/null || echo "{}")
   STATUS=$(echo "$EXECUTION_JSON" | jq -r '(.status.conditions[]? | select(.type=="Completed") | .state) // empty')
   LASTMSG=$(echo "$EXECUTION_JSON" | jq -r '(.status.conditions[]? | select(.type=="Completed") | .message) // empty')
+  FAILED_COUNT=$(echo "$EXECUTION_JSON" | jq -r '.failedCount // 0')
+  SUCCEEDED_COUNT=$(echo "$EXECUTION_JSON" | jq -r '.succeededCount // 0')
+  ACTIVE_COUNT=$(echo "$EXECUTION_JSON" | jq -r '.runningCount // 0')
 
-  log "Status: ${STATUS:-unknown} ${LASTMSG} (t=${elapsed}s)"
+  log "Status: ${STATUS:-unknown} ${LASTMSG} (t=${elapsed}s) failed=${FAILED_COUNT} succeeded=${SUCCEEDED_COUNT} running=${ACTIVE_COUNT}"
+  # Early exit if tasks have failed and no tasks are running anymore but controller hasn't set Completed=False yet
+  if [ "$FAILED_COUNT" -gt 0 ] && [ "$ACTIVE_COUNT" -eq 0 ] && [ "${STATUS:-}" != "True" ]; then
+    err "Detected failed tasks before controller marked completion (failedCount=$FAILED_COUNT).";
+    if [ "${DEBUG_EXECUTION_JSON:-}" = "1" ]; then
+      echo "$EXECUTION_JSON" | jq '.' >&2 || true
+    fi
+    break
+  fi
   if [ "$STATUS" = "True" ]; then
     # Check success vs failure count
     FAILED=$(echo "$EXECUTION_JSON" | jq -r '.failedCount // 0')
     if [ "${FAILED:-0}" -gt 0 ]; then
-      err "Execution completed with failed tasks (failedCount=$FAILED)."; exit 2
+      err "Execution completed with failed tasks (failedCount=$FAILED).";
+      if [ "${DEBUG_EXECUTION_JSON:-}" = "1" ]; then
+        echo "$EXECUTION_JSON" | jq '.' >&2 || true
+      fi
+      exit 2
     fi
     log "Execution succeeded."; break
   fi
   if [ "$STATUS" = "False" ]; then
-    err "Execution ended in failure state: $LASTMSG"; exit 3
+    err "Execution ended in failure state: $LASTMSG";
+    if [ "${DEBUG_EXECUTION_JSON:-}" = "1" ]; then
+      echo "$EXECUTION_JSON" | jq '.' >&2 || true
+    fi
+    exit 3
   fi
   if [ $elapsed -ge $MAX_WAIT ]; then
-    err "Timed out waiting for completion ($MAX_WAIT s)."; exit 4
+    err "Timed out waiting for completion ($MAX_WAIT s).";
+    if [ "${DEBUG_EXECUTION_JSON:-}" = "1" ]; then
+      echo "$EXECUTION_JSON" | jq '.' >&2 || true
+    fi
+    exit 4
   fi
   sleep $POLL_DELAY
   elapsed=$((elapsed+POLL_DELAY))
