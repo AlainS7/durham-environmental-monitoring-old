@@ -24,13 +24,17 @@ resource "google_artifact_registry_repository" "images" {
 
 # GCS bucket for raw sensor parquet
 resource "google_storage_bucket" "raw_bucket" {
-  name          = var.gcs_bucket
-  location      = var.region
-  force_destroy = false
-  uniform_bucket_level_access = true
-  lifecycle_rule {
-    action { type = "Delete" }
-    condition { age = var.raw_retention_days }
+  name                         = var.gcs_bucket
+  location                     = var.region
+  force_destroy                = false
+  uniform_bucket_level_access  = true
+
+  dynamic "lifecycle_rule" {
+    for_each = var.raw_retention_days > 0 ? [1] : []
+    content {
+      action { type = "Delete" }
+      condition { age = var.raw_retention_days }
+    }
   }
 }
 
