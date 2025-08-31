@@ -7,8 +7,17 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 10
 fi
 
-JOB_NAME=${JOB_NAME:-weather-data-uploader}
-REGION=${REGION:-us-east1}
+JOB_NAME=${JOB_NAME:-sensor-ingestion-job}
+
+# Allow first non-flag arg to override job name for convenience
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    -h|--help)
+      echo "Usage: JOB_NAME=<name> REGION=<region> PROJECT_ID=<project> $0 [job-name]"; exit 0;;
+    *) JOB_NAME="$1"; shift;;
+  esac
+fi
+REGION=${REGION:-us-central1}
 DATE_SINGLE=${DATE:-${INGEST_DATE:-}}
 DATE_START=${START_DATE:-}
 DATE_END=${END_DATE:-}
@@ -65,7 +74,10 @@ err(){ echo "[run-job][error] $*" >&2; }
 log "Executing Cloud Run job: $JOB_NAME in $REGION (project: $PROJECT_ID)"
 EXEC_ID=$(gcloud run jobs execute "$JOB_NAME" --region "$REGION" --project "$PROJECT_ID" --format="value(metadata.name)" 2>/dev/null || true)
 if [ -z "$EXEC_ID" ]; then
-  err "Failed to start execution (check IAM or job existence)."; exit 1
+  err "Failed to start execution (check IAM, region, or job existence)."
+  echo "[run-job] Existing jobs in region $REGION:" >&2
+  gcloud run jobs list --region "$REGION" --project "$PROJECT_ID" 2>/dev/null || true
+  exit 1
 fi
 log "Started execution: $EXEC_ID"
 
