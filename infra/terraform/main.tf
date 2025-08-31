@@ -13,6 +13,15 @@ provider "google" {
   region  = var.region
 }
 
+# Optional Artifact Registry repository
+resource "google_artifact_registry_repository" "images" {
+  count         = var.create_artifact_repo ? 1 : 0
+  location      = var.region
+  repository_id = var.artifact_repo
+  format        = "DOCKER"
+  description   = "Container images for ingestion & maintenance jobs"
+}
+
 # GCS bucket for raw sensor parquet
 resource "google_storage_bucket" "raw_bucket" {
   name          = var.gcs_bucket
