@@ -32,6 +32,24 @@ from src.data_collection.clients.tsi_client import TSIClient
 
 log = logging.getLogger(__name__)
 
+# Allow runtime override of log level via LOG_LEVEL env var (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+_lvl = os.getenv('LOG_LEVEL')
+if _lvl:
+    try:
+        logging.getLogger().setLevel(getattr(logging, _lvl.upper()))
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+# Diagnostic: log presence of critical env vars once (not their values) to verify Cloud Run template propagation.
+_diag_logged = False
+critical_env = [
+    'PROJECT_ID','DB_CREDS_SECRET_ID','TSI_CREDS_SECRET_ID','WU_API_KEY_SECRET_ID',
+    'GCS_BUCKET','GCS_PREFIX','BQ_PROJECT','BQ_DATASET','BQ_LOCATION','DISABLE_BQ_STAGING'
+]
+present = [k for k in critical_env if os.getenv(k)]
+missing = [k for k in critical_env if k not in present]
+logging.info("Env diagnostic: present=%s missing=%s", present, missing)
+
 
 # ---------------- Cleaning -----------------
 def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
@@ -218,6 +236,8 @@ def _safe_upload(uploader: Any, df: pd.DataFrame, src: str, aggregate: bool, agg
 def _sink_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sink: str, aggregate: bool, agg_interval: str) -> tuple[bool, bool]:
     wrote_wu = wrote_tsi = False
     wrote_any = False
+    # Allow hard disable of any DB interaction (Cloud SQL optional) via env DISABLE_DB_SINK=1
+    disable_db = os.getenv('DISABLE_DB_SINK') == '1'
     if sink in ('gcs', 'both'):
         gcs_cfg = app_config.gcs_config
         bucket = gcs_cfg.get('bucket')
@@ -229,7 +249,7 @@ def _sink_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sink: str, aggregate: 
             wrote_tsi = _safe_upload(uploader, tsi_df, 'TSI', aggregate, agg_interval) or wrote_tsi
             wrote_any = wrote_wu or wrote_tsi
 
-    if sink in ('db', 'both') or (sink == 'gcs' and not wrote_any):
+    if not disable_db and (sink in ('db', 'both') or (sink == 'gcs' and not wrote_any)):
         wu_db = wu_df if _has_ts(wu_df) else pd.DataFrame()
         tsi_db = tsi_df if _has_ts(tsi_df) else pd.DataFrame()
         if (not _has_ts(wu_df)) and not wu_df.empty:
@@ -252,6 +272,8 @@ def _sink_data(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, sink: str, aggregate: 
                 log.error(f"DB insertion encountered an error; continuing without DB sink: {e}")
         elif db is not None:
             log.critical("DB connection failed; skipped DB sink")
+    elif disable_db:
+        log.info("DB sink disabled via DISABLE_DB_SINK=1")
     return wrote_wu, wrote_tsi
 
 
@@ -271,6 +293,10 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
     """
     if os.getenv('DISABLE_BQ_STAGING') == '1':  # opt-out switch
         log.info("BQ staging disabled via DISABLE_BQ_STAGING=1")
+        return
+    if os.getenv('DISABLE_DB_SINK') == '1':
+        # Deployment mapping currently sourced from DB; skip quietly when DB disabled.
+        log.info("BQ staging skipped because DB sink disabled (needs deployment mapping refactor).")
         return
     if wu_df.empty and tsi_df.empty:
         log.info("No dataframes to stage to BigQuery (both empty).")

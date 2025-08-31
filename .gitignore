@@ -361,3 +361,12 @@ cloud-sql-proxy
 
 # Separated Hot Durham Project
 #hot_durham_project/
+
+# Cloud Run / deployment exported descriptors (sensitive env references) – do not commit
+job_export.yaml
+job_updated.yaml
+job.json
+*.cloudrun.export.yaml
+*.deployment.export.yaml
+cloudrun_job_*.yaml
+env.list
