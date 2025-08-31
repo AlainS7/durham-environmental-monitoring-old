@@ -1,22 +1,45 @@
 steps:
-  - id: 'Build ingestion image'
-    name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${SHORT_SHA}','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest','--build-arg','APP_SCRIPT=src/data_collection/daily_data_collector.py','.' ]
-  - id: 'Build refresh image'
-    name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:${SHORT_SHA}','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:latest','--build-arg','APP_SCRIPT=src/maintenance/refresh_partitions.py','.' ]
-  - id: 'Build metrics image'
-    name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:${SHORT_SHA}','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:latest','--build-arg','APP_SCRIPT=src/maintenance/record_metrics.py','.' ]
+  - id: Build ingestion image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest
+      - --build-arg
+      - APP_SCRIPT=src/data_collection/daily_data_collector.py
+      - .
+  - id: Build refresh image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:${_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:latest
+      - --build-arg
+      - APP_SCRIPT=src/maintenance/refresh_partitions.py
+      - .
+  - id: Build metrics image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:${_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:latest
+      - --build-arg
+      - APP_SCRIPT=src/maintenance/record_metrics.py
+      - .
 images:
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:latest'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:latest'
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${_TAG}
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:${_TAG}
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/refresh-partitions:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:${_TAG}
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/record-metrics:latest
 substitutions:
   _REGION: us-central1
   _REPO: weather-maintenance-images
-options:
-  machineType: 'E2_SMALL'
+  _TAG: manual

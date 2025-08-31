@@ -64,6 +64,36 @@ steps:
 After a successful build, optionally update Terraform vars to freeze versions:
 
 ```bash
-export IMG_SHA=$(gcloud artifacts docker images list ${REGION}-docker.pkg.dev/$PROJECT_ID/${REPO} --format='value(DIGEST)' --filter='ingestion' | head -n1)
-# Update ingestion_image to include @sha256: digest.
+./scripts/pin_image_digests.sh "$PROJECT_ID" us-central1 weather-maintenance-images
+"# Copy the terraform apply command above to pin all three images" 
 ```
+
+## Artifact Registry Creation
+
+Option A (Terraform): set `create_artifact_repo=true` and supply `artifact_repo` (defaults to weather-maintenance-images).
+
+Option B (gcloud manual):
+ 
+```bash
+gcloud artifacts repositories create weather-maintenance-images \
+  --repository-format=DOCKER --location=us-central1 \
+  --description="Sensor ingestion + maintenance images"
+```
+
+## One-Shot Bootstrap Script
+
+To provision everything (optional repo creation, build images, apply Terraform, optional digest pin):
+
+```bash
+./scripts/bootstrap_infra.sh \
+  --project YOUR_PROJECT_ID \
+  --bucket YOUR_GCS_BUCKET \
+  --create-repo \
+  --pin
+```
+
+Flags:
+* `--create-repo` ensures Artifact Registry exists (skip if pre-created)
+* `--pin` prints a terraform command with image digests to lock versions
+
+

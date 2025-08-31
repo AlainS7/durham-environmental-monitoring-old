@@ -19,3 +19,7 @@ variable "metrics_image" { type = string description = "Image for metrics record
 variable "metrics_cron" { type = string default = "10 4 * * *" }
 
 variable "window_days" { type = number default = 7 }
+
+# Artifact Registry (optional create)
+variable "create_artifact_repo" { type = bool default = false }
+variable "artifact_repo" { type = string default = "weather-maintenance-images" }
