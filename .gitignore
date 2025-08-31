@@ -370,3 +370,5 @@ job.json
 *.deployment.export.yaml
 cloudrun_job_*.yaml
 env.list
+env.yaml
+env.list

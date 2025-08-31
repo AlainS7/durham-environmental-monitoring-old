@@ -44,6 +44,7 @@ ENV_VARS=(
   BQ_LOCATION=US
   DISABLE_BQ_STAGING=1
   DISABLE_DB_SINK=1
+  LOG_LEVEL=INFO
 )
 
 echo "[recreate] Project: $PROJECT_ID Region: $REGION Job: $JOB_NAME"

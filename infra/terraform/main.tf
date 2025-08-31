@@ -102,6 +102,39 @@ resource "google_cloud_run_v2_job" "ingestion_job" {
   }
 }
 
+# Partition refresh job
+resource "google_cloud_run_v2_job" "refresh_job" {
+  name     = var.refresh_job_name
+  location = var.region
+  template {
+    template {
+      containers {
+        image = var.refresh_image
+        env { name = "BQ_DATASET" value = var.bq_dataset }
+        env { name = "BQ_PROJECT" value = var.project_id }
+      }
+      service_account = google_service_account.ingestion.email
+    }
+  }
+}
+
+# Metrics recording job
+resource "google_cloud_run_v2_job" "metrics_job" {
+  name     = var.metrics_job_name
+  location = var.region
+  template {
+    template {
+      containers {
+        image = var.metrics_image
+        env { name = "BQ_DATASET" value = var.bq_dataset }
+        env { name = "BQ_PROJECT" value = var.project_id }
+        env { name = "WINDOW_DAYS" value = tostring(var.window_days) }
+      }
+      service_account = google_service_account.ingestion.email
+    }
+  }
+}
+
 # Cloud Scheduler direct HTTP trigger of the Cloud Run Job (run endpoint)
 resource "google_cloud_scheduler_job" "daily_ingestion" {
   name        = "${var.ingestion_job_name}-daily"
@@ -118,6 +151,34 @@ resource "google_cloud_scheduler_job" "daily_ingestion" {
       Content-Type = "application/json"
     }
     body = base64encode("{}")
+  }
+}
+
+resource "google_cloud_scheduler_job" "daily_refresh" {
+  name        = "${var.refresh_job_name}-daily"
+  description = "Daily partition refresh"
+  schedule    = var.refresh_cron
+  time_zone   = var.cron_timezone
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/${google_cloud_run_v2_job.refresh_job.name}:run"
+    oidc_token { service_account_email = google_service_account.ingestion.email }
+    headers = { Content-Type = "application/json" }
+    body    = base64encode("{}")
+  }
+}
+
+resource "google_cloud_scheduler_job" "daily_metrics" {
+  name        = "${var.metrics_job_name}-daily"
+  description = "Daily ingestion metrics recording"
+  schedule    = var.metrics_cron
+  time_zone   = var.cron_timezone
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/${google_cloud_run_v2_job.metrics_job.name}:run"
+    oidc_token { service_account_email = google_service_account.ingestion.email }
+    headers = { Content-Type = "application/json" }
+    body    = base64encode("{}")
   }
 }
 
