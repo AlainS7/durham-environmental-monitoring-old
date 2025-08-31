@@ -12,6 +12,38 @@
 
 A comprehensive environmental monitoring system for Durham, NC, featuring **high-resolution 15-minute interval** data collection from Weather Underground and TSI air quality sensors for accurate research and analysis.
 
+## 🔐 Image Versioning & Deployment (Tag → Digest)
+
+Promote clarity (human-friendly tags) first, then lock production to immutable digests.
+
+Workflow:
+
+1. Build images with a semantic tag (date + short commit):
+
+```bash
+TAG="$(date +%Y%m%d-%H%M)-$(git rev-parse --short HEAD)"
+gcloud builds submit --config=cloudbuild.multi.yaml --substitutions=_TAG=$TAG
+```
+
+1. Deploy Terraform referencing the tag (easy rollback):
+
+```bash
+./scripts/deploy_with_tag.sh -p $PROJECT_ID -b $GCS_BUCKET -t $TAG
+```
+
+1. Validate Cloud Run job executions & BigQuery partitions.
+
+1. Pin to digests for immutability:
+
+```bash
+./scripts/pin_image_digests.sh $PROJECT_ID us-central1 weather-maintenance-images $TAG
+# Copy the terraform apply command with @sha256 digests and run it
+```
+
+1. Subsequent release: repeat; rollback = redeploy previous tag then (optionally) re-pin.
+
+Rationale: tags improve traceability; digests guarantee immutability and reproducibility.
+
 ## 🌟 Features
 
 ### Continuous Verification

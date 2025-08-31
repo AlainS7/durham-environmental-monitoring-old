@@ -4,7 +4,7 @@ This module provisions core infra for the Durham Environmental Monitoring pipeli
 
 ## Resources
 
-* GCS bucket (raw Parquet). By default no lifecycle deletion (infinite retention). Optional lifecycle can be enabled by setting `raw_retention_days` > 0 (set to 0 or remove rule for infinite retention).
+* GCS bucket (raw Parquet). Infinite retention by default (no lifecycle rule). Enable time-based deletion by setting `raw_retention_days` > 0.
 * BigQuery dataset for raw & transformed tables.
 * Ingestion & verifier service accounts with least privilege example roles.
 * Cloud Run Jobs: ingestion, partition refresh, metrics recording.
@@ -20,7 +20,7 @@ module "sensor_pipeline" {
   gcs_bucket          = "my-sensor-raw-bucket"
   bq_dataset          = "sensors"
   gcs_prefix          = "sensor_readings"
-  raw_retention_days  = 0 # infinite retention
+  raw_retention_days  = 0 # infinite retention (no lifecycle block rendered)
 
   # Images (built separately by Cloud Build multi-image pipeline)
   ingestion_image     = "us-central1-docker.pkg.dev/${var.project_id}/weather-maintenance-images/ingestion:latest"
@@ -51,17 +51,29 @@ terraform apply -var project_id=YOUR_PROJECT -var gcs_bucket=your-bucket-name
 
 ## Cloud Build (multi-image) Example
 
-Create a trigger pointing at `cloudbuild.multi.yaml` with substitutions `_REGION` and `_REPO` if you diverge from defaults:
+Create a trigger pointing at `cloudbuild.multi.yaml` with substitutions `_REGION`, `_REPO`, and `_TAG` (choose a tag strategy: date, commit, etc.).
+
+Excerpt (simplified) from `cloudbuild.multi.yaml` now using `_TAG` substitution:
 
 ```yaml
-# cloudbuild.multi.yaml (already in repo root)
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${SHORT_SHA}','-t','${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest','--build-arg','APP_SCRIPT=src/data_collection/daily_data_collector.py','.' ]
-  # ... other steps omitted (refresh, metrics)
+  - id: Build ingestion image
+    name: gcr.io/cloud-builders/docker
+    args: ["build","-t","${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:${_TAG}","-t","${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/ingestion:latest","--build-arg","APP_SCRIPT=src/data_collection/daily_data_collector.py","."]
+  # ... refresh & metrics steps similar
+substitutions:
+  _REGION: us-central1
+  _REPO: weather-maintenance-images
+  _TAG: manual
 ```
 
-After a successful build, optionally update Terraform vars to freeze versions:
+Trigger example (manual tag injection):
+
+```bash
+gcloud builds submit --config=cloudbuild.multi.yaml --substitutions=_TAG=$(date +%Y%m%d%H%M)
+```
+
+After a successful build, optionally update Terraform vars to freeze versions (swap `:latest` for `:<tag>` or digests):
 
 ```bash
 ./scripts/pin_image_digests.sh "$PROJECT_ID" us-central1 weather-maintenance-images
@@ -93,6 +105,7 @@ To provision everything (optional repo creation, build images, apply Terraform, 
 ```
 
 Flags:
+
 * `--create-repo` ensures Artifact Registry exists (skip if pre-created)
 * `--pin` prints a terraform command with image digests to lock versions
 
