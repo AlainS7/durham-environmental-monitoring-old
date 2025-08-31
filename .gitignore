@@ -372,3 +372,16 @@ cloudrun_job_*.yaml
 env.list
 env.yaml
 env.list
+
+# Terraform local state & variable files (do not commit secrets)
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
+# Plan files
+*.tfplan

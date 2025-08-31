@@ -1,7 +1,10 @@
 output "ingestion_service_account" { value = google_service_account.ingestion.email }
 output "verifier_service_account" { value = google_service_account.verifier.email }
 output "bucket_name" { value = google_storage_bucket.raw_bucket.name }
-output "dataset_id" { value = google_bigquery_dataset.sensors.dataset_id }
+output "dataset_id" {
+	value       = var.bq_dataset
+	description = "Effective dataset id (existing or created)."
+}
 output "ingestion_job_name" { value = google_cloud_run_v2_job.ingestion_job.name }
 output "refresh_job_name" { value = google_cloud_run_v2_job.refresh_job.name }
 output "metrics_job_name" { value = google_cloud_run_v2_job.metrics_job.name }
