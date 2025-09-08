@@ -4,5 +4,4 @@
 # installing lint/test tooling that does not need dbt.     #
 ############################################################
 
-# Pin a stable dbt-bigquery release (aligns with dbt-core 1.8.x series)
-dbt-bigquery==1.8.8
+dbt-bigquery==1.10.11

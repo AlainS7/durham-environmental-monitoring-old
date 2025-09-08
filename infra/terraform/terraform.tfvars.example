@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and adjust values.
+# Required variables
+project_id      = "YOUR_GCP_PROJECT_ID"
+gcs_bucket      = "sensor-data-to-bigquery"
+ingestion_image = "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/weather-maintenance-images/ingestion:202508310556"
+# Reuse the ingestion image for other jobs for now (can switch to specialized images later)
+refresh_image   = "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/weather-maintenance-images/ingestion:202508310556"
+metrics_image   = "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/weather-maintenance-images/ingestion:202508310556"
+
+# Optional toggles
+create_dataset         = false
+create_alert_policies  = false
+create_secrets         = false
+
+# If you later build distinct images, update like:
+# refresh_image = "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/weather-maintenance-images/refresh-partitions:TAG"
+# metrics_image = "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/weather-maintenance-images/record-metrics:TAG"
