@@ -123,6 +123,31 @@ jobs:
               --region "${{ github.event.inputs.region || 'us-east1' }}" \
               --project "$PROJECT_ID"
 
+      - name: Ensure Cloud Run job environment (secrets & config)
+        # Always run to guarantee required env vars present on template even if image not rebuilt
+        env:
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          JOB_NAME: ${{ github.event.inputs.job_name || 'weather-data-uploader' }}
+          REGION: ${{ github.event.inputs.region || 'us-east1' }}
+          DB_CREDS_SECRET_ID: ${{ secrets.DB_CREDS_SECRET_ID }}
+          TSI_CREDS_SECRET_ID: ${{ secrets.TSI_CREDS_SECRET_ID }}
+          WU_API_KEY_SECRET_ID: ${{ secrets.WU_API_KEY_SECRET_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for k in DB_CREDS_SECRET_ID TSI_CREDS_SECRET_ID WU_API_KEY_SECRET_ID; do
+            if [ -z "${!k:-}" ]; then missing+=("$k"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Cannot update job env vars; missing secrets: ${missing[*]}" >&2; exit 1; fi
+          echo "Updating Cloud Run job $JOB_NAME env vars in region $REGION"
+          gcloud run jobs update "$JOB_NAME" \
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --set-env-vars "DB_CREDS_SECRET_ID=${DB_CREDS_SECRET_ID},TSI_CREDS_SECRET_ID=${TSI_CREDS_SECRET_ID},WU_API_KEY_SECRET_ID=${WU_API_KEY_SECRET_ID},GCS_BUCKET=sensor-data-to-bigquery,GCS_PREFIX=raw/,BQ_PROJECT=${PROJECT_ID},BQ_DATASET=sensors,BQ_LOCATION=US" || {
+              echo "Failed to update job env vars" >&2; exit 2; }
+          echo "Cloud Run job environment updated."
+
       - name: Execute ingestion job
         env:
           JOB_NAME: ${{ github.event.inputs.job_name || 'weather-data-uploader' }}
