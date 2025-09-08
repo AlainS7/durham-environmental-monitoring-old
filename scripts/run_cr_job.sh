@@ -213,18 +213,20 @@ for DVAL in "${DATES_TO_RUN[@]}"; do
         # Only attempt synthesis if table is missing
         if ! bq show --project_id="$PROJECT_ID" "${PROJECT_ID}:${BQ_DATASET}.${TABLE}" >/dev/null 2>&1; then
           SRC_UPPER=$(echo "$SRC" | tr '[:lower:]' '[:upper:]')
-            URI="gs://${GCS_BUCKET}/${GCS_PREFIX}/source=${SRC_UPPER}/agg=raw/dt=${DVAL}/*.parquet"
-            log "Staging table ${TABLE} missing; attempting load from ${URI}"
-            if bq load \
-              --project_id="$PROJECT_ID" \
-              --autodetect \
-              --source_format=PARQUET \
-              "${BQ_DATASET}.${TABLE}" \
-              "${URI}" >/dev/null 2>&1; then
-              log "Synthesized staging table ${TABLE}"
-            else
-              log "Failed to synthesize staging table ${TABLE} (URI may be empty)."
-            fi
+          # Remove trailing slash from GCS_PREFIX if present
+          GCS_PREFIX_CLEANED="${GCS_PREFIX%/}"
+          URI="gs://${GCS_BUCKET}/${GCS_PREFIX_CLEANED}/source=${SRC_UPPER}/agg=raw/dt=${DVAL}/*.parquet"
+          log "Staging table ${TABLE} missing; attempting load from ${URI}"
+          if bq load \
+            --project_id="$PROJECT_ID" \
+            --autodetect \
+            --source_format=PARQUET \
+            "${BQ_DATASET}.${TABLE}" \
+            "${URI}" >/dev/null 2>&1; then
+            log "Synthesized staging table ${TABLE}"
+          else
+            log "Failed to synthesize staging table ${TABLE} (URI may be empty)."
+          fi
         else
           log "Staging table ${TABLE} already exists; no synthesis needed."
         fi

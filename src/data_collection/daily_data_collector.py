@@ -48,7 +48,9 @@ critical_env = [
 ]
 present = [k for k in critical_env if os.getenv(k)]
 missing = [k for k in critical_env if k not in present]
-logging.info("Env diagnostic: present=%s missing=%s", present, missing)
+logging.info("[Env diagnostic] present=%s missing=%s", present, missing)
+for k in critical_env:
+    logging.info("[Env var] %s = '%s'", k, os.getenv(k, '<unset>'))
 
 
 # ---------------- Cleaning -----------------
