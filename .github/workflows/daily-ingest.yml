@@ -92,9 +92,7 @@ jobs:
       - name: Auth to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ env.PROJECT_ID }}
-          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
-          service_account: '${{ secrets.GCP_VERIFIER_SA }}'
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
