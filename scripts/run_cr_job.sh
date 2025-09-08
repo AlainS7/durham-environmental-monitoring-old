@@ -34,12 +34,16 @@ fi
 
 make_date_seq() {
   # Args: start end (YYYY-MM-DD)
-  python - <<'PY'
+  python3 - <<'PY'
 import sys, datetime as dt, os
-start=os.environ['DSTART']; end=os.environ['DEND']
-sd=dt.date.fromisoformat(start); ed=dt.date.fromisoformat(end)
+try:
+    start=os.environ['DSTART']; end=os.environ['DEND']
+    sd=dt.date.fromisoformat(start); ed=dt.date.fromisoformat(end)
+except (KeyError, ValueError):
+    print("Invalid or missing START_DATE/END_DATE. Use YYYY-MM-DD format.", file=sys.stderr)
+    sys.exit(1)
 if ed < sd:
-    print('range-invalid', file=sys.stderr); sys.exit(2)
+    print(f"END_DATE ({end}) cannot be before START_DATE ({start}).", file=sys.stderr); sys.exit(2)
 d=sd
 while d<=ed:
     print(d.isoformat())
