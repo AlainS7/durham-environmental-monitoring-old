@@ -5,6 +5,10 @@ on:
     - cron: '45 6 * * *'
   workflow_dispatch:
 
+env:
+  BQ_PROJECT: durham-weather-466502
+  BQ_DATASET: sensors
+
 jobs:
   thresholds:
     runs-on: ubuntu-latest
@@ -27,8 +31,6 @@ jobs:
           service_account: ${{ secrets.GCP_VERIFIER_SA }}
           token_format: access_token
       - name: Run threshold check (yesterday)
-        env:
-          BQ_PROJECT: ${{ vars.BQ_PROJECT }}
         run: |
           YESTERDAY=$(date -u -d 'yesterday' +%F)
-          python scripts/check_row_thresholds.py --project $BQ_PROJECT --dataset sensors --date $YESTERDAY
+          python scripts/check_row_thresholds.py --project ${{ env.BQ_PROJECT }} --dataset ${{ env.BQ_DATASET }} --date $YESTERDAY
