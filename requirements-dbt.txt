@@ -4,4 +4,4 @@
 # installing lint/test tooling that does not need dbt.     #
 ############################################################
 
-dbt-bigquery==1.10.11
+dbt-bigquery==1.10.2
