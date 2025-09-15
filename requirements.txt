@@ -121,6 +121,7 @@ protobuf==6.30.0
     #   grpc-google-iam-v1
     #   grpcio-status
     #   proto-plus
+    #   tsi-data-uploader (pyproject.toml)
 psycopg2-binary==2.9.9
     # via tsi-data-uploader (pyproject.toml)
 pyarrow==16.1.0
@@ -143,6 +144,8 @@ python-dotenv==1.1.1
     # via tsi-data-uploader (pyproject.toml)
 pytz==2025.2
     # via pandas
+pyyaml==6.0.2
+    # via tsi-data-uploader (pyproject.toml)
 requests==2.32.4
     # via
     #   google-api-core
