@@ -7,9 +7,16 @@ on:
     paths:
       - 'transformations/dbt/**'
 
+env:
+  GCP_PROJECT_ID: durham-weather-466502
+  BQ_DATASET: sensors
+
 jobs:
   run-dbt:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -21,6 +28,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dbt.txt
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
       - name: Create dbt profile
         run: |
           mkdir -p ~/.dbt
@@ -30,11 +43,10 @@ jobs:
             outputs:
               ci:
                 type: bigquery
-                method: service-account
-                project: ${{ secrets.GCP_PROJECT_ID }}
-                dataset: ${{ vars.BQ_DATASET || 'sensors' }}
+                method: oauth
+                project: ${{ env.GCP_PROJECT_ID }}
+                dataset: ${{ env.BQ_DATASET }}
                 threads: 4
-                keyfile_json: ${{ secrets.GCP_SA_KEY_JSON }}
                 timeout_seconds: 300
                 priority: interactive
                 location: US
@@ -42,17 +54,19 @@ jobs:
       - name: dbt deps
         run: dbt deps --project-dir transformations/dbt
       - name: dbt run
-        run: >
-          dbt run --project-dir transformations/dbt --profiles-dir ~/.dbt
-          --vars "{\"proc_date\": \"{{ run_started_at.strftime('%Y-%m-%d') }}\", \"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
+        run: |
+          PROC_DATE=$(date -u +%Y-%m-%d)
+          dbt run --project-dir transformations/dbt --profiles-dir ~/.dbt \
+            --vars "proc_date:$PROC_DATE,project:${{ env.GCP_PROJECT_ID }}"
       - name: dbt test
-        run: >
-          dbt test --project-dir transformations/dbt --profiles-dir ~/.dbt
-          --vars "{\"proc_date\": \"{{ run_started_at.strftime('%Y-%m-%d') }}\", \"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
+        run: |
+          PROC_DATE=$(date -u +%Y-%m-%d)
+          dbt test --project-dir transformations/dbt --profiles-dir ~/.dbt \
+            --vars "proc_date:$PROC_DATE,project:${{ env.GCP_PROJECT_ID }}"
       - name: dbt source freshness
-        run: >
-          dbt source freshness --project-dir transformations/dbt --profiles-dir ~/.dbt
-          --vars "{\"project\": \"${{ secrets.GCP_PROJECT_ID }}\"}"
+        run: |
+          dbt source freshness --project-dir transformations/dbt --profiles-dir ~/.dbt \
+            --vars "project:${{ env.GCP_PROJECT_ID }}"
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
