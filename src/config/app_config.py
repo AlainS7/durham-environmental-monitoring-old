@@ -177,7 +177,7 @@ class Config:
             # sys.exit(1)
 
     def _get_json_secret(self, secret_id):
-        """Fetches and decodes a JSON secret from Google Secret Manager."""
+        """Fetches and decodes a JSON secret from Google Secret Manager. Handles both JSON and plain string secrets."""
         try:
             client = self.get_secret_client()
             if client is None:
@@ -192,7 +192,13 @@ class Config:
             name = f"projects/{self.project_id}/secrets/{secret_id.strip()}/versions/latest"
             response = client.access_secret_version(request={"name": name})
             payload = response.payload.data.decode("UTF-8")
-            return json.loads(payload)
+            try:
+                # Try to parse as JSON first
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                # If not JSON, treat as plain string (e.g., API key)
+                logging.warning(f"Secret '{secret_id}' is not valid JSON, treating as plain string.")
+                return {"test_api_key": payload.strip()}
         except Exception as e:
             logging.critical(f"Fatal: Could not access or parse secret '{secret_id}'. Error: {e}")
             return None
