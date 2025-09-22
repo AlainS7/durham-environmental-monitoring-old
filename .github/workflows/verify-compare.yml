@@ -9,6 +9,14 @@ on:
       end_date:
         description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
         required: false
+<<<<<<< HEAD
+      attempt_external:
+        description: 'Attempt external-table and GCS comparisons (may 403 without IAM). Defaults to false.'
+        type: boolean
+        required: false
+        default: false
+=======
+>>>>>>> origin/main
 
 permissions:
   contents: read
@@ -62,10 +70,26 @@ jobs:
           START=${{ steps.daterange.outputs.start }}
           END=${{ steps.daterange.outputs.end }}
           echo "Verifying (compare) $START -> $END"
+<<<<<<< HEAD
+          CMD=(python scripts/verify_outputs.py \
+=======
           python scripts/verify_outputs.py \
+>>>>>>> origin/main
             --project "$BQ_PROJECT" \
             --dataset "$BQ_DATASET" \
             --start "$START" --end "$END" \
             --compare \
             --gcs-bucket sensor-data-to-bigquery \
+<<<<<<< HEAD
+            --gcs-prefix raw)
+
+          # By default, skip external + GCS checks to avoid expected IAM 403s
+          if [ "${{ github.event.inputs.attempt_external }}" != "true" ]; then
+            CMD+=(--skip-gcs --skip-external)
+          fi
+
+          # Run constructed command
+          "${CMD[@]}"
+=======
             --gcs-prefix raw
+>>>>>>> origin/main
