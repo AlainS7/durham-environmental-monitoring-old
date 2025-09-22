@@ -49,6 +49,7 @@ jobs:
             --bucket $GCS_BUCKET \
             --prefix $GCS_PREFIX \
             --date $YESTERDAY \
+            --skip-gcs \
             --show-tables \
             --check-rows \
             --show-schema \
