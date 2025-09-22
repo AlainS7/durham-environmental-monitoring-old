@@ -8,10 +8,28 @@
 CREATE OR REPLACE TABLE `${PROJECT}.${DATASET}.sensor_canonical_location`
 CLUSTER BY native_sensor_id AS
 WITH windowed AS (
-  SELECT native_sensor_id, timestamp, latitude, longitude
-  FROM `${PROJECT}.${DATASET}.sensor_readings_long`
-  WHERE DATE(timestamp) BETWEEN DATE_SUB(@proc_date, INTERVAL 89 DAY) AND @proc_date
-    AND latitude IS NOT NULL AND longitude IS NOT NULL
+  -- Source directly from materialized raw tables to avoid dependency on long table schema
+  SELECT
+    native_sensor_id,
+    ts AS timestamp,
+    COALESCE(CAST(lat_f AS FLOAT64), CAST(lat AS FLOAT64)) AS latitude,
+    COALESCE(CAST(lon_f AS FLOAT64), CAST(lon AS FLOAT64)) AS longitude
+  FROM `${PROJECT}.${DATASET}.wu_raw_materialized`
+  WHERE ts IS NOT NULL
+    AND DATE(ts) BETWEEN DATE_SUB(@proc_date, INTERVAL 89 DAY) AND @proc_date
+    AND COALESCE(CAST(lat_f AS FLOAT64), CAST(lat AS FLOAT64)) IS NOT NULL
+    AND COALESCE(CAST(lon_f AS FLOAT64), CAST(lon AS FLOAT64)) IS NOT NULL
+  UNION ALL
+  SELECT
+    native_sensor_id,
+    ts AS timestamp,
+    COALESCE(CAST(latitude_f AS FLOAT64), CAST(latitude AS FLOAT64)) AS latitude,
+    COALESCE(CAST(longitude_f AS FLOAT64), CAST(longitude AS FLOAT64)) AS longitude
+  FROM `${PROJECT}.${DATASET}.tsi_raw_materialized`
+  WHERE ts IS NOT NULL
+    AND DATE(ts) BETWEEN DATE_SUB(@proc_date, INTERVAL 89 DAY) AND @proc_date
+    AND COALESCE(CAST(latitude_f AS FLOAT64), CAST(latitude AS FLOAT64)) IS NOT NULL
+    AND COALESCE(CAST(longitude_f AS FLOAT64), CAST(longitude AS FLOAT64)) IS NOT NULL
 ),
 daily_positions AS (
   SELECT
