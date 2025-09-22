@@ -76,12 +76,34 @@ log(){ echo "[run-job] $*"; }
 err(){ echo "[run-job][error] $*" >&2; }
 
 log "Executing Cloud Run job: $JOB_NAME in $REGION (project: $PROJECT_ID)"
+
+# Try to execute the specified job; on failure, attempt a single smart fallback
 EXEC_ID=$(gcloud run jobs execute "$JOB_NAME" --region "$REGION" --project "$PROJECT_ID" --format="value(metadata.name)" 2>/dev/null || true)
 if [ -z "$EXEC_ID" ]; then
   err "Failed to start execution (check IAM, region, or job existence)."
   echo "[run-job] Existing jobs in region $REGION:" >&2
   gcloud run jobs list --region "$REGION" --project "$PROJECT_ID" 2>/dev/null || true
-  exit 1
+
+  # Smart fallback: if the requested job doesn't exist, try a sensible alternative once
+  JOBS_JSON=$(gcloud run jobs list --region "$REGION" --project "$PROJECT_ID" --format=json 2>/dev/null || echo '[]')
+  FALLBACK_JOB=$(echo "$JOBS_JSON" | jq -r 'map(.metadata.name) | .[] | select(.=="weather-data-uploader")' | head -n1)
+  if [ -z "$FALLBACK_JOB" ]; then
+    # If there is exactly one job in the region, use it
+    COUNT=$(echo "$JOBS_JSON" | jq 'length')
+    if [ "${COUNT:-0}" -eq 1 ]; then
+      FALLBACK_JOB=$(echo "$JOBS_JSON" | jq -r '.[0].metadata.name')
+    fi
+  fi
+  if [ -n "$FALLBACK_JOB" ] && [ "$FALLBACK_JOB" != "$JOB_NAME" ]; then
+    log "Falling back to existing job '$FALLBACK_JOB' and retrying once."
+    JOB_NAME="$FALLBACK_JOB"
+    EXEC_ID=$(gcloud run jobs execute "$JOB_NAME" --region "$REGION" --project "$PROJECT_ID" --format="value(metadata.name)" 2>/dev/null || true)
+  fi
+
+  if [ -z "$EXEC_ID" ]; then
+    err "Unable to start any job execution after fallback. Aborting."
+    exit 1
+  fi
 fi
 log "Started execution: $EXEC_ID"
 
