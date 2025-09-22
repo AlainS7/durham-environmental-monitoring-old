@@ -385,3 +385,5 @@ terraform.tfvars
 !terraform.tfvars.example
 # Plan files
 *.tfplan
+
+.github/instructions/
