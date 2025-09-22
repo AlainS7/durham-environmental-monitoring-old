@@ -1,0 +1,54 @@
+-- Views to simplify mapping in Looker Studio.
+
+-- Latest canonical position per sensor (by as_of_date)
+CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_canonical_latest` AS
+WITH ranked AS (
+  SELECT
+    c.*,
+    ROW_NUMBER() OVER (PARTITION BY c.native_sensor_id ORDER BY c.as_of_date DESC) AS rn
+  FROM `${PROJECT}.${DATASET}.sensor_canonical_location` c
+)
+SELECT
+  native_sensor_id,
+  canonical_latitude,
+  canonical_longitude,
+  canonical_geog,
+  as_of_date,
+  days_observed,
+  distinct_locations,
+  coord_mode_count,
+  coord_mode_last_day
+FROM ranked
+WHERE rn = 1;
+
+-- Curated-over-canonical current coordinates per sensor
+CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_location_current` AS
+SELECT
+  s.native_sensor_id,
+  COALESCE(d.latitude, c.canonical_latitude) AS latitude,
+  COALESCE(d.longitude, c.canonical_longitude) AS longitude,
+  COALESCE(d.geog, c.canonical_geog) AS geog,
+  d.notes,
+  d.updated_at
+FROM `${PROJECT}.${DATASET}.sensor_canonical_latest` c
+RIGHT JOIN (
+  SELECT DISTINCT native_sensor_id FROM `${PROJECT}.${DATASET}.sensor_readings_long`
+) s USING (native_sensor_id)
+LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_dim` d USING (native_sensor_id);
+
+-- Daily enriched summaries with canonical positions
+CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_readings_daily_enriched` AS
+SELECT
+  d.day_ts,
+  d.native_sensor_id,
+  d.metric_name,
+  d.avg_value,
+  d.min_value,
+  d.max_value,
+  d.samples,
+  lc.latitude AS latitude,
+  lc.longitude AS longitude,
+  lc.geog AS geog
+FROM `${PROJECT}.${DATASET}.sensor_readings_daily` d
+LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
+  USING (native_sensor_id);

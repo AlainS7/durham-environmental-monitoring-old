@@ -11,6 +11,11 @@ from google.cloud.exceptions import NotFound
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bq_loader")
+log.warning(
+    "DEPRECATION: scripts/load_to_bigquery.py performs direct loads into partitioned tables and may fail when the source timestamp is INT epoch. "
+    "Prefer the external→materialize flow: (1) create external tables over GCS parquet; (2) run materialize_partitions.py; (3) execute transformations. "
+    "Use Make targets: create-external, materialize, run-transformations, or e2e."
+)
 
 
 def ensure_dataset(client: bigquery.Client, dataset_id: str, location: str | None = None) -> bigquery.Dataset:
@@ -76,20 +81,20 @@ def build_gcs_uri(bucket: str, prefix: str, source: str, agg: str, date: str) ->
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Load GCS Parquet data into BigQuery with partitioning and clustering.")
+    parser = argparse.ArgumentParser(description="[Deprecated] Directly load GCS Parquet into BigQuery. Prefer external→materialize flow.")
     parser.add_argument("--dataset", required=False, default=os.getenv("BQ_DATASET"), help="BigQuery dataset ID")
     parser.add_argument("--project", required=False, default=os.getenv("BQ_PROJECT"), help="GCP project ID (defaults to ADC)")
     parser.add_argument("--location", required=False, default=os.getenv("BQ_LOCATION", "US"), help="BigQuery location")
 
     parser.add_argument("--bucket", required=False, default=os.getenv("GCS_BUCKET"), help="GCS bucket name")
-    parser.add_argument("--prefix", required=False, default=os.getenv("GCS_PREFIX", "sensor_readings"), help="GCS prefix root")
+    parser.add_argument("--prefix", required=False, default=os.getenv("GCS_PREFIX", "raw"), help="GCS prefix root")
 
     parser.add_argument("--date", required=True, help="Date partition to load (YYYY-MM-DD)")
     parser.add_argument("--source", choices=["WU", "TSI", "all"], default="all", help="Select source to load")
     parser.add_argument("--agg", default="raw", help="Aggregation label to match (e.g., raw, h, 15min)")
 
-    parser.add_argument("--table-prefix", default="sensor_readings", help="Base table name prefix in BigQuery")
-    parser.add_argument("--partition-field", default="timestamp", help="Partitioning field (default: timestamp)")
+    parser.add_argument("--table-prefix", default="raw_direct_load", help="Base table name prefix in BigQuery (deprecated path)")
+    parser.add_argument("--partition-field", default="timestamp", help="Partitioning field (requires TIMESTAMP/DATE/DATETIME)")
     parser.add_argument("--cluster-by", default="native_sensor_id", help="Comma-separated clustering fields")
 
     parser.add_argument("--write", choices=["WRITE_APPEND", "WRITE_TRUNCATE", "WRITE_EMPTY"], default="WRITE_APPEND")
