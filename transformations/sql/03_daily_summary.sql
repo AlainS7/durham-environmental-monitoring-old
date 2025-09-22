@@ -1,5 +1,6 @@
 -- Daily summary aggregation with partition-aware DELETE+INSERT for 7-day window.
 DECLARE proc_date DATE DEFAULT @proc_date;
+DECLARE start_date DATE DEFAULT DATE_SUB(proc_date, INTERVAL 6 DAY);
 
 -- Bootstrap table if missing
 CREATE TABLE IF NOT EXISTS `${PROJECT}.${DATASET}.sensor_readings_daily`
@@ -19,9 +20,6 @@ SELECT
 FROM `${PROJECT}.${DATASET}.sensor_readings_long`
 WHERE 1=0
 GROUP BY 1,2,3;
-
--- Define 7-day window
-DECLARE start_date DATE DEFAULT DATE_SUB(proc_date, INTERVAL 6 DAY);
 
 -- Refresh the 7-day window partitions
 DELETE FROM `${PROJECT}.${DATASET}.sensor_readings_daily`
