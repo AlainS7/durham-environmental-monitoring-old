@@ -10,86 +10,102 @@ on:
         description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
         required: false
 <<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> origin/main
       attempt_external:
         description: 'Attempt external-table and GCS comparisons (may 403 without IAM). Defaults to false.'
         type: boolean
         required: false
-        default: false
-=======
->>>>>>> origin/main
+        name: Verify Outputs (Compare Mode)
 
-permissions:
-  contents: read
-  id-token: write # for Workload Identity Federation (OIDC) to GCP
+        on:
+          workflow_dispatch:
+            inputs:
+              start_date:
+                description: 'Start date (YYYY-MM-DD). Defaults to yesterday.'
+                required: false
+              end_date:
+                description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
+                required: false
+              attempt_external:
+                description: 'Attempt external-table and GCS comparisons (may 403 without IAM). Defaults to false.'
+                type: boolean
+                required: false
+                default: false
 
-env:
-  PROJECT_ID: durham-weather-466502
-  DATASET_ID: sensors
+        permissions:
+          contents: read
+          id-token: write # for Workload Identity Federation (OIDC) to GCP
 
-jobs:
-  verify_compare:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Auth to Google Cloud (OIDC)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_VERIFIER_SA }}
-          token_format: access_token
-
-      - name: Compute date range
-        id: daterange
-        run: |
-          if [ -n "${{ github.event.inputs.start_date }}" ] && [ -n "${{ github.event.inputs.end_date }}" ]; then
-            echo "start=${{ github.event.inputs.start_date }}" >> $GITHUB_OUTPUT
-            echo "end=${{ github.event.inputs.end_date }}" >> $GITHUB_OUTPUT
-          else
-            YESTERDAY=$(date -u -d 'yesterday' +%F)
-            echo "start=$YESTERDAY" >> $GITHUB_OUTPUT
-            echo "end=$YESTERDAY" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Verify outputs with compare
         env:
-          BQ_PROJECT: ${{ env.PROJECT_ID }}
-          BQ_DATASET: ${{ env.DATASET_ID }}
-        run: |
-          START=${{ steps.daterange.outputs.start }}
-          END=${{ steps.daterange.outputs.end }}
-          echo "Verifying (compare) $START -> $END"
-<<<<<<< HEAD
-          CMD=(python scripts/verify_outputs.py \
-=======
-          python scripts/verify_outputs.py \
->>>>>>> origin/main
-            --project "$BQ_PROJECT" \
-            --dataset "$BQ_DATASET" \
-            --start "$START" --end "$END" \
-            --compare \
-            --gcs-bucket sensor-data-to-bigquery \
-<<<<<<< HEAD
-            --gcs-prefix raw)
+          PROJECT_ID: durham-weather-466502
+          DATASET_ID: sensors
 
-          # By default, skip external + GCS checks to avoid expected IAM 403s
-          if [ "${{ github.event.inputs.attempt_external }}" != "true" ]; then
-            CMD+=(--skip-gcs --skip-external)
-          fi
+        jobs:
+          verify_compare:
+            runs-on: ubuntu-latest
+            steps:
+              - name: Checkout
+                uses: actions/checkout@v4
 
+              - name: Set up Python
+                uses: actions/setup-python@v5
+                with:
+                  python-version: '3.11'
+
+              - name: Install dependencies
+                run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+
+              - name: Auth to Google Cloud (OIDC)
+                uses: google-github-actions/auth@v2
+                with:
+                  workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+                  service_account: ${{ secrets.GCP_VERIFIER_SA }}
+                  token_format: access_token
+
+              - name: Compute date range
+                id: daterange
+                run: |
+                  if [ -n "${{ github.event.inputs.start_date }}" ] && [ -n "${{ github.event.inputs.end_date }}" ]; then
+                    echo "start=${{ github.event.inputs.start_date }}" >> $GITHUB_OUTPUT
+                    echo "end=${{ github.event.inputs.end_date }}" >> $GITHUB_OUTPUT
+                  else
+                    YESTERDAY=$(date -u -d 'yesterday' +%F)
+                    echo "start=$YESTERDAY" >> $GITHUB_OUTPUT
+                    echo "end=$YESTERDAY" >> $GITHUB_OUTPUT
+                  fi
+
+              - name: Verify outputs with compare
+                env:
+                  BQ_PROJECT: ${{ env.PROJECT_ID }}
+                  BQ_DATASET: ${{ env.DATASET_ID }}
+                run: |
+                  START=${{ steps.daterange.outputs.start }}
+                  END=${{ steps.daterange.outputs.end }}
+                  echo "Verifying (compare) $START -> $END"
+                  CMD=(python scripts/verify_outputs.py \
+                    --project "$BQ_PROJECT" \
+                    --dataset "$BQ_DATASET" \
+                    --start "$START" --end "$END" \
+                    --compare \
+                    --gcs-bucket sensor-data-to-bigquery \
+                    --gcs-prefix raw)
+
+                  # By default, skip external + GCS checks to avoid expected IAM 403s
+                  if [ "${{ github.event.inputs.attempt_external }}" != "true" ]; then
+                    CMD+=(--skip-gcs --skip-external)
+                  fi
+
+                  # Run constructed command
+                  "${CMD[@]}"
           # Run constructed command
           "${CMD[@]}"
+<<<<<<< HEAD
+=======
 =======
             --gcs-prefix raw
+>>>>>>> origin/main
 >>>>>>> origin/main
