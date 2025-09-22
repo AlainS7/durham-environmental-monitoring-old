@@ -100,6 +100,9 @@ def main():
     ap.add_argument("--compare", action="store_true", help="Compare materialized/native counts to external-table rows and GCS object stats for WU/TSI")
     ap.add_argument("--gcs-bucket", default="sensor-data-to-bigquery", help="GCS bucket for raw parquet (for compare mode)")
     ap.add_argument("--gcs-prefix", default="raw", help="GCS prefix for raw parquet (for compare mode)")
+    # Optional skip flags to reduce noise in environments without GCS/external access
+    ap.add_argument("--skip-gcs", action="store_true", help="Skip GCS listing/stats in compare mode")
+    ap.add_argument("--skip-external", action="store_true", help="Skip querying external tables in compare mode")
     args = ap.parse_args()
 
     start = dt.date.fromisoformat(args.start)
@@ -143,25 +146,49 @@ def main():
             print(f"-- Source {src} --")
             cur = start
             while cur <= end:
-                try:
-                    gcs_files, gcs_bytes = _gcs_stats_for_date(args.gcs_bucket, args.gcs_prefix, src, cur)
-                except Exception as e:
-                    gcs_files, gcs_bytes = -1, -1
-                    print(f"  {cur} GCS stats error: {e}")
-                try:
-                    ext_rows = _external_table_row_count(client, args.project, args.dataset, ext, cur)
-                except Exception as e:
-                    ext_rows = -1
-                    print(f"  {cur} external count error: {e}")
+                # GCS stats (optional)
+                if args.skip_gcs:
+                    gcs_files, gcs_bytes = None, None
+                else:
+                    try:
+                        gcs_files, gcs_bytes = _gcs_stats_for_date(args.gcs_bucket, args.gcs_prefix, src, cur)
+                    except Exception as e:
+                        gcs_files, gcs_bytes = -1, -1
+                        print(f"  {cur} GCS stats error: {e}")
+
+                # External table row count (optional)
+                if args.skip_external:
+                    ext_rows = None
+                else:
+                    try:
+                        ext_rows = _external_table_row_count(client, args.project, args.dataset, ext, cur)
+                    except Exception as e:
+                        ext_rows = -1
+                        print(f"  {cur} external count error: {e}")
                 try:
                     mat_rows = run_count_query(client, args.project, args.dataset, mat, "ts", cur, cur)
                     mat_rows = int(mat_rows[0]["row_count"]) if mat_rows else 0
                 except Exception as e:
                     mat_rows = -1
                     print(f"  {cur} materialized count error: {e}")
-                delta = None if (ext_rows < 0 or mat_rows < 0) else (mat_rows - ext_rows)
-                status = "OK" if (delta is not None and abs(delta) == 0) else ("WARN" if delta is not None else "ERR")
-                print(f"  {cur}: files={gcs_files} bytes={gcs_bytes:,} ext_rows={ext_rows:,} mat_rows={mat_rows:,} delta={delta} [{status}]")
+                # Compute delta only when we have a concrete ext_rows value (not skipped or error)
+                if ext_rows is None:
+                    delta = None
+                    status = "SKIP"
+                else:
+                    delta = None if (ext_rows < 0 or mat_rows < 0) else (mat_rows - ext_rows)
+                    status = "OK" if (delta is not None and abs(delta) == 0) else ("WARN" if delta is not None else "ERR")
+
+                # Friendly formatting
+                def fmt(v):
+                    if v is None:
+                        return "n/a"
+                    try:
+                        return f"{v:,}"
+                    except Exception:
+                        return str(v)
+
+                print(f"  {cur}: files={fmt(gcs_files)} bytes={fmt(gcs_bytes)} ext_rows={fmt(ext_rows)} mat_rows={fmt(mat_rows)} delta={delta} [{status}]")
                 cur += dt.timedelta(days=1)
             print()
 
