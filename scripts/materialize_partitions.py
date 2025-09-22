@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-from typing import Iterable, List
+from typing import Iterable, List, Optional
+import os
 
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -138,6 +139,100 @@ def insert_partition_from_external(client: bigquery.Client, dataset: str, table:
     job.result()
 
 
+def _table_exists(client: bigquery.Client, project: str, dataset: str, table: str) -> bool:
+    try:
+        client.get_table(f"{project}.{dataset}.{table}")
+        return True
+    except NotFound:
+        return False
+
+
+def _load_from_gcs_to_staging(
+    client: bigquery.Client,
+    project: str,
+    dataset: str,
+    src: str,
+    bucket: str,
+    prefix: str,
+    date: dt.date,
+) -> Optional[str]:
+    """Load a single partition parquet from GCS into a temporary staging table.
+
+    Returns the fully qualified staging table name.
+    """
+    staging = f"{src.lower()}_raw_stage_{date.isoformat().replace('-', '')}"
+    fq_stage = f"{project}.{dataset}.{staging}"
+
+    # Create or replace an empty table for the stage (schema will be auto-detected by load job)
+    # Build exact URI for the expected file name written by collector
+    uri = f"gs://{bucket}/{prefix.strip('/')}/source={src}/agg=raw/dt={date.isoformat()}/{src}-{date.isoformat()}.parquet"
+
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.PARQUET,
+        autodetect=True,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    try:
+        load_job = client.load_table_from_uri(uri, fq_stage, job_config=job_config)
+        load_job.result()
+        print(f"[materialize] Loaded stage from {uri} into {fq_stage}")
+        return fq_stage
+    except Exception as e:
+        # Treat missing object or permission as no data for this date/source
+        print(f"[materialize] Skipping load for {src} {date}: {e}")
+        return None
+
+
+def insert_partition_from_gcs(
+    client: bigquery.Client,
+    dataset: str,
+    table: str,
+    stage_table: str,
+    d: dt.date,
+) -> None:
+    # Determine time column from stage_table schema
+    stage = client.get_table(stage_table)
+    field_names = {f.name for f in stage.schema}
+    time_field = None
+    for c in ("timestamp", "epoch", "ts", "time", "event_time"):
+        if c in field_names:
+            time_field = c
+            break
+    if time_field is None:
+        # fallback to first TIMESTAMP/INTEGER-like field
+        for f in stage.schema:
+            if f.field_type in ("TIMESTAMP", "DATETIME", "INTEGER", "INT64"):
+                time_field = f.name
+                break
+    if time_field is None:
+        raise RuntimeError(f"Could not determine time field for staging table {stage_table}")
+
+    ts_expr = (
+        "CASE "
+        f"WHEN ABS(CAST(t.{time_field} AS INT64)) >= 100000000000000000 THEN "
+        f"  TIMESTAMP_MICROS(DIV(CAST(t.{time_field} AS INT64), 1000)) "
+        f"WHEN ABS(CAST(t.{time_field} AS INT64)) >= 100000000000000 THEN "
+        f"  TIMESTAMP_MICROS(CAST(t.{time_field} AS INT64)) "
+        f"WHEN ABS(CAST(t.{time_field} AS INT64)) >= 100000000000 THEN "
+        f"  TIMESTAMP_MILLIS(CAST(t.{time_field} AS INT64)) "
+        f"ELSE TIMESTAMP_SECONDS(CAST(t.{time_field} AS INT64)) END"
+    )
+    except_cols = [c for c in ["timestamp", "epoch", "ts"] if c in field_names]
+    except_clause = f" EXCEPT({', '.join(except_cols)})" if except_cols else ""
+    sql = f"""
+    INSERT INTO `{client.project}.{dataset}.{table}`
+    SELECT
+      {ts_expr} AS ts,
+            t.*{except_clause}
+    FROM `{stage_table}` AS t
+    WHERE DATE({ts_expr}) = @d
+    """
+    job = client.query(sql, job_config=bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("d", "DATE", d.isoformat())]
+    ))
+    job.result()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Materialize daily partitions from external tables into native tables")
     ap.add_argument("--project", default=None, help="GCP project (defaults to ADC)")
@@ -145,6 +240,8 @@ def main() -> None:
     ap.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
     ap.add_argument("--end", required=True, help="End date YYYY-MM-DD")
     ap.add_argument("--sources", choices=["WU", "TSI", "all"], default="all")
+    ap.add_argument("--bucket", default=os.getenv("GCS_BUCKET"), help="GCS bucket for raw parquet fallback")
+    ap.add_argument("--prefix", default=os.getenv("GCS_PREFIX", "raw"), help="GCS prefix for raw parquet fallback")
     ap.add_argument("--execute", action="store_true", help="Actually perform DML; otherwise dry run prints actions")
     args = ap.parse_args()
 
@@ -159,14 +256,31 @@ def main() -> None:
     for src in sources:
         ext = f"{src.lower()}_raw_external"
         mat = f"{src.lower()}_raw_materialized"
-        actions.append(f"Ensure table {client.project}.{args.dataset}.{mat} exists (partitioned by DATE(ts))")
-        if args.execute:
-            ensure_materialized_table(client, args.dataset, mat, ext, cluster_by=["native_sensor_id"])  # cluster by id when present
         for d in daterange(start, end):
-            actions.append(f"Replace partition {d} for {mat} from {ext}")
+            actions.append(f"Replace partition {d} for {mat} (prefer external; fallback GCS stage)")
             if args.execute:
                 delete_partition(client, args.dataset, mat, d)
-                insert_partition_from_external(client, args.dataset, mat, ext, d)
+                # Prefer external table path when available; otherwise, load from GCS directly
+                use_external = _table_exists(client, client.project, args.dataset, ext)
+                if use_external:
+                    try:
+                        # Ensure target exists using external schema
+                        ensure_materialized_table(client, args.dataset, mat, ext, cluster_by=["native_sensor_id"])
+                        insert_partition_from_external(client, args.dataset, mat, ext, d)
+                        continue
+                    except Exception as e:
+                        print(f"[materialize] External path failed for {src} {d}: {e}. Falling back to GCS stage.")
+                # Fallback to GCS direct load
+                if not args.bucket:
+                    print("[materialize] No bucket provided; skipping fallback load.")
+                    continue
+                stage = _load_from_gcs_to_staging(client, client.project, args.dataset, src, args.bucket, args.prefix, d)
+                if stage is None:
+                    # nothing to insert
+                    continue
+                # Ensure target exists using stage schema
+                ensure_materialized_table(client, args.dataset, mat, stage.split(".")[-1], cluster_by=["native_sensor_id"])  # source table within same dataset
+                insert_partition_from_gcs(client, args.dataset, mat, stage, d)
 
     if not args.execute:
         print("\n".join(actions))
