@@ -494,33 +494,47 @@ async def run_collection_process(
         "Run collection %s -> %s dry=%s aggregate=%s interval=%s sink=%s source=%s",
         start_date, end_date, config.is_dry_run, config.aggregate, config.agg_interval, config.sink, config.source
     )
-    run_id = uuid.uuid4().hex
-    run_started = datetime.utcnow()
-    start_str, end_str = _normalize_dates(start_date, end_date)
-    wu_raw, tsi_raw = await _fetch_raw(start_str, end_str, config.source, config.aggregate, config.agg_interval)
-    wu_df, tsi_df = _clean(wu_raw, tsi_raw)
 
-    if config.is_dry_run:
-        log.info("DRY RUN: showing head only")
-        _maybe_show_samples(wu_df, tsi_df)
-        return
-
-    wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, config.sink, config.aggregate, config.agg_interval)
-    # Always attempt staging table write (opt-out via DISABLE_BQ_STAGING=1)
-    try:
-        _write_bq_staging(wu_df, tsi_df, start_str, end_str)
-    except Exception:
-        log.error("Unhandled error while writing BigQuery staging tables", exc_info=True)
-    if not (wrote_wu or wrote_tsi):
-        log.warning("No data written to any sink.")
-
-    _log_run_metadata(
-        run_id, start_str, end_str, run_started,
-        wu_raw, tsi_raw, wu_df, tsi_df,
-        wrote_wu, wrote_tsi,
-        config.aggregate, config.agg_interval, config.sink, config.source
-    )
-    log.info("Collection complete")
+    # Refactored: process each day in the range individually
+    start_dt = start_date if isinstance(start_date, datetime) else datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = end_date if isinstance(end_date, datetime) else datetime.strptime(end_date, '%Y-%m-%d')
+    total_days = (end_dt.date() - start_dt.date()).days + 1
+    log.info(f"Processing {total_days} days: {start_dt.date()} to {end_dt.date()}")
+    for i in range(total_days):
+        day = start_dt + timedelta(days=i)
+        day_str = day.strftime('%Y-%m-%d')
+        log.info(f"--- Processing day {day_str} ---")
+        run_id = uuid.uuid4().hex
+        run_started = datetime.utcnow()
+        try:
+            log.info(f"[DEBUG] Starting TSI fetch for all devices on {day_str}")
+            wu_raw, tsi_raw = await _fetch_raw(day_str, day_str, config.source, config.aggregate, config.agg_interval)
+            log.info(f"[DEBUG] Completed TSI fetch for {day_str}. wu_raw rows: {len(wu_raw) if wu_raw is not None else 'None'}, tsi_raw rows: {len(tsi_raw) if tsi_raw is not None else 'None'}")
+            if tsi_raw is not None and hasattr(tsi_raw, 'empty') and tsi_raw.empty:
+                log.warning(f"[DEBUG] No TSI data returned for {day_str}")
+            wu_df, tsi_df = _clean(wu_raw, tsi_raw)
+            if config.is_dry_run:
+                log.info(f"DRY RUN: showing head only for {day_str}")
+                _maybe_show_samples(wu_df, tsi_df)
+                continue
+            wrote_wu, wrote_tsi = _sink_data(wu_df, tsi_df, config.sink, config.aggregate, config.agg_interval)
+            try:
+                _write_bq_staging(wu_df, tsi_df, day_str, day_str)
+            except Exception:
+                log.error(f"Unhandled error while writing BigQuery staging tables for {day_str}", exc_info=True)
+            if not (wrote_wu or wrote_tsi):
+                log.warning(f"No data written to any sink for {day_str}.")
+            else:
+                log.info(f"Data written for {day_str}: WU={wrote_wu}, TSI={wrote_tsi}")
+            _log_run_metadata(
+                run_id, day_str, day_str, run_started,
+                wu_raw, tsi_raw, wu_df, tsi_df,
+                wrote_wu, wrote_tsi,
+                config.aggregate, config.agg_interval, config.sink, config.source
+            )
+        except Exception as e:
+            log.error(f"Exception processing {day_str}: {e}", exc_info=True)
+    log.info("Collection complete for all days.")
 
 
 # ------------- CLI ---------------
