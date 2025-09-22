@@ -1,5 +1,5 @@
--- Create or replace the long (tall) unified fact table from raw WU + TSI
--- Requires raw tables already loaded: sensor_readings_wu_raw, sensor_readings_tsi_raw
+-- Create or replace the long (tall) unified fact table from raw WU + TSI.
+-- Reads from materialized native raw tables (partitioned by DATE(ts)).
 -- Partition on DATE(timestamp) and cluster by native_sensor_id, metric_name.
 
 CREATE OR REPLACE TABLE `${PROJECT}.${DATASET}.sensor_readings_long`
@@ -8,32 +8,32 @@ CLUSTER BY native_sensor_id, metric_name AS
 WITH
   wu_src AS (
     SELECT
-      obsTimeUtc AS timestamp,
-      stationID AS native_sensor_id,
-      -- Metrics from manifest subset (cast to FLOAT64)
-      CAST(tempAvg AS FLOAT64) AS temperature,
-      CAST(humidityAvg AS FLOAT64) AS humidity,
-      CAST(precipRate AS FLOAT64) AS precip_rate,
-      CAST(precipTotal AS FLOAT64) AS precip_total,
-      CAST(windspeedAvg AS FLOAT64) AS wind_speed_avg,
-      CAST(windgustAvg AS FLOAT64) AS wind_gust_avg,
-      CAST(winddirAvg AS FLOAT64) AS wind_direction_avg,
-      CAST(solarRadiationHigh AS FLOAT64) AS solar_radiation,
-      CAST(uvHigh AS FLOAT64) AS uv_high
-    FROM `${PROJECT}.${DATASET}.sensor_readings_wu_raw`
-    WHERE timestamp IS NOT NULL
-      AND DATE(obsTimeUtc) BETWEEN DATE_SUB(@proc_date, INTERVAL 0 DAY) AND @proc_date
+      ts AS timestamp,
+      native_sensor_id,
+      -- Metrics subset (cast to FLOAT64) mapped from WU external schema
+      CAST(temperature AS FLOAT64) AS temperature,
+      CAST(humidity AS FLOAT64) AS humidity,
+      CAST(precip_rate AS FLOAT64) AS precip_rate,
+      CAST(precip_total AS FLOAT64) AS precip_total,
+      CAST(wind_speed_avg AS FLOAT64) AS wind_speed_avg,
+      CAST(wind_gust_avg AS FLOAT64) AS wind_gust_avg,
+      CAST(wind_direction_avg AS FLOAT64) AS wind_direction_avg,
+      CAST(solar_radiation AS FLOAT64) AS solar_radiation,
+      CAST(uv_high AS FLOAT64) AS uv_high
+    FROM `${PROJECT}.${DATASET}.wu_raw_materialized`
+    WHERE ts IS NOT NULL
+      AND DATE(ts) BETWEEN DATE_SUB(@proc_date, INTERVAL 0 DAY) AND @proc_date
   ),
   tsi_src AS (
     SELECT
-      cloud_timestamp AS timestamp,
-      device_id AS native_sensor_id,
-      CAST(mcpm2x5 AS FLOAT64) AS pm2_5,
-      CAST(rh AS FLOAT64) AS humidity,
+      ts AS timestamp,
+      native_sensor_id,
+      CAST(pm2_5 AS FLOAT64) AS pm2_5,
+      CAST(humidity AS FLOAT64) AS humidity,
       CAST(temperature AS FLOAT64) AS temperature
-    FROM `${PROJECT}.${DATASET}.sensor_readings_tsi_raw`
-    WHERE timestamp IS NOT NULL
-      AND DATE(cloud_timestamp) BETWEEN DATE_SUB(@proc_date, INTERVAL 0 DAY) AND @proc_date
+    FROM `${PROJECT}.${DATASET}.tsi_raw_materialized`
+    WHERE ts IS NOT NULL
+      AND DATE(ts) BETWEEN DATE_SUB(@proc_date, INTERVAL 0 DAY) AND @proc_date
   ),
   wu_long AS (
     SELECT timestamp, native_sensor_id, metric_name, value FROM wu_src
