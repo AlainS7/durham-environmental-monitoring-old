@@ -76,9 +76,18 @@ def create_external_tables(project: str, dataset: str, bucket: str, prefix: str)
     uris = discover_uris(bucket, prefix, src)
     formatted_uris = ",\n".join([f"    '{u}'" for u in uris])
     ddl = DDL_TEMPLATE.format(project=client.project, dataset=dataset, table=table, uris=formatted_uris)
-    job = client.query(ddl)
-    job.result()
-    print(f"[external] Created table {client.project}.{dataset}.{table} -> {uris[0]}")
+    try:
+      job = client.query(ddl)
+      job.result()
+      print(f"[external] Created table {client.project}.{dataset}.{table} -> {uris[0]}")
+    except Forbidden as e:
+      # Some environments lack storage.objects.list; BigQuery validates wildcard patterns
+      # at creation time and can raise 403. In CI, skip creating externals and rely on
+      # materialization fallback that loads exact GCS URIs per date.
+      print(
+        f"[external] Skipping creation of {client.project}.{dataset}.{table}: {e}\n"
+        "           Proceeding without external tables (will use GCS direct-load fallback)."
+      )
 
 
 def main():
