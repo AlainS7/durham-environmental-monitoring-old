@@ -24,10 +24,24 @@ from __future__ import annotations
 import argparse
 import os
 from google.cloud import bigquery, storage
+from google.api_core.exceptions import Forbidden
 
 SOURCES = ["WU", "TSI"]
 
 DDL_TEMPLATE = """CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.{table}`\nOPTIONS (\n  format = 'PARQUET',\n  uris = [\n{uris}\n  ]\n)"""
+
+def _wildcard_uri(bucket: str, prefix: str, source: str) -> str:
+  """Return a broad wildcard URI covering all partitions for a source.
+
+  This avoids the need to list objects when permissions are limited. BigQuery
+  will resolve the wildcard at query time. Creation of the external table does
+  not read data and thus will succeed even if no objects currently match.
+  """
+  # Use a single wildcard to include all objects under agg=raw for the given source.
+  # BigQuery supports a single '*' in the object name; using one broad wildcard here
+  # avoids multiple-wildcard limitations while covering all date partitions/files.
+  return f"gs://{bucket}/{prefix}/source={source}/agg=raw/*"
+
 
 def discover_uris(bucket: str, prefix: str, source: str):
   """Enumerate individual parquet object URIs (avoid multi-* wildcard restriction).
@@ -36,18 +50,24 @@ def discover_uris(bucket: str, prefix: str, source: str):
   Limits to a reasonable number (e.g., 500) to keep DDL manageable.
   """
   client = storage.Client()
-  blobs = client.list_blobs(bucket, prefix=f"{prefix}/source={source}/agg=raw/dt=")
-  uris: list[str] = []
-  for b in blobs:
-    name = b.name
-    if name.endswith('.parquet'):
-      uris.append(f"gs://{bucket}/{name}")
-      if len(uris) >= 500:
-        break
-  if not uris:
-    # Dummy path (non-existent) so table exists empty without error
-    return [f"gs://{bucket}/{prefix}/source={source}/agg=raw/dt=1970-01-01/none.parquet"]
-  return uris
+  try:
+    blobs = client.list_blobs(bucket, prefix=f"{prefix}/source={source}/agg=raw/dt=")
+    uris: list[str] = []
+    for b in blobs:
+      name = b.name
+      if name.endswith('.parquet'):
+        uris.append(f"gs://{bucket}/{name}")
+        if len(uris) >= 500:
+          break
+    if not uris:
+      # Fall back to wildcard when nothing is discovered (table will be empty until data arrives)
+      return [_wildcard_uri(bucket, prefix, source)]
+    return uris
+  except Forbidden:
+    # No permission to list objects in the bucket: fall back to a wildcard URI so that
+    # external table creation remains possible in restricted CI environments.
+    print(f"[external] No permission to list gs://{bucket}/{prefix} (storage.objects.list). Using wildcard URI for {source}.")
+    return [_wildcard_uri(bucket, prefix, source)]
 
 def create_external_tables(project: str, dataset: str, bucket: str, prefix: str):
   client = bigquery.Client(project=project or None)
