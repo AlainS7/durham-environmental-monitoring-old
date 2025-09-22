@@ -304,10 +304,23 @@ Output includes a JSON summary with row counts and per-column non-null counts fo
 
 ## Cloud storage and BigQuery
 
-This project defaults to writing raw sensor data to Google Cloud Storage (GCS) as Parquet, organized for efficient BigQuery batch loads.
+This project writes raw sensor data to Google Cloud Storage (GCS) as Parquet, then materializes into native BigQuery tables for modeling (safer than direct loads when timestamps are INT epochs).
 
-* GCS layout: `gs://$GCS_BUCKET/$GCS_PREFIX/source=<WU|TSI>/agg=<raw|interval>/dt=YYYY-MM-DD/*.parquet`
-* BigQuery tables: partitioned by `timestamp`, clustered by `native_sensor_id`.
+Recommended flow:
+
+1) Create external tables over GCS Parquet (WU/TSI)
+2) Materialize per-day into native tables with TIMESTAMP `ts` (partitioned by DATE(ts))
+3) Run SQL transformations to build `sensor_readings_long`, `sensor_readings_hourly`, and `sensor_readings_daily`
+
+Make targets:
+
+* `create-external` — build external tables
+* `materialize` — per-day materialization from externals
+* `run-transformations` — execute SQL
+* `e2e` — end-to-end for a date range
+* `verify-outputs` — quick counts per date
+
+Direct loads are retained for troubleshooting (`scripts/load_to_bigquery.py`) but deprecated for routine ops.
 
 Environment variables:
 
@@ -358,15 +371,15 @@ python -m src.data_collection.daily_data_collector \
    --end-date 2025-01-02
 ```
 
-### load_to_bigquery.py
+### load_to_bigquery.py (deprecated path)
 
 Path: `scripts/load_to_bigquery.py`
 
-Purpose: Batch load the partitioned Parquet files from GCS into BigQuery.
+Purpose: Batch load Parquet files directly into BigQuery. Deprecated in favor of external→materialize flow that normalizes epoch integers to TIMESTAMP.
 
 Table naming: `sensor_readings_{source}_{agg}` (e.g. `sensor_readings_wu_raw`).
 
-Partitioning: by `timestamp`; clustering: `native_sensor_id` (default).
+Partitioning: by `timestamp`; clustering: `native_sensor_id` (default). Beware: if `timestamp` is an INT epoch in Parquet, partitioning will fail. Use materialize flow instead.
 
 Requirements: `BQ_DATASET` and `GCS_BUCKET` (env or flags), ADC credentials.
 
@@ -491,20 +504,20 @@ If freshness or staging presence checks fail (no `staging_<source>_YYYYMMDD` tab
 1. Manually execute the Cloud Run ingestion job for each missing date (oldest first) or run the local collector to GCS.
 1. Verify raw Parquet objects exist at `gs://$GCS_BUCKET/$GCS_PREFIX/source=<SRC>/agg=raw/dt=<DATE>/` for each source.
 1. Load to BigQuery staging-style tables (partitioned) if using unified loader pattern:
-
+ 
 ```bash
 python scripts/load_to_bigquery.py --project "$BQ_PROJECT" --dataset sensors \
    --bucket "$GCS_BUCKET" --date 2025-08-21 --source all --agg raw --replace-date
 ```
 1. For per-source dated table pattern, confirm ingest creates `staging_<src>_<YYYYMMDD>`; if absent, re-run ingestion.
 1. After all staging tables present, merge into fact:
-
+ 
 ```bash
 python scripts/merge_backfill_range.py --project "$BQ_PROJECT" --dataset sensors \
    --start 2025-08-21 --end 2025-08-28 --sources tsi,wu
 ```
 1. Re-check freshness:
-
+ 
 ```bash
 python scripts/check_freshness.py --project "$BQ_PROJECT" --dataset sensors --table sensor_readings --max-lag-days 1
 ```

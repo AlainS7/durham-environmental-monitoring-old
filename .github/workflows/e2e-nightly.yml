@@ -1,0 +1,90 @@
+name: Nightly E2E (Collect → Materialize → Transform)
+
+on:
+  schedule:
+    - cron: '5 07 * * *' # 07:05 UTC nightly (after daily-ingest at 06:45)
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYY-MM-DD)'
+        required: false
+      end_date:
+        description: 'End date (YYYY-MM-DD)'
+        required: false
+
+env:
+  PROJECT_ID: durham-weather-466502
+  DATASET_ID: sensors
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python and uv
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v1
+
+      - name: Install deps
+        run: |
+          uv venv
+          uv pip sync requirements.txt
+          uv pip sync requirements-dev.txt || true
+
+      - name: Auth to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
+
+      - name: Compute date range
+        id: daterange
+        run: |
+          if [ -n "${{ github.event.inputs.start_date }}" ] && [ -n "${{ github.event.inputs.end_date }}" ]; then
+            echo "start=${{ github.event.inputs.start_date }}" >> $GITHUB_OUTPUT
+            echo "end=${{ github.event.inputs.end_date }}" >> $GITHUB_OUTPUT
+          else
+            YESTERDAY=$(date -u -d 'yesterday' +%F)
+            echo "start=$YESTERDAY" >> $GITHUB_OUTPUT
+            echo "end=$YESTERDAY" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run e2e pipeline
+        env:
+          BQ_PROJECT: ${{ env.PROJECT_ID }}
+          BQ_DATASET: ${{ env.DATASET_ID }}
+          GCS_BUCKET: sensor-data-to-bigquery
+          GCS_PREFIX: raw
+        run: |
+          START=${{ steps.daterange.outputs.start }}
+          END=${{ steps.daterange.outputs.end }}
+          echo "Running e2e for $START -> $END"
+          make e2e START="$START" END="$END" DATASET="$BQ_DATASET" PROJECT="$BQ_PROJECT"
+
+      - name: Verify outputs
+        env:
+          BQ_PROJECT: ${{ env.PROJECT_ID }}
+          BQ_DATASET: ${{ env.DATASET_ID }}
+        run: |
+          START=${{ steps.daterange.outputs.start }}
+          END=${{ steps.daterange.outputs.end }}
+          make verify-outputs START="$START" END="$END" DATASET="$BQ_DATASET" PROJECT="$BQ_PROJECT"
+
+      - name: Teams notify failure
+        if: failure() && env.TEAMS_WEBHOOK_URL != ''
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          python scripts/notify_teams.py \
+            --webhook "$TEAMS_WEBHOOK_URL" \
+            --title "Nightly E2E FAILED" \
+            --text "Range: ${{ steps.daterange.outputs.start }} → ${{ steps.daterange.outputs.end }}\nRepo: $GITHUB_REPOSITORY\nSHA: $GITHUB_SHA\nRun: $GITHUB_RUN_ID"

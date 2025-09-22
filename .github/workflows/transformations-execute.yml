@@ -16,6 +16,35 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Gate on successful Nightly E2E (scheduled runs only)
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflow_id = 'e2e-nightly.yml';
+            const resp = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id,
+              branch: 'main',
+              status: 'completed',
+              per_page: 5,
+            });
+            const runs = resp.data.workflow_runs.filter(r => r.conclusion === 'success');
+            if (!runs.length) {
+              core.setFailed('No successful e2e-nightly runs found');
+              return;
+            }
+            const latest = new Date(runs[0].updated_at);
+            const now = new Date();
+            const ageHours = (now - latest) / (1000*60*60);
+            if (ageHours > 8) {
+              core.setFailed(`Latest e2e-nightly run too old: ${latest.toISOString()} (${ageHours.toFixed(1)}h)`);
+            } else {
+              core.info(`Found recent successful e2e-nightly at ${latest.toISOString()} (${ageHours.toFixed(1)}h old)`);
+            }
       - name: Checkout
         uses: actions/checkout@v4
 
