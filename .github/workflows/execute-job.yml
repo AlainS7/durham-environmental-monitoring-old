@@ -11,6 +11,15 @@ on:
         description: "Region"
         required: false
         default: us-east1
+      date:
+        description: "Single date to run (YYYY-MM-DD). Cannot be used with start_date/end_date"
+        required: false
+      start_date:
+        description: "Start date for range (YYYY-MM-DD). Must be used with end_date"
+        required: false
+      end_date:
+        description: "End date for range (YYYY-MM-DD). Must be used with start_date"
+        required: false
 
 env:
   PROJECT_ID: durham-weather-466502
@@ -39,5 +48,8 @@ jobs:
         env:
           JOB_NAME: ${{ github.event.inputs.job_name }}
           REGION: ${{ github.event.inputs.region }}
+          DATE: ${{ github.event.inputs.date }}
+          START_DATE: ${{ github.event.inputs.start_date }}
+          END_DATE: ${{ github.event.inputs.end_date }}
         run: |
           bash scripts/run_cr_job.sh
