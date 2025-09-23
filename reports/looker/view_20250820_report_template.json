@@ -1,0 +1,55 @@
+{
+  "name": "Durham Sensors — Enriched Daily Starter",
+  "description": "Starter Looker Studio report template pointing to BigQuery table/view `sensors.sensor_readings_daily_enriched` with current curated location mapping. Import this JSON in Looker Studio and reauthorize the BigQuery connector if prompted.",
+  "connections": [
+    {
+      "type": "BIGQUERY",
+      "projectId": "durham-weather-466502",
+      "datasetId": "sensors",
+      "tableId": "sensor_readings_daily_enriched"
+    }
+  ],
+  "pages": [
+    {
+      "title": "Overview (Daily Enriched)",
+      "components": [
+        {
+          "type": "TIME_SERIES",
+          "title": "Metric over time",
+          "data": {
+            "dimension": "day_ts",
+            "breakdown": "metric",
+            "metric": "AVG(value)",
+            "filter": "status = 'active'"
+          }
+        },
+        {
+          "type": "TABLE",
+          "title": "Daily readings (sample)",
+          "data": {
+            "dimensions": ["sensor_id", "metric", "day_ts"],
+            "metrics": ["AVG(value)", "COUNT(*)"],
+            "filter": "status = 'active'"
+          }
+        },
+        {
+          "type": "BAR",
+          "title": "Daily coverage (count of sensors)",
+          "data": {
+            "dimension": "day_ts",
+            "metric": "COUNT_DISTINCT(sensor_id)",
+            "filter": "metric = 'temperature_c' AND status = 'active'"
+          }
+        },
+        {
+          "type": "SCORECARD",
+          "title": "Last day avg temperature (°C)",
+          "data": {
+            "metric": "AVG(value)",
+            "filter": "metric = 'temperature_c' AND day_ts = (SELECT MAX(day_ts) FROM sensors.sensor_readings_daily_enriched) AND status = 'active'"
+          }
+        }
+      ]
+    }
+  ]
+}
