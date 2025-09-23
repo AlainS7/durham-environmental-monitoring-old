@@ -118,17 +118,21 @@ def main():
 
     target_fqdn = f"{args.project}.{args.dataset}.sensor_id_map"
     pre_exists = table_exists(client, target_fqdn)
+    print(f"Dataset location: {ds_location}")
+    print(f"Table existed before query: {pre_exists}")
+
     job = client.query(combined_sql, job_config=bigquery.QueryJobConfig(location=ds_location))
     try:
         job.result()
+        post_exists = table_exists(client, target_fqdn)
         print(f"Seed completed. Affected rows: {job.num_dml_affected_rows}")
-    except Exception:  # broad catch to emit diagnostics into CI logs
+        print(f"Table existed after query: {post_exists}")
+    except Exception:
         post_exists = table_exists(client, target_fqdn)
         print("Seeding failed.")
         print(f"Dataset location: {ds_location}")
         print(f"Table existed before query: {pre_exists}, after query: {post_exists}")
         try:
-            # best-effort to surface BigQuery error details
             print(f"Job error_result: {getattr(job, 'error_result', None)}")
             print(f"Job errors: {getattr(job, 'errors', None)}")
         except Exception:
