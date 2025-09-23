@@ -134,6 +134,10 @@ data/processed/
 reports/
 backup/
 
+# Allow Looker Studio JSON templates
+!reports/looker/
+!reports/looker/*.json
+
 # Log files
 *.log
 logs/
