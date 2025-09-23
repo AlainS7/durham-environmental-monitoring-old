@@ -28,6 +28,9 @@ SELECT
   COALESCE(d.latitude, c.canonical_latitude) AS latitude,
   COALESCE(d.longitude, c.canonical_longitude) AS longitude,
   COALESCE(d.geog, c.canonical_geog) AS geog,
+  -- Surface lifecycle fields from curated dim when present
+  d.status,
+  d.effective_date,
   d.notes,
   d.updated_at
 FROM `${PROJECT}.${DATASET}.sensor_canonical_latest` c
@@ -41,6 +44,7 @@ CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_readings_daily_enriched` AS
 SELECT
   d.day_ts,
   d.native_sensor_id,
+  COALESCE(m.sensor_id, d.native_sensor_id) AS sensor_id,
   d.metric_name,
   d.avg_value,
   d.min_value,
@@ -50,5 +54,30 @@ SELECT
   lc.longitude AS longitude,
   lc.geog AS geog
 FROM `${PROJECT}.${DATASET}.sensor_readings_daily` d
+LEFT JOIN `${PROJECT}.${DATASET}.sensor_id_map` m
+  ON d.native_sensor_id = m.native_sensor_id
+ AND (m.effective_start_date IS NULL OR d.day_ts >= m.effective_start_date)
+ AND (m.effective_end_date   IS NULL OR d.day_ts <= m.effective_end_date)
+LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
+  USING (native_sensor_id);
+
+-- Long fact enriched with stable sensor_id mapping (if present)
+CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_readings_long_enriched` AS
+SELECT
+  f.timestamp,
+  f.native_sensor_id,
+  COALESCE(m.sensor_id, f.native_sensor_id) AS sensor_id,
+  f.metric_name,
+  f.value,
+  lc.latitude,
+  lc.longitude,
+  lc.geog,
+  lc.status,
+  lc.effective_date
+FROM `${PROJECT}.${DATASET}.sensor_readings_long` f
+LEFT JOIN `${PROJECT}.${DATASET}.sensor_id_map` m
+  ON f.native_sensor_id = m.native_sensor_id
+ AND (m.effective_start_date IS NULL OR DATE(f.timestamp) >= m.effective_start_date)
+ AND (m.effective_end_date   IS NULL OR DATE(f.timestamp) <= m.effective_end_date)
 LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
   USING (native_sensor_id);
