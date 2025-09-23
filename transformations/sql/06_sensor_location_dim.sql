@@ -1,0 +1,2 @@
+-- DEPRECATED: Duplicate of 04b_sensor_location_dim.sql; intentionally left blank to avoid duplicate DDL.
+-- This file remains in the workspace as untracked. It is safe to delete.
