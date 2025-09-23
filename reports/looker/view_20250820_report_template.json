@@ -20,7 +20,7 @@
             "dimension": "day_ts",
             "breakdown": "metric",
             "metric": "AVG(value)",
-            "filter": "status = 'active'"
+            "filter": "status = 'active' OR status IS NULL"
           }
         },
         {
@@ -29,7 +29,7 @@
           "data": {
             "dimensions": ["sensor_id", "metric", "day_ts"],
             "metrics": ["AVG(value)", "COUNT(*)"],
-            "filter": "status = 'active'"
+            "filter": "status = 'active' OR status IS NULL"
           }
         },
         {
@@ -38,7 +38,7 @@
           "data": {
             "dimension": "day_ts",
             "metric": "COUNT_DISTINCT(sensor_id)",
-            "filter": "metric = 'temperature_c' AND status = 'active'"
+            "filter": "metric = 'temperature_c' AND (status = 'active' OR status IS NULL)"
           }
         },
         {
@@ -46,7 +46,7 @@
           "title": "Last day avg temperature (°C)",
           "data": {
             "metric": "AVG(value)",
-            "filter": "metric = 'temperature_c' AND day_ts = (SELECT MAX(day_ts) FROM sensors.sensor_readings_daily_enriched) AND status = 'active'"
+            "filter": "metric = 'temperature_c' AND (status = 'active' OR status IS NULL)"
           }
         }
       ]
