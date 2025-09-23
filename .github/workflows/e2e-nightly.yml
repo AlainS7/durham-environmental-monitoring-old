@@ -70,6 +70,14 @@ jobs:
           echo "Running e2e for $START -> $END"
           make e2e START="$START" END="$END" DATASET="$BQ_DATASET" PROJECT="$BQ_PROJECT"
 
+      - name: Seed sensor_id_map (idempotent)
+        env:
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          DATASET_ID: ${{ env.DATASET_ID }}
+        run: |
+          echo "Seeding identity mapping into ${PROJECT_ID}.${DATASET_ID}.sensor_id_map (idempotent)"
+          python scripts/seed_sensor_id_map.py --project "$PROJECT_ID" --dataset "$DATASET_ID" --execute
+
       - name: Verify outputs
         env:
           BQ_PROJECT: ${{ env.PROJECT_ID }}
