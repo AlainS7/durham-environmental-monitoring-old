@@ -121,7 +121,9 @@ def main():
     print(f"Dataset location: {ds_location}")
     print(f"Table existed before query: {pre_exists}")
 
-    job = client.query(combined_sql, job_config=bigquery.QueryJobConfig(location=ds_location))
+    # Run the multi-statement DDL+INSERT in the dataset's location. Note: location is not a
+    # QueryJobConfig property in this client version; pass it directly to client.query().
+    job = client.query(combined_sql, location=ds_location)
     try:
         job.result()
         post_exists = table_exists(client, target_fqdn)
