@@ -48,6 +48,9 @@ wu_api_key.json
 onedrive_creds.json
 creds/*.json
 hot_durham_wu_map/backend/wu_api_key.json
+
+# Changing metrics and analysis
+/metrics-current/
 *.pem
 *.key
 *.crt
