@@ -27,15 +27,24 @@ def upsert_location(client: bigquery.Client, dataset: str, sensor_id: str, lat: 
              @lat AS latitude,
              @lon AS longitude,
              ST_GEOGPOINT(@lon, @lat) AS geog,
+             'active' AS status,
+             CURRENT_DATE() AS effective_date,
              @notes AS notes,
              CURRENT_TIMESTAMP() AS updated_at
     ) S
     ON T.native_sensor_id = S.native_sensor_id
     WHEN MATCHED THEN
-      UPDATE SET latitude = S.latitude, longitude = S.longitude, geog = S.geog, notes = S.notes, updated_at = S.updated_at
+      UPDATE SET latitude = S.latitude,
+                 longitude = S.longitude,
+                 geog = S.geog,
+                 notes = S.notes,
+                 -- keep existing status/effective_date if already set
+                 status = COALESCE(T.status, S.status),
+                 effective_date = COALESCE(T.effective_date, S.effective_date),
+                 updated_at = S.updated_at
     WHEN NOT MATCHED THEN
-      INSERT (native_sensor_id, latitude, longitude, geog, notes, updated_at)
-      VALUES (S.native_sensor_id, S.latitude, S.longitude, S.geog, S.notes, S.updated_at)
+      INSERT (native_sensor_id, latitude, longitude, geog, status, effective_date, notes, updated_at)
+      VALUES (S.native_sensor_id, S.latitude, S.longitude, S.geog, S.status, S.effective_date, S.notes, S.updated_at)
     """
     job = client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("sid", "STRING", sensor_id),
