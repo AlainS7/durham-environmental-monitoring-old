@@ -146,6 +146,24 @@ resource "google_storage_bucket_iam_member" "verifier_bucket_viewer" {
   member = "serviceAccount:${google_service_account.verifier.email}"
 }
 
+# Allow verifier SA to access Secret Manager (so GitHub Actions OIDC can read secrets)
+resource "google_project_iam_member" "verifier_secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.verifier.email}"
+}
+
+# Optional combined TSI creds secret expected by application (JSON payload)
+resource "google_secret_manager_secret" "tsi_creds" {
+  count     = var.create_secrets ? 1 : 0
+  secret_id = "tsi_creds"
+  replication {
+    user_managed {
+      replicas { location = var.region }
+    }
+  }
+}
+
 # Cloud Run Job for ingestion (container image assumed built externally)
 resource "google_cloud_run_v2_job" "ingestion_job" {
   name     = var.ingestion_job_name

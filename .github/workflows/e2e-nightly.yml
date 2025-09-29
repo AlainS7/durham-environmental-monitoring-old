@@ -64,6 +64,11 @@ jobs:
           BQ_DATASET: ${{ env.DATASET_ID }}
           GCS_BUCKET: sensor-data-to-bigquery
           GCS_PREFIX: raw
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          # Secret IDs used by code to fetch credentials from Secret Manager
+          DB_CREDS_SECRET_ID: db_creds
+          TSI_CREDS_SECRET_ID: tsi_creds
+          WU_API_KEY_SECRET_ID: wu_api_key
         run: |
           START=${{ steps.daterange.outputs.start }}
           END=${{ steps.daterange.outputs.end }}
