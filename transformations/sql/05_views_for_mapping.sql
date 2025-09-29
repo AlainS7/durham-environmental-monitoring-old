@@ -46,18 +46,24 @@ SELECT
   d.native_sensor_id,
   COALESCE(m.sensor_id, d.native_sensor_id) AS sensor_id,
   d.metric_name,
+  -- Aliases for Looker template compatibility
+  d.metric_name AS metric,
+  d.avg_value AS value,
   d.avg_value,
   d.min_value,
   d.max_value,
   d.samples,
   lc.latitude AS latitude,
   lc.longitude AS longitude,
-  lc.geog AS geog
+  lc.geog AS geog,
+  -- Surface curated status/effective_date for filters
+  lc.status AS status,
+  lc.effective_date AS effective_date
 FROM `${PROJECT}.${DATASET}.sensor_readings_daily` d
 LEFT JOIN `${PROJECT}.${DATASET}.sensor_id_map` m
   ON d.native_sensor_id = m.native_sensor_id
- AND (m.effective_start_date IS NULL OR d.day_ts >= m.effective_start_date)
- AND (m.effective_end_date   IS NULL OR d.day_ts <= m.effective_end_date)
+ AND (m.effective_start_date IS NULL OR DATE(d.day_ts) >= m.effective_start_date)
+ AND (m.effective_end_date   IS NULL OR DATE(d.day_ts) <= m.effective_end_date)
 LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
   USING (native_sensor_id);
 
