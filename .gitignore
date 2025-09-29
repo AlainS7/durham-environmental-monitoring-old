@@ -198,6 +198,24 @@ src/backup/verification_logs/
 *credentials*
 *token*
 *secret*
+
+# Terraform local state and artifacts
+# Do NOT commit Terraform state; it may contain sensitive metadata
+.terraform/
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+crash.log
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+!infra/terraform/terraform.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 *.pem
 *.key
 *.p12
