@@ -745,6 +745,11 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                     sample_ts,
                     type(sample_ts)
                 )
+            # Convert timezone-naive datetime objects to ISO string format for BigQuery
+            # This avoids pyarrow integer overflow issues with nanosecond timestamps
+            day_df['timestamp'] = day_df['timestamp'].apply(
+                lambda dt: dt.isoformat() if isinstance(dt, datetime) else None
+            )
             log.info(f"Loading {len(day_df)} rows into {fq} (truncate replace)")
             load_job = client.load_table_from_dataframe(day_df[['timestamp','deployment_fk','metric_name','value']], fq, job_config=job_config)
             load_job.result()
