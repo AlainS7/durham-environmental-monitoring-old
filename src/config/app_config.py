@@ -11,8 +11,15 @@ class Config:
     def wu_api_config(self):
         # Allow for dummy config in test/dev environments
         api_key = None
-        if self.wu_api_key and isinstance(self.wu_api_key, dict):
-            api_key = self.wu_api_key.get("test_api_key")
+        if self.wu_api_key:
+            if isinstance(self.wu_api_key, dict):
+                api_key = (
+                    self.wu_api_key.get("api_key")
+                    or self.wu_api_key.get("API_KEY")
+                    or self.wu_api_key.get("test_api_key")
+                )
+            elif isinstance(self.wu_api_key, str):
+                api_key = self.wu_api_key
         elif os.getenv("DUMMY_WU_API_KEY"):
             api_key = os.getenv("DUMMY_WU_API_KEY")
         return {

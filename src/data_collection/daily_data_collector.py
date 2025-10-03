@@ -713,15 +713,8 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                 d,
                 type_counts,
             )
-            final_ts = pd.to_datetime(ensured_final, utc=True, errors='coerce')
-            final_ts = final_ts.loc[day_df.index]
-            if final_ts.dt.tz is None:
-                final_ts = final_ts.dt.tz_localize('UTC')
-            else:
-                final_ts = final_ts.dt.tz_convert('UTC')
-            final_ts = final_ts.dt.tz_localize(None)
-            final_ts = final_ts.astype('datetime64[us]')
-            day_df['timestamp'] = final_ts
+            # Use ensured_final (object dtype with Python datetimes) directly
+            day_df['timestamp'] = ensured_final
             table_name = f"staging_{source_label.lower()}_{d.strftime('%Y%m%d')}"
             fq = f"{client.project}.{dataset}.{table_name}"
             schema = [
