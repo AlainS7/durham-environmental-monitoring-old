@@ -721,6 +721,13 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
             day_df['timestamp'] = ensured_final
             table_name = f"staging_{source_label.lower()}_{d.strftime('%Y%m%d')}"
             fq = f"{client.project}.{dataset}.{table_name}"
+            
+            # Convert timezone-naive datetime objects to formatted strings for BigQuery
+            # ISO format is parseable by BigQuery's TIMESTAMP type
+            day_df['timestamp'] = day_df['timestamp'].apply(
+                lambda dt: dt.strftime('%Y-%m-%d %H:%M:%S') if isinstance(dt, datetime) else None
+            )
+            
             schema = [
                 bigquery.SchemaField('timestamp','TIMESTAMP'),
                 bigquery.SchemaField('deployment_fk','INT64'),
@@ -734,7 +741,11 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                 tbl = bigquery.Table(fq, schema=schema)
                 client.create_table(tbl)
                 log.info(f"Created staging table {fq}")
-            job_config = bigquery.LoadJobConfig(write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE, schema=schema)
+            # Use autodetect instead of explicit schema to avoid PyArrow type conflicts
+            job_config = bigquery.LoadJobConfig(
+                write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+                autodetect=True,
+            )
             if not day_df.empty:
                 sample_ts = day_df['timestamp'].iloc[0]
                 log.warning(
@@ -745,11 +756,6 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                     sample_ts,
                     type(sample_ts)
                 )
-            # Convert timezone-naive datetime objects to ISO string format for BigQuery
-            # This avoids pyarrow integer overflow issues with nanosecond timestamps
-            day_df['timestamp'] = day_df['timestamp'].apply(
-                lambda dt: dt.isoformat() if isinstance(dt, datetime) else None
-            )
             log.info(f"Loading {len(day_df)} rows into {fq} (truncate replace)")
             load_job = client.load_table_from_dataframe(day_df[['timestamp','deployment_fk','metric_name','value']], fq, job_config=job_config)
             load_job.result()
