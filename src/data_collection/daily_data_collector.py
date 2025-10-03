@@ -18,7 +18,7 @@ import os
 import uuid
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, date as date_cls, timezone
+from datetime import datetime, timedelta, date as date_cls
 from typing import Any, Tuple, Optional, List
 
 import pandas as pd
@@ -609,10 +609,12 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                 if value is None or (isinstance(value, float) and pd.isna(value)):
                     return None
                 if isinstance(value, datetime):
-                    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+                    # Return timezone-naive datetime (BigQuery TIMESTAMP is implicitly UTC)
+                    return value.replace(tzinfo=None) if value.tzinfo is not None else value
                 if isinstance(value, pd.Timestamp):
                     ts_val = value.tz_convert('UTC') if value.tzinfo is not None else value.tz_localize('UTC')
-                    return ts_val.to_pydatetime()
+                    # Return timezone-naive datetime
+                    return ts_val.to_pydatetime().replace(tzinfo=None)
                 if isinstance(value, (np.integer, int)):
                     magnitude = abs(int(value))
                     if magnitude > 9_007_199_254_740_992:
@@ -623,7 +625,8 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                         dt = pd.to_datetime(int(value), utc=True, errors='coerce', unit='s')
                     if pd.isna(dt):
                         return None
-                    return dt.to_pydatetime()
+                    # Return timezone-naive datetime
+                    return dt.to_pydatetime().replace(tzinfo=None)
                 if isinstance(value, (np.floating, float)):
                     if pd.isna(value):
                         return None
@@ -632,7 +635,8 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                     parsed = pd.to_datetime(value, utc=True, errors='coerce')
                     if pd.isna(parsed):
                         return None
-                    return parsed.to_pydatetime()
+                    # Return timezone-naive datetime
+                    return parsed.to_pydatetime().replace(tzinfo=None)
                 return None
 
             ensured_py = pd.Series(
