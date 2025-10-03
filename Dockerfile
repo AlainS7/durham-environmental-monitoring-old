@@ -59,5 +59,7 @@ COPY . .
 # Ensure application root is on Python path
 ENV PYTHONPATH=/app
 
-# Default command
-CMD ["python", "src/data_collection/daily_data_collector.py"]
+# Use ENTRYPOINT for the fixed command and CMD for default args
+# This allows Cloud Run's --args to override only the arguments, not the script path
+ENTRYPOINT ["python", "src/data_collection/daily_data_collector.py"]
+CMD []
