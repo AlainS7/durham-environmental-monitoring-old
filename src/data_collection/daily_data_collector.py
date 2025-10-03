@@ -18,10 +18,11 @@ import os
 import uuid
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, date as date_cls
+from datetime import datetime, timedelta, date as date_cls, timezone
 from typing import Any, Tuple, Optional, List
 
 import pandas as pd
+import numpy as np
 from sqlalchemy import text
 
 from src.config.app_config import app_config
@@ -29,6 +30,7 @@ from src.database.db_manager import HotDurhamDB
 from src.storage.gcs_uploader import GCSUploader
 from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
+from src.utils.config_loader import get_wu_stations, get_tsi_devices
 
 log = logging.getLogger(__name__)
 
@@ -98,10 +100,201 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
 
 
 # ------------- DB Insertion ---------------
+
+
+def _coerce_to_date(value: Any) -> Optional[date_cls]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    try:
+        ts = pd.Timestamp(value)
+    except Exception:
+        return None
+    if pd.isna(ts):
+        return None
+    if ts.tzinfo is not None:
+        try:
+            ts = ts.tz_convert('UTC')
+        except (TypeError, ValueError):
+            pass
+    return ts.to_pydatetime().date()
+
+
+def _coerce_to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not pd.isna(value):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _build_sensor_catalog() -> dict[tuple[str, str], dict[str, Any]]:
+    catalog: dict[tuple[str, str], dict[str, Any]] = {}
+    today = datetime.utcnow().date()
+
+    for station in get_wu_stations() or []:
+        sensor_id = station.get('stationId') or station.get('id')
+        if not sensor_id:
+            continue
+        friendly = (station.get('friendly_name') or station.get('name') or str(sensor_id)).strip()
+        if not friendly:
+            friendly = str(sensor_id)
+        location = (station.get('location') or friendly or str(sensor_id)).strip()
+        if not location:
+            location = str(sensor_id)
+        start_hint = station.get('start_date') or station.get('startDate')
+        start_date = _coerce_to_date(start_hint) or today
+        catalog[(sensor_id, 'WU')] = {
+            'native_sensor_id': sensor_id,
+            'sensor_type': 'WU',
+            'friendly_name': friendly,
+            'location': location,
+            'latitude': _coerce_to_float(station.get('latitude') or station.get('lat')),
+            'longitude': _coerce_to_float(station.get('longitude') or station.get('lon')),
+            'start_date': start_date,
+        }
+
+    for device_id in get_tsi_devices() or []:
+        if not device_id:
+            continue
+        catalog[(device_id, 'TSI')] = {
+            'native_sensor_id': device_id,
+            'sensor_type': 'TSI',
+            'friendly_name': device_id,
+            'location': device_id,
+            'latitude': None,
+            'longitude': None,
+            'start_date': today,
+        }
+
+    return catalog
+
+
+def _augment_catalog_with_data(catalog: dict[tuple[str, str], dict[str, Any]], df: pd.DataFrame, sensor_type: str):
+    if df.empty or 'native_sensor_id' not in df.columns or 'timestamp' not in df.columns:
+        return
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
+    try:
+        subset = df[['native_sensor_id', 'timestamp']].dropna()
+    except KeyError:
+        return
+    if subset.empty:
+        return
+    grouped = subset.groupby('native_sensor_id')['timestamp'].min()
+    for sensor_id, first_ts in grouped.items():
+        sensor_key = str(sensor_id)
+        start_date = _coerce_to_date(first_ts)
+        if start_date is None:
+            continue
+        key = (sensor_key, sensor_type)
+        record = catalog.get(key)
+        if record is None:
+            catalog[key] = {
+                'native_sensor_id': sensor_key,
+                'sensor_type': sensor_type,
+                'friendly_name': sensor_key,
+                'location': sensor_key,
+                'latitude': None,
+                'longitude': None,
+                'start_date': start_date,
+            }
+        elif start_date < record.get('start_date', start_date):
+            record['start_date'] = start_date
+
+
+def _ensure_deployment_metadata(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
+    catalog = _build_sensor_catalog()
+    _augment_catalog_with_data(catalog, wu_df, 'WU')
+    _augment_catalog_with_data(catalog, tsi_df, 'TSI')
+    if not catalog:
+        return
+
+    with db.engine.begin() as conn:
+        for record in catalog.values():
+            params = {
+                'native_sensor_id': record['native_sensor_id'],
+                'sensor_type': record['sensor_type'],
+                'friendly_name': record['friendly_name'],
+            }
+            sensor_row = conn.execute(text("""
+                SELECT sensor_pk, friendly_name
+                FROM sensors_master
+                WHERE native_sensor_id = :native_sensor_id
+                  AND sensor_type = :sensor_type
+            """), params).fetchone()
+
+            if sensor_row:
+                sensor_pk = sensor_row.sensor_pk
+                if record['friendly_name'] and sensor_row.friendly_name != record['friendly_name']:
+                    conn.execute(text("""
+                        UPDATE sensors_master
+                        SET friendly_name = :friendly_name
+                        WHERE sensor_pk = :sensor_pk
+                    """), {
+                        'friendly_name': record['friendly_name'],
+                        'sensor_pk': sensor_pk,
+                    })
+            else:
+                sensor_pk = conn.execute(text("""
+                    INSERT INTO sensors_master (native_sensor_id, sensor_type, friendly_name)
+                    VALUES (:native_sensor_id, :sensor_type, :friendly_name)
+                    RETURNING sensor_pk
+                """), params).scalar_one()
+                log.info("Created sensors_master row for %s sensor %s", record['sensor_type'], record['native_sensor_id'])
+
+            dep_row = conn.execute(text("""
+                SELECT deployment_pk, location, start_date
+                FROM deployments
+                WHERE sensor_fk = :sensor_fk AND end_date IS NULL
+            """), {'sensor_fk': sensor_pk}).fetchone()
+
+            location_value = record.get('location') or record['native_sensor_id']
+            start_date = record.get('start_date')
+
+            if dep_row:
+                updates: dict[str, Any] = {}
+                if location_value and dep_row.location != location_value:
+                    updates['location'] = location_value
+                if start_date and (dep_row.start_date is None or start_date < dep_row.start_date):
+                    updates['start_date'] = start_date
+                if updates:
+                    updates['deployment_pk'] = dep_row.deployment_pk
+                    set_clause = ", ".join(f"{col} = :{col}" for col in updates if col != 'deployment_pk')
+                    conn.execute(text(f"""
+                        UPDATE deployments
+                        SET {set_clause}
+                        WHERE deployment_pk = :deployment_pk
+                    """), updates)
+            else:
+                conn.execute(text("""
+                    INSERT INTO deployments (sensor_fk, location, latitude, longitude, status, start_date, end_date)
+                    VALUES (:sensor_fk, :location, :latitude, :longitude, 'active', :start_date, NULL)
+                """), {
+                    'sensor_fk': sensor_pk,
+                    'location': location_value,
+                    'latitude': record.get('latitude'),
+                    'longitude': record.get('longitude'),
+                    'start_date': start_date or datetime.utcnow().date(),
+                })
+                log.info("Created deployment for %s sensor %s", record['sensor_type'], record['native_sensor_id'])
+
+
 def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame):
     if wu_df.empty and tsi_df.empty:
         log.info("No data to insert.")
         return
+    try:
+        _ensure_deployment_metadata(db, wu_df, tsi_df)
+    except Exception as e:
+        log.error(f"Unable to ensure deployment metadata prior to insert: {e}")
     try:
         with db.engine.connect() as conn:
             sql = text("""
@@ -120,6 +313,8 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
     for df, typ in [(wu_df, 'WU'), (tsi_df, 'TSI')]:
         if df.empty:
             continue
+        if df.columns.duplicated().any():
+            df = df.loc[:, ~df.columns.duplicated()].copy()
         type_map = deployment_map_df[deployment_map_df.sensor_type == typ]
         merged = df.merge(type_map, on='native_sensor_id', how='inner')
         if merged.empty:
@@ -127,15 +322,23 @@ def insert_data_to_db(db: HotDurhamDB, wu_df: pd.DataFrame, tsi_df: pd.DataFrame
             continue
         merged = merged.rename(columns={'deployment_pk': 'deployment_fk'})
         id_vars = ['timestamp', 'deployment_fk']
-        value_vars = [c for c in merged.columns if c not in id_vars + ['native_sensor_id', 'sensor_type']]
-        if not value_vars:
+        candidate_vars = [c for c in merged.columns if c not in id_vars + ['native_sensor_id', 'sensor_type']]
+        numeric_vars: list[str] = []
+        for col in candidate_vars:
+            coerced = pd.to_numeric(merged[col], errors='coerce')
+            if coerced.notna().any():
+                merged[col] = coerced
+                numeric_vars.append(col)
+        if not numeric_vars:
             continue
-        long_df = pd.melt(merged, id_vars=id_vars, value_vars=value_vars, var_name='metric_name', value_name='value')
+        long_df = pd.melt(merged, id_vars=id_vars, value_vars=numeric_vars, var_name='metric_name', value_name='value')
+        long_df['value'] = pd.to_numeric(long_df['value'], errors='coerce')
         all_long.append(long_df)
     if not all_long:
         log.warning("Nothing to insert after deployment matching.")
         return
     final = pd.concat(all_long, ignore_index=True)
+    final['value'] = pd.to_numeric(final['value'], errors='coerce')
     final = final.dropna(subset=['value']).drop_duplicates(subset=['timestamp', 'deployment_fk', 'metric_name'], keep='last')
     if final.empty:
         log.info("Final DataFrame empty after cleaning.")
@@ -335,20 +538,31 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
     def _prepare_long(df: pd.DataFrame, sensor_type: str) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame(columns=['timestamp','deployment_fk','metric_name','value'])
+        if df.columns.duplicated().any():
+            working = df.loc[:, ~df.columns.duplicated()].copy()
+        else:
+            working = df.copy()
         type_map = deployment_map_df[deployment_map_df.sensor_type == sensor_type]
         if type_map.empty:
             log.warning(f"No active deployments for type {sensor_type} – skipping staging long melt")
             return pd.DataFrame(columns=['timestamp','deployment_fk','metric_name','value'])
-        merged = df.merge(type_map, on='native_sensor_id', how='inner')
+        merged = working.merge(type_map, on='native_sensor_id', how='inner')
         if merged.empty:
             log.warning(f"No rows matched deployments for {sensor_type} – skipping")
             return pd.DataFrame(columns=['timestamp','deployment_fk','metric_name','value'])
         merged = merged.rename(columns={'deployment_pk': 'deployment_fk'})
         id_vars = ['timestamp', 'deployment_fk']
-        value_vars = [c for c in merged.columns if c not in id_vars + ['native_sensor_id','sensor_type']]
-        if not value_vars:
+        candidate_vars = [c for c in merged.columns if c not in id_vars + ['native_sensor_id','sensor_type']]
+        numeric_vars: list[str] = []
+        for col in candidate_vars:
+            coerced = pd.to_numeric(merged[col], errors='coerce')
+            if coerced.notna().any():
+                merged[col] = coerced
+                numeric_vars.append(col)
+        if not numeric_vars:
             return pd.DataFrame(columns=['timestamp','deployment_fk','metric_name','value'])
-        long_df = pd.melt(merged, id_vars=id_vars, value_vars=value_vars, var_name='metric_name', value_name='value')
+        long_df = pd.melt(merged, id_vars=id_vars, value_vars=numeric_vars, var_name='metric_name', value_name='value')
+        long_df['value'] = pd.to_numeric(long_df['value'], errors='coerce')
         long_df = long_df.dropna(subset=['value']).drop_duplicates(subset=['timestamp','deployment_fk','metric_name'], keep='last')
         return long_df
 
@@ -362,7 +576,152 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
         distinct_dates: List[date_cls] = sorted(long_df['date'].unique())  # type: ignore[arg-type]
         total_rows = 0
         for d in distinct_dates:
-            day_df = long_df[long_df['date'] == d].drop(columns=['date'])
+            day_df = long_df[long_df['date'] == d].drop(columns=['date']).copy()
+            if 'timestamp' not in day_df.columns:
+                log.warning("Skipping %s staging for %s – no timestamp column", source_label, d)
+                continue
+            ts_series = day_df['timestamp']
+            if pd.api.types.is_numeric_dtype(ts_series):
+                numeric = pd.to_numeric(ts_series, errors='coerce')
+                max_abs = numeric.abs().max()
+                if pd.isna(max_abs):
+                    ts_converted = pd.to_datetime(numeric, utc=True, errors='coerce')
+                elif max_abs > 9_007_199_254_740_992:  # larger than float64 safe range -> assume nanoseconds
+                    ts_converted = pd.to_datetime(numeric, utc=True, errors='coerce', unit='ns')
+                elif max_abs > 9_007_199_254_740:  # microseconds range
+                    ts_converted = pd.to_datetime(numeric, utc=True, errors='coerce', unit='us')
+                else:
+                    ts_converted = pd.to_datetime(numeric, utc=True, errors='coerce', unit='s')
+            else:
+                ts_converted = pd.to_datetime(ts_series, utc=True, errors='coerce')
+            ts_converted = ts_converted.dt.tz_convert('UTC') if ts_converted.dt.tz is not None else ts_converted.dt.tz_localize('UTC')
+            ts_py = pd.Series(
+                (
+                    value.to_pydatetime() if pd.notna(value) else None
+                    for value in ts_converted
+                ),
+                index=ts_converted.index,
+                dtype=object,
+            )
+            day_df['timestamp'] = ts_py
+
+            def _ensure_py_datetime(value: Any) -> Optional[datetime]:
+                if value is None or (isinstance(value, float) and pd.isna(value)):
+                    return None
+                if isinstance(value, datetime):
+                    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+                if isinstance(value, pd.Timestamp):
+                    ts_val = value.tz_convert('UTC') if value.tzinfo is not None else value.tz_localize('UTC')
+                    return ts_val.to_pydatetime()
+                if isinstance(value, (np.integer, int)):
+                    magnitude = abs(int(value))
+                    if magnitude > 9_007_199_254_740_992:
+                        dt = pd.to_datetime(int(value), utc=True, errors='coerce', unit='ns')
+                    elif magnitude > 9_007_199_254_740:
+                        dt = pd.to_datetime(int(value), utc=True, errors='coerce', unit='us')
+                    else:
+                        dt = pd.to_datetime(int(value), utc=True, errors='coerce', unit='s')
+                    if pd.isna(dt):
+                        return None
+                    return dt.to_pydatetime()
+                if isinstance(value, (np.floating, float)):
+                    if pd.isna(value):
+                        return None
+                    return _ensure_py_datetime(int(value))
+                if isinstance(value, str):
+                    parsed = pd.to_datetime(value, utc=True, errors='coerce')
+                    if pd.isna(parsed):
+                        return None
+                    return parsed.to_pydatetime()
+                return None
+
+            ensured_py = pd.Series(
+                (_ensure_py_datetime(value) for value in day_df['timestamp']),
+                index=day_df.index,
+                dtype=object,
+            )
+            coerced_ts = pd.to_datetime(ensured_py, utc=True, errors='coerce')
+            invalid_mask = coerced_ts.isna()
+            if invalid_mask.any():
+                dropped = int(invalid_mask.sum())
+                sample_bad = day_df.loc[invalid_mask, 'timestamp'].head().tolist()
+                log.warning(
+                    "Dropped %s rows with invalid timestamps for %s on %s (raw samples=%s)",
+                    dropped,
+                    source_label,
+                    d,
+                    sample_bad,
+                )
+                day_df = day_df.loc[~invalid_mask].copy()
+            if day_df.empty:
+                log.warning("No valid timestamps remain for %s on %s after coercion", source_label, d)
+                continue
+            coerced_ts = coerced_ts.loc[day_df.index]
+            if coerced_ts.dt.tz is None:
+                coerced_ts = coerced_ts.dt.tz_localize('UTC')
+            else:
+                coerced_ts = coerced_ts.dt.tz_convert('UTC')
+            py_ts = pd.Series(
+                (ts.to_pydatetime() for ts in coerced_ts),
+                index=coerced_ts.index,
+                dtype=object,
+            )
+            day_df['timestamp'] = py_ts
+            numeric_mask = day_df['timestamp'].apply(lambda v: isinstance(v, (np.integer, int, np.floating, float)))
+            if numeric_mask.any():
+                numeric_count = int(numeric_mask.sum())
+                log.warning(
+                    "Re-coercing %s numeric timestamp values for %s on %s after initial conversion",
+                    numeric_count,
+                    source_label,
+                    d,
+                )
+                day_df.loc[numeric_mask, 'timestamp'] = day_df.loc[numeric_mask, 'timestamp'].apply(_ensure_py_datetime)
+            non_dt_mask = day_df['timestamp'].apply(lambda v: v is not None and not isinstance(v, datetime))
+            if non_dt_mask.any():
+                samples = day_df.loc[non_dt_mask, 'timestamp'].head().tolist()
+                log.warning(
+                    "Unexpected non-datetime values persisted for %s on %s: %s",
+                    source_label,
+                    d,
+                    samples,
+                )
+                day_df.loc[non_dt_mask, 'timestamp'] = day_df.loc[non_dt_mask, 'timestamp'].apply(_ensure_py_datetime)
+            ensured_final = pd.Series(
+                (_ensure_py_datetime(value) for value in day_df['timestamp']),
+                index=day_df.index,
+                dtype=object,
+            )
+            invalid_final = ensured_final.isna()
+            if invalid_final.any():
+                dropped_final = int(invalid_final.sum())
+                log.warning(
+                    "Dropping %s rows with invalid timestamps after final coercion for %s on %s",
+                    dropped_final,
+                    source_label,
+                    d,
+                )
+                day_df = day_df.loc[~invalid_final].copy()
+                ensured_final = ensured_final.loc[day_df.index]
+                if day_df.empty:
+                    log.warning("No valid timestamps remain for %s on %s after final coercion", source_label, d)
+                    continue
+            type_counts = ensured_final.apply(lambda v: type(v).__name__).value_counts().to_dict()
+            log.warning(
+                "Timestamp type distribution for %s on %s: %s",
+                source_label,
+                d,
+                type_counts,
+            )
+            final_ts = pd.to_datetime(ensured_final, utc=True, errors='coerce')
+            final_ts = final_ts.loc[day_df.index]
+            if final_ts.dt.tz is None:
+                final_ts = final_ts.dt.tz_localize('UTC')
+            else:
+                final_ts = final_ts.dt.tz_convert('UTC')
+            final_ts = final_ts.dt.tz_localize(None)
+            final_ts = final_ts.astype('datetime64[us]')
+            day_df['timestamp'] = final_ts
             table_name = f"staging_{source_label.lower()}_{d.strftime('%Y%m%d')}"
             fq = f"{client.project}.{dataset}.{table_name}"
             schema = [
@@ -379,6 +738,16 @@ def _write_bq_staging(wu_df: pd.DataFrame, tsi_df: pd.DataFrame, start_str: str,
                 client.create_table(tbl)
                 log.info(f"Created staging table {fq}")
             job_config = bigquery.LoadJobConfig(write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE, schema=schema)
+            if not day_df.empty:
+                sample_ts = day_df['timestamp'].iloc[0]
+                log.warning(
+                    "Prepared %s staging frame for %s: dtype=%s sample=%s type=%s",
+                    source_label,
+                    d,
+                    day_df['timestamp'].dtype,
+                    sample_ts,
+                    type(sample_ts)
+                )
             log.info(f"Loading {len(day_df)} rows into {fq} (truncate replace)")
             load_job = client.load_table_from_dataframe(day_df[['timestamp','deployment_fk','metric_name','value']], fq, job_config=job_config)
             load_job.result()
