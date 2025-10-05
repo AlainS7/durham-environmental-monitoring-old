@@ -1,0 +1,483 @@
+{
+  "name": "Durham Environmental Monitoring - Comprehensive Dashboard",
+  "description": "Production-ready Looker Studio dashboard for Durham sensor network monitoring. Uses sensor_readings_daily_enriched view with 90 days of historical data. Includes time series, maps, comparisons, and data quality metrics.",
+  "version": "2.0",
+  "created_date": "2025-10-04",
+  "data_source": {
+    "type": "BIGQUERY",
+    "connection": {
+      "projectId": "durham-weather-466502",
+      "datasetId": "sensors",
+      "tableId": "sensor_readings_daily_enriched"
+    },
+    "note": "No blending required - this view already includes canonical locations, sensor IDs, status, and all metric aggregations"
+  },
+  "key_metrics": {
+    "environmental": [
+      "temperature_c",
+      "humidity", 
+      "pm25",
+      "uv_high",
+      "solar_radiation"
+    ],
+    "aggregations": [
+      "avg_value (primary metric)",
+      "min_value",
+      "max_value", 
+      "samples (data quality indicator)"
+    ]
+  },
+  "pages": [
+    {
+      "page_id": "overview",
+      "title": "📊 Overview Dashboard",
+      "description": "High-level KPIs and current status",
+      "layout": "grid",
+      "components": [
+        {
+          "type": "SCORECARD",
+          "title": "Active Sensors",
+          "position": {"row": 1, "col": 1, "width": 3, "height": 2},
+          "data": {
+            "metric": "COUNT_DISTINCT(native_sensor_id)",
+            "date_range": "Last 7 days",
+            "filter": "status = 'active' OR status IS NULL"
+          },
+          "styling": {
+            "icon": "sensor",
+            "color": "#4285F4"
+          }
+        },
+        {
+          "type": "SCORECARD",
+          "title": "Latest Avg Temperature (°C)",
+          "position": {"row": 1, "col": 4, "width": 3, "height": 2},
+          "data": {
+            "metric": "AVG(avg_value)",
+            "date_range": "Yesterday",
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "comparison": "Previous day"
+          },
+          "styling": {
+            "icon": "thermostat",
+            "color": "#EA4335"
+          }
+        },
+        {
+          "type": "SCORECARD",
+          "title": "Latest Avg PM2.5 (μg/m³)",
+          "position": {"row": 1, "col": 7, "width": 3, "height": 2},
+          "data": {
+            "metric": "AVG(avg_value)",
+            "date_range": "Yesterday",
+            "filter": "metric_name = 'pm25' AND (status = 'active' OR status IS NULL)",
+            "comparison": "Previous day"
+          },
+          "styling": {
+            "icon": "air",
+            "color": "#FBBC04"
+          }
+        },
+        {
+          "type": "SCORECARD",
+          "title": "Data Coverage (%)",
+          "position": {"row": 1, "col": 10, "width": 3, "height": 2},
+          "data": {
+            "metric": "100 * COUNT(*) / (COUNT(DISTINCT native_sensor_id) * COUNT(DISTINCT metric_name))",
+            "date_range": "Last 7 days",
+            "filter": "status = 'active' OR status IS NULL"
+          },
+          "styling": {
+            "icon": "check_circle",
+            "color": "#34A853"
+          }
+        },
+        {
+          "type": "TIME_SERIES",
+          "title": "Temperature Trends (All Sensors)",
+          "position": {"row": 3, "col": 1, "width": 12, "height": 5},
+          "data": {
+            "x_axis": "day_ts",
+            "y_axis": "AVG(avg_value)",
+            "breakdown": "native_sensor_id",
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 30 days"
+          },
+          "styling": {
+            "chart_type": "line",
+            "show_legend": true,
+            "show_data_labels": false
+          }
+        },
+        {
+          "type": "GEO_MAP",
+          "title": "Current Sensor Locations",
+          "position": {"row": 8, "col": 1, "width": 6, "height": 6},
+          "data": {
+            "location": "geog",
+            "bubble_size": "AVG(avg_value)",
+            "bubble_color": "AVG(avg_value)",
+            "tooltip": ["native_sensor_id", "metric_name", "AVG(avg_value)", "status"],
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Yesterday"
+          },
+          "styling": {
+            "map_style": "roadmap",
+            "zoom_level": 11,
+            "center": {"lat": 35.994, "lng": -78.899}
+          },
+          "notes": "Uses canonical locations from sensor_location_dim with fallback to derived coordinates"
+        },
+        {
+          "type": "TABLE",
+          "title": "Latest Readings by Sensor",
+          "position": {"row": 8, "col": 7, "width": 6, "height": 6},
+          "data": {
+            "dimensions": ["native_sensor_id", "metric_name"],
+            "metrics": ["AVG(avg_value)", "MIN(min_value)", "MAX(max_value)", "SUM(samples)"],
+            "sort": ["native_sensor_id ASC"],
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Yesterday"
+          },
+          "styling": {
+            "show_row_numbers": true,
+            "rows_per_page": 20,
+            "conditional_formatting": [
+              {
+                "column": "metric_name",
+                "rule": "temperature_c",
+                "background_color": "#FEE"
+              },
+              {
+                "column": "metric_name",
+                "rule": "pm25",
+                "background_color": "#FFE"
+              }
+            ]
+          }
+        }
+      ],
+      "filters": [
+        {
+          "type": "DATE_RANGE",
+          "control": "date_range_picker",
+          "default": "Last 30 days"
+        },
+        {
+          "type": "DROPDOWN",
+          "dimension": "native_sensor_id",
+          "control": "multi_select",
+          "label": "Filter by Sensor"
+        },
+        {
+          "type": "DROPDOWN",
+          "dimension": "status",
+          "control": "multi_select",
+          "label": "Filter by Status",
+          "default": ["active", null]
+        }
+      ]
+    },
+    {
+      "page_id": "environmental_details",
+      "title": "🌡️ Environmental Metrics",
+      "description": "Detailed analysis of all environmental parameters",
+      "layout": "grid",
+      "components": [
+        {
+          "type": "COMBO_CHART",
+          "title": "Temperature & Humidity Correlation",
+          "position": {"row": 1, "col": 1, "width": 6, "height": 5},
+          "data": {
+            "x_axis": "day_ts",
+            "series": [
+              {
+                "metric": "AVG(avg_value)",
+                "filter": "metric_name = 'temperature_c'",
+                "chart_type": "line",
+                "axis": "left",
+                "label": "Temperature (°C)"
+              },
+              {
+                "metric": "AVG(avg_value)",
+                "filter": "metric_name = 'humidity'",
+                "chart_type": "line",
+                "axis": "right",
+                "label": "Humidity (%)"
+              }
+            ],
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Last 30 days"
+          }
+        },
+        {
+          "type": "TIME_SERIES",
+          "title": "PM2.5 Air Quality Trends",
+          "position": {"row": 1, "col": 7, "width": 6, "height": 5},
+          "data": {
+            "x_axis": "day_ts",
+            "y_axis": "AVG(avg_value)",
+            "breakdown": "native_sensor_id",
+            "filter": "metric_name = 'pm25' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 30 days"
+          },
+          "reference_lines": [
+            {"value": 12, "label": "WHO Guideline (24hr)", "color": "#FBBC04"},
+            {"value": 35, "label": "EPA Unhealthy for Sensitive Groups", "color": "#EA4335"}
+          ]
+        },
+        {
+          "type": "BAR_CHART",
+          "title": "UV Index by Sensor (Last 7 Days Avg)",
+          "position": {"row": 6, "col": 1, "width": 6, "height": 5},
+          "data": {
+            "dimension": "native_sensor_id",
+            "metric": "AVG(avg_value)",
+            "sort": "AVG(avg_value) DESC",
+            "filter": "metric_name = 'uv_high' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 7 days"
+          },
+          "styling": {
+            "orientation": "vertical",
+            "color_gradient": ["#34A853", "#FBBC04", "#EA4335"]
+          }
+        },
+        {
+          "type": "AREA_CHART",
+          "title": "Solar Radiation Daily Patterns",
+          "position": {"row": 6, "col": 7, "width": 6, "height": 5},
+          "data": {
+            "x_axis": "day_ts",
+            "y_axis": "AVG(avg_value)",
+            "breakdown": "native_sensor_id",
+            "filter": "metric_name = 'solar_radiation' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 14 days"
+          },
+          "styling": {
+            "stacking": "none",
+            "opacity": 0.7
+          }
+        },
+        {
+          "type": "PIVOT_TABLE",
+          "title": "Metric Summary Matrix",
+          "position": {"row": 11, "col": 1, "width": 12, "height": 6},
+          "data": {
+            "row_dimension": "native_sensor_id",
+            "column_dimension": "metric_name",
+            "metric": "AVG(avg_value)",
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Last 7 days"
+          },
+          "styling": {
+            "show_totals": true,
+            "heat_map": true
+          }
+        }
+      ]
+    },
+    {
+      "page_id": "data_quality",
+      "title": "✅ Data Quality & Coverage",
+      "description": "Monitor data completeness and sensor health",
+      "layout": "grid",
+      "components": [
+        {
+          "type": "BAR_CHART",
+          "title": "Daily Sample Count by Sensor",
+          "position": {"row": 1, "col": 1, "width": 6, "height": 5},
+          "data": {
+            "dimension": "day_ts",
+            "metric": "AVG(samples)",
+            "breakdown": "native_sensor_id",
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 30 days"
+          },
+          "notes": "Sample count indicates how many raw readings contributed to daily average. Low counts may indicate sensor issues."
+        },
+        {
+          "type": "HEATMAP",
+          "title": "Sensor Availability Heatmap",
+          "position": {"row": 1, "col": 7, "width": 6, "height": 5},
+          "data": {
+            "row_dimension": "native_sensor_id",
+            "column_dimension": "DATE(day_ts)",
+            "metric": "COUNT(*)",
+            "filter": "metric_name = 'temperature_c'",
+            "date_range": "Last 90 days"
+          },
+          "styling": {
+            "color_scale": {
+              "min": "#FFFFFF",
+              "mid": "#FBBC04", 
+              "max": "#34A853"
+            }
+          },
+          "notes": "Shows which sensors have data for each day. White = missing, Green = data present."
+        },
+        {
+          "type": "TIME_SERIES",
+          "title": "Active Sensor Count Over Time",
+          "position": {"row": 6, "col": 1, "width": 12, "height": 5},
+          "data": {
+            "x_axis": "day_ts",
+            "y_axis": "COUNT_DISTINCT(native_sensor_id)",
+            "breakdown": "metric_name",
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Last 90 days"
+          }
+        },
+        {
+          "type": "TABLE",
+          "title": "Sensor Status & Last Reading",
+          "position": {"row": 11, "col": 1, "width": 12, "height": 6},
+          "data": {
+            "dimensions": ["native_sensor_id", "status", "MAX(day_ts) as last_reading"],
+            "metrics": [
+              "COUNT(DISTINCT DATE(day_ts)) as days_active",
+              "COUNT(DISTINCT metric_name) as metrics_reported",
+              "AVG(samples) as avg_samples_per_day"
+            ],
+            "sort": ["last_reading DESC"],
+            "filter": "day_ts >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)"
+          },
+          "styling": {
+            "conditional_formatting": [
+              {
+                "column": "last_reading",
+                "rule": "< DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY)",
+                "background_color": "#FEE",
+                "text_color": "#C00"
+              }
+            ]
+          },
+          "notes": "Red highlight indicates sensors that haven't reported in 3+ days"
+        }
+      ]
+    },
+    {
+      "page_id": "comparative_analysis",
+      "title": "📈 Comparative Analysis",
+      "description": "Compare metrics across sensors and time periods",
+      "layout": "grid",
+      "components": [
+        {
+          "type": "BAR_CHART",
+          "title": "Temperature Range by Sensor",
+          "position": {"row": 1, "col": 1, "width": 6, "height": 5},
+          "data": {
+            "dimension": "native_sensor_id",
+            "metrics": ["MIN(min_value)", "AVG(avg_value)", "MAX(max_value)"],
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 30 days"
+          },
+          "styling": {
+            "chart_type": "grouped_bar"
+          }
+        },
+        {
+          "type": "SCATTER_PLOT",
+          "title": "Temperature vs Humidity Scatter",
+          "position": {"row": 1, "col": 7, "width": 6, "height": 5},
+          "data": {
+            "x_axis": {
+              "metric": "AVG(avg_value)",
+              "filter": "metric_name = 'temperature_c'"
+            },
+            "y_axis": {
+              "metric": "AVG(avg_value)",
+              "filter": "metric_name = 'humidity'"
+            },
+            "bubble_size": "COUNT(*)",
+            "breakdown": "native_sensor_id",
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Last 30 days"
+          }
+        },
+        {
+          "type": "LINE_CHART",
+          "title": "Week-over-Week Temperature Comparison",
+          "position": {"row": 6, "col": 1, "width": 12, "height": 5},
+          "data": {
+            "x_axis": "EXTRACT(DAYOFWEEK FROM day_ts)",
+            "y_axis": "AVG(avg_value)",
+            "breakdown": "EXTRACT(WEEK FROM day_ts)",
+            "filter": "metric_name = 'temperature_c' AND (status = 'active' OR status IS NULL)",
+            "date_range": "Last 4 weeks"
+          }
+        },
+        {
+          "type": "TABLE",
+          "title": "Metric Statistics Summary",
+          "position": {"row": 11, "col": 1, "width": 12, "height": 6},
+          "data": {
+            "dimensions": ["metric_name"],
+            "metrics": [
+              "COUNT(DISTINCT native_sensor_id) as sensors",
+              "AVG(avg_value) as mean",
+              "STDDEV(avg_value) as std_dev",
+              "MIN(min_value) as overall_min",
+              "MAX(max_value) as overall_max",
+              "PERCENTILE_CONT(avg_value, 0.5) as median"
+            ],
+            "filter": "status = 'active' OR status IS NULL",
+            "date_range": "Last 30 days"
+          }
+        }
+      ]
+    }
+  ],
+  "setup_instructions": {
+    "step_1": "Go to Looker Studio (https://lookerstudio.google.com/)",
+    "step_2": "Click 'Create' → 'Report'",
+    "step_3": "Connect to BigQuery data source:",
+    "step_3a": "  - Project: durham-weather-466502",
+    "step_3b": "  - Dataset: sensors",
+    "step_3c": "  - Table: sensor_readings_daily_enriched",
+    "step_4": "Use this JSON as a blueprint to recreate the dashboard components",
+    "step_5": "Set default filters: status = 'active' OR status IS NULL",
+    "step_6": "Configure date range: Last 30 days by default",
+    "note": "Looker Studio doesn't support direct JSON import, so use this as a detailed specification guide"
+  },
+  "recommended_calculated_fields": [
+    {
+      "name": "Data Quality Score",
+      "formula": "CASE WHEN samples >= 20 THEN 'High' WHEN samples >= 10 THEN 'Medium' ELSE 'Low' END"
+    },
+    {
+      "name": "Days Since Last Reading",
+      "formula": "DATE_DIFF(CURRENT_DATE(), DATE(day_ts), DAY)"
+    },
+    {
+      "name": "Temperature (°F)",
+      "formula": "(avg_value * 9/5) + 32",
+      "filter": "metric_name = 'temperature_c'"
+    },
+    {
+      "name": "AQI Category",
+      "formula": "CASE WHEN avg_value <= 12 THEN 'Good' WHEN avg_value <= 35 THEN 'Moderate' WHEN avg_value <= 55 THEN 'Unhealthy for Sensitive' ELSE 'Unhealthy' END",
+      "filter": "metric_name = 'pm25'"
+    }
+  ],
+  "best_practices": {
+    "performance": [
+      "Always filter by date range to limit data scanned",
+      "Use status filter to exclude inactive sensors",
+      "Pre-aggregate at daily level - enriched view is already optimized",
+      "Avoid real-time queries - daily aggregations are sufficient"
+    ],
+    "accuracy": [
+      "Check 'samples' field - low values indicate incomplete data",
+      "Monitor 'Days Since Last Reading' calculated field",
+      "Use min/max values to identify outliers",
+      "Filter out testing/inactive sensors for production metrics"
+    ],
+    "visualization": [
+      "Use time series for trends (primary use case)",
+      "Use geo maps for spatial distribution",
+      "Use scorecards for high-level KPIs",
+      "Use tables for detailed drill-down",
+      "Color code by metric type consistently"
+    ]
+  }
+}

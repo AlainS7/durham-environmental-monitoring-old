@@ -73,15 +73,27 @@ def clean_and_transform_data(df: pd.DataFrame, source: str) -> pd.DataFrame:
             'windchillAvg': 'wind_chill_avg', 'windchillHigh': 'wind_chill_high', 'windchillLow': 'wind_chill_low',
             'heatindexAvg': 'heat_index_avg', 'heatindexHigh': 'heat_index_high', 'heatindexLow': 'heat_index_low',
             'dewptAvg': 'dew_point_avg', 'dewptHigh': 'dew_point_high', 'dewptLow': 'dew_point_low',
-            'qcStatus': 'qc_status'
+            'qcStatus': 'qc_status', 'obsTimeLocal': 'obsTimeLocal'
         }
     else:  # TSI
         rename_map = {
-            'cloud_device_id': 'native_sensor_id', 'device_id': 'native_sensor_id', 'cloud_timestamp': 'timestamp',
-            'mcpm10': 'pm10', 'mcpm10_aqi': 'pm10_aqi', 'mcpm1x0': 'pm1_0', 'mcpm2x5': 'pm2_5', 'mcpm2x5_aqi': 'pm2_5_aqi',
-            'mcpm4x0': 'ncpm4_0', 'ncpm0x5': 'ncpm0_5', 'ncpm10': 'ncpm10', 'ncpm1x0': 'ncpm1_0', 'ncpm2x5': 'ncpm2_5', 'ncpm4x0': 'ncpm4_0',
-            'rh': 'humidity', 'temperature': 'temperature', 'tpsize': 'tpsize', 'co2_ppm': 'co2_ppm', 'co_ppm': 'co_ppm',
-            'baro_inhg': 'baro_inhg', 'o3_ppb': 'o3_ppb', 'no2_ppb': 'no2_ppb', 'so2_ppb': 'so2_ppb', 'ch2o_ppb': 'ch2o_ppb', 'voc_mgm3': 'voc_mgm3'
+            'cloud_device_id': 'native_sensor_id', 'device_id': 'native_sensor_id',
+            'cloud_timestamp': 'timestamp', 'cloud_account_id': 'cloud_account_id',
+            # PM measurements
+            'pm1_0': 'pm1_0', 'pm2_5': 'pm2_5', 'pm4_0': 'pm4_0', 'pm10': 'pm10',
+            'pm2_5_aqi': 'pm2_5_aqi', 'pm10_aqi': 'pm10_aqi',
+            # Number concentration measurements
+            'ncpm0_5': 'ncpm0_5', 'ncpm1_0': 'ncpm1_0', 'ncpm2_5': 'ncpm2_5',
+            'ncpm4_0': 'ncpm4_0', 'ncpm10': 'ncpm10',
+            # Environmental measurements
+            'rh': 'humidity', 'temperature': 'temperature', 'tpsize': 'tpsize',
+            # Gas measurements
+            'co2_ppm': 'co2_ppm', 'co_ppm': 'co_ppm', 'o3_ppb': 'o3_ppb',
+            'no2_ppb': 'no2_ppb', 'so2_ppb': 'so2_ppb', 'ch2o_ppb': 'ch2o_ppb',
+            'voc_mgm3': 'voc_mgm3', 'baro_inhg': 'baro_inhg',
+            # Metadata
+            'model': 'model', 'serial': 'serial', 'is_indoor': 'is_indoor',
+            'is_public': 'is_public', 'latitude': 'latitude', 'longitude': 'longitude'
         }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
     if 'timestamp' in df.columns:

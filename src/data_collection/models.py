@@ -1,6 +1,6 @@
 
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 # -----------------------------------------------------------------------------
@@ -95,7 +95,9 @@ class WUObservation(BaseModel):
     windspeedHigh: Optional[float] = None
     windspeedLow: Optional[float] = None
     # imperial: Optional[WUImperial] = None
-    # Add metric: Optional[WUMetric] = None if you use metric units
+    # Metric object contains nested temperature/wind/precip data
+    # Pydantic will accept extra fields if we use model_config allow_extra
+    model_config = {'extra': 'allow'}  # Allow 'metric' and other extra fields from API
 
 class WUResponse(BaseModel):
     observations: List[WUObservation]

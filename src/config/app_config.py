@@ -13,10 +13,11 @@ class Config:
         api_key = None
         if self.wu_api_key:
             if isinstance(self.wu_api_key, dict):
+                # test_api_key is the actual production API key (just named "test")
                 api_key = (
-                    self.wu_api_key.get("api_key")
+                    self.wu_api_key.get("test_api_key")
+                    or self.wu_api_key.get("api_key")
                     or self.wu_api_key.get("API_KEY")
-                    or self.wu_api_key.get("test_api_key")
                 )
             elif isinstance(self.wu_api_key, str):
                 api_key = self.wu_api_key

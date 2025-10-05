@@ -442,3 +442,6 @@ terraform.tfvars
 *.tfplan
 
 .github/instructions/
+
+
+!reports/looker/sql_query_reference.sql

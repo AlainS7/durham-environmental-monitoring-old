@@ -65,7 +65,7 @@ LEFT JOIN `${PROJECT}.${DATASET}.sensor_id_map` m
  AND (m.effective_start_date IS NULL OR DATE(d.day_ts) >= m.effective_start_date)
  AND (m.effective_end_date   IS NULL OR DATE(d.day_ts) <= m.effective_end_date)
 LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
-  USING (native_sensor_id);
+  ON d.native_sensor_id = lc.native_sensor_id;
 
 -- Long fact enriched with stable sensor_id mapping (if present)
 CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.sensor_readings_long_enriched` AS
@@ -86,4 +86,4 @@ LEFT JOIN `${PROJECT}.${DATASET}.sensor_id_map` m
  AND (m.effective_start_date IS NULL OR DATE(f.timestamp) >= m.effective_start_date)
  AND (m.effective_end_date   IS NULL OR DATE(f.timestamp) <= m.effective_end_date)
 LEFT JOIN `${PROJECT}.${DATASET}.sensor_location_current` lc
-  USING (native_sensor_id);
+  ON f.native_sensor_id = lc.native_sensor_id;

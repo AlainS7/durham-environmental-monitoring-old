@@ -97,7 +97,15 @@ def ensure_materialized_table(client: bigquery.Client, dataset: str, table: str,
 
 
 def delete_partition(client: bigquery.Client, dataset: str, table: str, d: dt.date) -> None:
-    sql = f"DELETE FROM `{client.project}.{dataset}.{table}` WHERE DATE(ts) = @d"
+    # Check if table exists first
+    fq = f"{client.project}.{dataset}.{table}"
+    try:
+        client.get_table(fq)
+    except NotFound:
+        # Table doesn't exist yet, nothing to delete
+        return
+    
+    sql = f"DELETE FROM `{fq}` WHERE DATE(ts) = @d"
     job = client.query(sql, job_config=bigquery.QueryJobConfig(
         query_parameters=[bigquery.ScalarQueryParameter("d", "DATE", d.isoformat())]
     ))
