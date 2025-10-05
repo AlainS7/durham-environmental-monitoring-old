@@ -85,8 +85,12 @@ class WUClient(BaseClient):
         """
         endpoint_strategy: Specifies the endpoint strategy to use. Options are:
             - EndpointStrategy.ALL: Use 'observations/all' (multi-day, no date param).
-            - EndpointStrategy.MULTIDAY: Use 'observations/all/1day' (per-day, loop over date range).
-            - EndpointStrategy.HOURLY: Use 'history/hourly' endpoint (per-day, per-station, most reliable for old data).
+            - EndpointStrategy.MULTIDAY: Use 'observations/all/1day' (per-day, rapid history - LIMITED FIELDS).
+            - EndpointStrategy.HOURLY: Use 'history/hourly' endpoint (per-day, per-station, FULL HISTORICAL DATA with all fields).
+        
+        NOTE: EndpointStrategy.HOURLY is REQUIRED for historical data with complete field coverage.
+        The rapid history endpoints (MULTIDAY, ALL) only return 4-6 fields (humidity, solar, wind direction, UV).
+        Historical API returns ALL fields: temperature, wind speed/gust, precipitation, pressure, dew point, comfort indices.
         """
         super().__init__(base_url, api_key)
         self.stations = get_wu_stations()
@@ -102,7 +106,8 @@ class WUClient(BaseClient):
         data = None
         filter_end_date_for_helper = "" # Initialize for clarity
         if self.endpoint_strategy == EndpointStrategy.HOURLY:
-            # Use /history/hourly endpoint (per-day, per-station)
+            # Use /history/hourly endpoint (per-day, per-station) - Returns ALL fields including temp, wind, precip
+            # This is the PWS Historical v2 API that returns complete weather data
             endpoint = "history/hourly"
             date_param = start_date.replace("-", "") # The date param for this endpoint is YYYYMMDD
             params = {
@@ -110,7 +115,7 @@ class WUClient(BaseClient):
                 "date": date_param,
                 "format": "json",
                 "apiKey": self.api_key,
-                "units": "m",
+                "units": "e",  # Use English units (imperial) to match expected response format
                 "numericPrecision": "decimal"
             }
             data = await self._request("GET", endpoint, params=params)
@@ -147,10 +152,27 @@ class WUClient(BaseClient):
 
         # Convert validated observations to dicts for DataFrame
         obs_dicts = [obs.model_dump() for obs in validated.observations]
-        # The 'imperial' block is redundant since we requested metric units.
-        # We will only use the top-level metric values.
+        
+        # Flatten the 'metric' and 'imperial' nested objects into top-level fields
+        # WU API returns temp/wind/precip data inside these nested objects
+        # Historical API (history/hourly) returns data in 'imperial' or 'metric' object based on units parameter
         for o in obs_dicts:
-            o.pop('imperial', None) # Safely remove the imperial block
+            # Flatten 'imperial' object (contains temperature, wind speed, precipitation in imperial units)
+            if 'imperial' in o and isinstance(o['imperial'], dict):
+                for key, value in o['imperial'].items():
+                    # Overwrite top-level field with imperial value
+                    # This handles case where Pydantic sets top-level fields to None but imperial has actual values
+                    o[key] = value
+                o.pop('imperial', None)  # Remove the nested object after flattening
+            
+            # Flatten 'metric' object (contains temperature, wind speed, precipitation in metric units)
+            # Only used if units=m was specified in request
+            if 'metric' in o and isinstance(o['metric'], dict):
+                for key, value in o['metric'].items():
+                    # Overwrite top-level field with metric value (metric values take precedence)
+                    # This handles case where Pydantic sets top-level fields to None but metric has actual values
+                    o[key] = value
+                o.pop('metric', None)  # Remove the nested object after flattening
 
         if obs_dicts:
             df = pd.DataFrame(obs_dicts)

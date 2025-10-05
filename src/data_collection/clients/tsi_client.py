@@ -2,13 +2,11 @@
 import asyncio
 import pandas as pd
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Optional
-import pydantic
 
 from .base_client import BaseClient
 from src.utils.config_loader import get_tsi_devices
-from src.data_collection.models import TSIFlatRecord
 
 log = logging.getLogger(__name__)
 
@@ -44,41 +42,182 @@ class TSIClient(BaseClient):
             return False
 
     async def _fetch_one_day(self, device_id: str, date_iso: str) -> Optional[pd.DataFrame]:
-        """Fetches data for a single device and day using the flat-format endpoint."""
+        """Fetches data for a single device and day using the telemetry endpoint with start_date and end_date parameters."""
         if not self.headers:
             log.error("TSI client is not authenticated.")
             return None
 
+        # Use start_date and end_date parameters in RFC3339 format (required for historical data with measurements)
+        # This is the key difference - age parameter returns empty sensor arrays, but start_date/end_date returns full measurements
+        from datetime import timedelta
+        
         start_iso = f"{date_iso}T00:00:00Z"
-        end_iso = (datetime.strptime(date_iso, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+        target_date = datetime.strptime(date_iso, "%Y-%m-%d")
+        end_date = target_date + timedelta(days=1)
+        end_iso = end_date.strftime("%Y-%m-%dT00:00:00Z")
+        
+        # Use start_date and end_date instead of age to get actual measurement data
         params = {'device_id': device_id, 'start_date': start_iso, 'end_date': end_iso}
 
-        # Use the flat-format endpoint
-        records = await self._request("GET", "telemetry/flat-format", params=params, headers=self.headers)
-        log.info(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: received {len(records) if records else 0} records")
-        log.debug(f"TSI RAW API RESPONSE for device {device_id} date {date_iso}: {records if records else 'EMPTY'}")
-        if records:
-            validated_records = []
-            for rec in records:
-                try:
-                    validated = TSIFlatRecord.model_validate(rec)
-                    validated_records.append(validated.model_dump())
-                except pydantic.ValidationError as e:
-                    log.error(f"TSI API response validation failed for record: {e}")
-            if not validated_records:
-                log.info(f"TSI validated records for device {device_id} date {date_iso}: EMPTY after validation.")
-                return None
-            df = pd.DataFrame(validated_records)
-            log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}")
-            log.debug(f"TSI columns: {list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
-            # Rename cloud_timestamp to timestamp for downstream compatibility
-            if 'cloud_timestamp' in df.columns:
-                df = df.rename(columns={'cloud_timestamp': 'timestamp'})
-            df['device_id'] = device_id
-            return df
-        else:
+        # Use the telemetry endpoint with start_date/end_date to get nested sensor measurements
+        records = await self._request("GET", "telemetry", params=params, headers=self.headers)
+        log.info(f"TSI RAW API RESPONSE for device {device_id} date {date_iso} (start={start_iso}, end={end_iso}): received {len(records) if records else 0} records")
+        
+        if not records:
             log.info(f"TSI API returned no records for device {device_id} date {date_iso}.")
-        return None
+            return None
+        
+        # Parse nested sensor measurements from telemetry response
+        data = []
+        for row in records:
+            timestamp = row.get('cloud_timestamp')
+            if not timestamp:
+                continue
+            
+            # Extract metadata from record
+            metadata = row.get('metadata', {})
+            location = metadata.get('location', {})
+            latitude = location.get('latitude')
+            longitude = location.get('longitude')
+            is_indoor = metadata.get('is_indoor')
+            is_public = metadata.get('is_public')
+            friendly_name = metadata.get('friendly_name')
+            model = row.get('model')
+            cloud_account_id = row.get('cloud_account_id')
+            
+            # Initialize all sensor values
+            pm_1_0 = None
+            pm_2_5 = None
+            pm_4_0 = None
+            pm_10 = None
+            pm2_5_aqi = None
+            pm10_aqi = None
+            ncpm0_5 = None
+            ncpm1_0 = None
+            ncpm2_5 = None
+            ncpm4_0 = None
+            ncpm10 = None
+            temp = None
+            rh = None
+            tpsize = None
+            co2_ppm = None
+            co_ppm = None
+            baro_inhg = None
+            o3_ppb = None
+            no2_ppb = None
+            so2_ppb = None
+            ch2o_ppb = None
+            voc_mgm3 = None
+            
+            # Extract measurements from nested sensors array
+            sensors = row.get('sensors', [])
+            for sensor in sensors:
+                serial = sensor.get('serial')  # Get serial from first sensor
+                measurements = sensor.get('measurements', [])
+                for measurement in measurements:
+                    name = measurement.get('name', '')
+                    value = measurement.get('data', {}).get('value')
+                    
+                    # Map measurement names to fields
+                    if name == 'PM 1.0':
+                        pm_1_0 = value
+                    elif name == 'PM 2.5':
+                        pm_2_5 = value
+                    elif name == 'PM 4.0':
+                        pm_4_0 = value
+                    elif name == 'PM 10':
+                        pm_10 = value
+                    elif name == 'PM 2.5 AQI':
+                        pm2_5_aqi = value
+                    elif name == 'PM 10 AQI':
+                        pm10_aqi = value
+                    elif name == 'NC 0.5':
+                        ncpm0_5 = value
+                    elif name == 'NC 1.0':
+                        ncpm1_0 = value
+                    elif name == 'NC 2.5':
+                        ncpm2_5 = value
+                    elif name == 'NC 4.0':
+                        ncpm4_0 = value
+                    elif name == 'NC 10':
+                        ncpm10 = value
+                    elif name == 'Temperature':
+                        temp = value
+                    elif name == 'Relative Humidity':
+                        rh = value
+                    elif name == 'Typical Particle Size':
+                        tpsize = value
+                    elif name == 'CO2':
+                        co2_ppm = value
+                    elif name == 'CO':
+                        co_ppm = value
+                    elif name == 'Barometric Pressure':
+                        baro_inhg = value
+                    elif name == 'O3':
+                        o3_ppb = value
+                    elif name == 'NO2':
+                        no2_ppb = value
+                    elif name == 'SO2':
+                        so2_ppb = value
+                    elif name == 'CH2O':
+                        ch2o_ppb = value
+                    elif name == 'VOC':
+                        voc_mgm3 = value
+            
+            data.append({
+                'timestamp': timestamp,
+                'cloud_account_id': cloud_account_id,
+                'device_id': device_id,
+                'model': model,
+                'serial': serial if 'serial' in locals() else None,
+                'latitude': latitude,
+                'longitude': longitude,
+                'is_indoor': is_indoor,
+                'is_public': is_public,
+                'pm1_0': pm_1_0,
+                'pm2_5': pm_2_5,
+                'pm4_0': pm_4_0,
+                'pm10': pm_10,
+                'pm2_5_aqi': pm2_5_aqi,
+                'pm10_aqi': pm10_aqi,
+                'ncpm0_5': ncpm0_5,
+                'ncpm1_0': ncpm1_0,
+                'ncpm2_5': ncpm2_5,
+                'ncpm4_0': ncpm4_0,
+                'ncpm10': ncpm10,
+                'temperature': temp,
+                'rh': rh,
+                'tpsize': tpsize,
+                'co2_ppm': co2_ppm,
+                'co_ppm': co_ppm,
+                'baro_inhg': baro_inhg,
+                'o3_ppb': o3_ppb,
+                'no2_ppb': no2_ppb,
+                'so2_ppb': so2_ppb,
+                'ch2o_ppb': ch2o_ppb,
+                'voc_mgm3': voc_mgm3
+            })
+        
+        if not data:
+            log.info(f"No valid sensor measurements found for device {device_id} date {date_iso}.")
+            return None
+        
+        df = pd.DataFrame(data)
+        log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}")
+        log.debug(f"TSI columns: {list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
+        
+        # Convert timestamp using pandas' flexible ISO8601 parser
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', utc=True)
+        
+        # Filter to only include records from the target date
+        df = df[df['timestamp'].dt.date == target_date.date()]
+        
+        if df.empty:
+            log.info(f"No data for target date {date_iso} after filtering (start_date/end_date returned data from other dates).")
+            return None
+        
+        log.info(f"After filtering to {date_iso}: {len(df)} records remain")
+        return df
 
     async def fetch_data(self, start_date: str, end_date: str, aggregate: bool = False, agg_interval: str = 'h') -> pd.DataFrame:
         """
