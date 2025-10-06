@@ -4,7 +4,7 @@
 from google.cloud import bigquery
 import os
 
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/vscode/.config/gcloud/application_default_credentials.json'
+
 
 client = bigquery.Client(project='durham-weather-466502')
 

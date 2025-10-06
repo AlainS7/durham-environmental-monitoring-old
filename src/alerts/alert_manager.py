@@ -13,17 +13,18 @@ Key Features:
 """
 
 import smtplib
+import os
 from email.mime.text import MIMEText
 
 class AlertManager:
     """Manages the sending of alerts for critical system events."""
 
-    def __init__(self, smtp_server, smtp_port, sender_email, sender_password, recipient_email):
+    def __init__(self, smtp_server, smtp_port, sender_email, recipient_email):
         """Initializes the AlertManager with SMTP server configuration."""
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
         self.sender_email = sender_email
-        self.sender_password = sender_password
+        self.sender_password = os.getenv("SMTP_SENDER_PASSWORD")
         self.recipient_email = recipient_email
 
     def send_alert(self, subject, body):

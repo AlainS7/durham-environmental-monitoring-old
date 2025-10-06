@@ -90,7 +90,6 @@ class EnhancedAnomalyDetector(AnomalyDetectionSystem):
                     "smtp_server": "smtp.gmail.com",
                     "smtp_port": 587,
                     "sender_email": "",
-                    "sender_password": "",
                     "recipients": []
                 },
                 "webhook": {
@@ -488,8 +487,9 @@ This is an automated alert from the Hot Durham monitoring system.
             server = smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port'])
             server.starttls()
             
-            if email_config.get('sender_password'):
-                server.login(email_config['sender_email'], email_config['sender_password'])
+            sender_password = os.getenv("SMTP_SENDER_PASSWORD")
+            if sender_password:
+                server.login(email_config['sender_email'], sender_password)
             
             server.send_message(msg)
             server.quit()

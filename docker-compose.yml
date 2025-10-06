@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres #  don’t use this password in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: tsi_data_uploader
     ports:
       - "5432:5432"
@@ -21,7 +21,7 @@ volumes:
 #    depends_on:
 #      - db
 #    environment:
-#      DATABASE_URL: postgres://postgres:postgres@db:5432/tsi_data_uploader
+#      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/tsi_data_uploader
 #    ports:
 #      - "8000:8000"
 #
