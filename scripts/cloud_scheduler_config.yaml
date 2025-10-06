@@ -1,0 +1,161 @@
+# Google Cloud Scheduler Configuration for Daily Data Quality Monitoring
+#
+# Deploy this job to Cloud Scheduler for production monitoring
+#
+# Prerequisites:
+#   1. Enable Cloud Scheduler API
+#   2. Create a service account with BigQuery Data Viewer permissions
+#   3. Deploy check_data_quality.py as a Cloud Function or Cloud Run service
+#
+# Deployment commands:
+#
+# Option 1: Cloud Scheduler + Cloud Run (Recommended)
+# ======================================================
+# 
+# 1. Deploy check_data_quality.py as a Cloud Run service:
+#    
+#    gcloud run deploy data-quality-checker \
+#      --source=. \
+#      --platform=managed \
+#      --region=us-east1 \
+#      --no-allow-unauthenticated \
+#      --set-env-vars="BQ_PROJECT=durham-weather-466502,BQ_DATASET=sensors"
+#
+# 2. Create Cloud Scheduler job:
+#
+#    gcloud scheduler jobs create http data-quality-daily \
+#      --location=us-east1 \
+#      --schedule="0 2 * * *" \
+#      --uri="https://data-quality-checker-XXXXX-uc.a.run.app" \
+#      --http-method=POST \
+#      --oidc-service-account-email=scheduler@PROJECT.iam.gserviceaccount.com \
+#      --oidc-token-audience="https://data-quality-checker-XXXXX-uc.a.run.app" \
+#      --message-body='{"days": 1, "source": "both", "fail_on_issues": true}' \
+#      --time-zone="America/New_York"
+#
+# Option 2: Cloud Scheduler + Cloud Functions
+# ============================================
+#
+# 1. Deploy as Cloud Function:
+#
+#    gcloud functions deploy checkDataQuality \
+#      --runtime=python311 \
+#      --trigger-http \
+#      --entry-point=check_quality \
+#      --region=us-east1 \
+#      --no-allow-unauthenticated \
+#      --set-env-vars="BQ_PROJECT=durham-weather-466502,BQ_DATASET=sensors"
+#
+# 2. Create Cloud Scheduler job:
+#
+#    gcloud scheduler jobs create http data-quality-daily \
+#      --location=us-east1 \
+#      --schedule="0 2 * * *" \
+#      --uri="https://us-east1-PROJECT.cloudfunctions.net/checkDataQuality" \
+#      --http-method=POST \
+#      --oidc-service-account-email=scheduler@PROJECT.iam.gserviceaccount.com \
+#      --oidc-token-audience="https://us-east1-PROJECT.cloudfunctions.net/checkDataQuality" \
+#      --message-body='{"days": 1, "source": "both"}' \
+#      --time-zone="America/New_York"
+#
+# Option 3: Cloud Scheduler + Pub/Sub + Cloud Run
+# ================================================
+#
+# 1. Create Pub/Sub topic:
+#
+#    gcloud pubsub topics create data-quality-check
+#
+# 2. Deploy Cloud Run service that subscribes to topic:
+#
+#    gcloud run deploy data-quality-checker \
+#      --source=. \
+#      --platform=managed \
+#      --region=us-east1 \
+#      --no-allow-unauthenticated
+#
+#    gcloud pubsub subscriptions create data-quality-checker-sub \
+#      --topic=data-quality-check \
+#      --push-endpoint=https://data-quality-checker-XXXXX-uc.a.run.app \
+#      --push-auth-service-account=scheduler@PROJECT.iam.gserviceaccount.com
+#
+# 3. Create Cloud Scheduler job to publish to Pub/Sub:
+#
+#    gcloud scheduler jobs create pubsub data-quality-daily \
+#      --location=us-east1 \
+#      --schedule="0 2 * * *" \
+#      --topic=data-quality-check \
+#      --message-body='{"days": 1, "source": "both"}' \
+#      --time-zone="America/New_York"
+
+---
+apiVersion: v1
+kind: CloudSchedulerJob
+metadata:
+  name: data-quality-daily
+  description: Daily data quality monitoring for sensor data
+spec:
+  schedule: "0 2 * * *"  # Run at 2 AM daily
+  timeZone: "America/New_York"
+  
+  # HTTP Target configuration
+  httpTarget:
+    uri: "https://YOUR-CLOUD-RUN-SERVICE-URL"
+    httpMethod: POST
+    headers:
+      Content-Type: application/json
+    body:
+      days: 1
+      source: "both"
+      dataset: "sensors"
+      fail_on_issues: true
+    
+    # Authentication
+    oidcToken:
+      serviceAccountEmail: "scheduler@durham-weather-466502.iam.gserviceaccount.com"
+      audience: "https://YOUR-CLOUD-RUN-SERVICE-URL"
+  
+  # Retry configuration
+  retryConfig:
+    retryCount: 3
+    maxRetryDuration: "3600s"  # 1 hour
+    minBackoffDuration: "5s"
+    maxBackoffDuration: "3600s"
+    maxDoublings: 5
+
+---
+# Alternative: Simple cron-based schedule for local/VM deployment
+# Add to /etc/crontab or user crontab with: crontab -e
+#
+# Run at 2 AM daily:
+# 0 2 * * * /workspaces/durham-environmental-monitoring/scripts/monitor_data_quality.sh
+#
+# Run at 2 AM weekdays only:
+# 0 2 * * 1-5 /workspaces/durham-environmental-monitoring/scripts/monitor_data_quality.sh
+#
+# Run every 6 hours:
+# 0 */6 * * * /workspaces/durham-environmental-monitoring/scripts/monitor_data_quality.sh
+
+---
+# Monitoring and Alerting Configuration
+#
+# Set up alerts for failed quality checks:
+#
+# 1. Cloud Monitoring alert policy:
+gcloud alpha monitoring policies create \
+  --notification-channels=CHANNEL_ID \
+  --display-name="Data Quality Check Failed" \
+  --condition-display-name="Quality check exit code != 0" \
+  --condition-threshold-value=0 \
+  --condition-threshold-duration=60s \
+  --condition-threshold-comparison=COMPARISON_GT \
+  --aggregation-alignment-period=60s \
+  --aggregation-per-series-aligner=ALIGN_RATE
+
+# 2. Log-based alert (Cloud Logging):
+#    - Filter: resource.type="cloud_run_revision" AND textPayload:"Quality check failed"
+#    - Send to notification channels (email, Slack, PagerDuty, etc.)
+
+# 3. Dashboard visualization:
+#    - Create dashboard showing quality check success rate
+#    - Track coverage percentages over time
+#    - Alert on trends (declining coverage)

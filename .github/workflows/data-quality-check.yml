@@ -1,0 +1,101 @@
+name: Daily Data Quality Check
+
+on:
+  schedule:
+    - cron: '00 8 * * *'  # 08:00 UTC daily (after transformations at 07:25)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to check (default: 1 for yesterday)'
+        required: false
+        default: '1'
+      source:
+        description: 'Data source to check (both|TSI|WU)'
+        required: false
+        default: 'both'
+      fail_on_issues:
+        description: 'Fail workflow if quality issues found'
+        required: false
+        default: 'true'
+
+env:
+  PROJECT_ID: durham-weather-466502
+  DATASET_ID: sensors
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip sync requirements.txt
+
+      - name: Auth to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run comprehensive data quality check
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          DAYS=${{ github.event.inputs.days || '1' }}
+          SOURCE=${{ github.event.inputs.source || 'both' }}
+          FAIL_FLAG=${{ github.event.inputs.fail_on_issues || 'true' }}
+          
+          echo "Running data quality check for last $DAYS days, source: $SOURCE"
+          
+          if [ "$FAIL_FLAG" = "true" ]; then
+            uv run python scripts/check_data_quality.py \
+              --days $DAYS \
+              --source $SOURCE \
+              --dataset ${{ env.DATASET_ID }} \
+              --fail-on-issues
+          else
+            uv run python scripts/check_data_quality.py \
+              --days $DAYS \
+              --source $SOURCE \
+              --dataset ${{ env.DATASET_ID }}
+          fi
+
+      - name: Upload quality check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-check-logs
+          path: |
+            logs/quality_check_*.log
+          retention-days: 30
+
+      - name: Comment on PR if quality issues found (PRs only)
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ Data quality check failed. Please review the logs in the workflow artifacts.'
+            })

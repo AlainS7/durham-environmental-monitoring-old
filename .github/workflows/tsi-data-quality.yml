@@ -1,0 +1,174 @@
+name: TSI Data Quality Check
+
+on:
+  schedule:
+    # Run at 08:30 UTC daily (after transformations complete at 07:25)
+    - cron: '30 8 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to check (YYYY-MM-DD), defaults to yesterday'
+        required: false
+        type: string
+      days:
+        description: 'Number of days to check (alternative to date)'
+        required: false
+        type: number
+        default: 1
+
+env:
+  PROJECT_ID: durham-weather-466502
+  DATASET_ID: sensors
+  PYTHON_VERSION: '3.11'
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write  # For creating alerts on quality failures
+
+jobs:
+  check-tsi-quality:
+    name: Check TSI Data Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+      
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip sync requirements.txt
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_VERIFIER_SA }}
+          token_format: access_token
+      
+      - name: Determine date range
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            # Manual run with specific date
+            DATE="${{ github.event.inputs.date }}"
+            echo "start=$DATE" >> $GITHUB_OUTPUT
+            echo "end=$DATE" >> $GITHUB_OUTPUT
+            echo "range=$DATE" >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.event.inputs.days }}" ]; then
+            # Manual run with days parameter
+            DAYS="${{ github.event.inputs.days }}"
+            echo "days=$DAYS" >> $GITHUB_OUTPUT
+            echo "range=last $DAYS days" >> $GITHUB_OUTPUT
+          else
+            # Scheduled run - check yesterday
+            DATE=$(date -u -d 'yesterday' +%Y-%m-%d)
+            echo "start=$DATE" >> $GITHUB_OUTPUT
+            echo "end=$DATE" >> $GITHUB_OUTPUT
+            echo "range=$DATE" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Run TSI data quality checks
+        id: quality_check
+        run: |
+          set -e
+          
+          echo "Checking TSI data quality for: ${{ steps.date.outputs.range }}"
+          
+          # Build command based on parameters
+          CMD="uv run python scripts/check_data_quality.py --source TSI --fail-on-issues --verbose"
+          
+          if [ -n "${{ steps.date.outputs.days }}" ]; then
+            CMD="$CMD --days ${{ steps.date.outputs.days }}"
+          else
+            CMD="$CMD --start ${{ steps.date.outputs.start }} --end ${{ steps.date.outputs.end }}"
+          fi
+          
+          echo "Running: $CMD"
+          $CMD
+      
+      - name: Create issue on quality failure
+        if: failure() && github.event_name == 'schedule'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "🚨 TSI Data Quality Check Failed for ${{ steps.date.outputs.range }}"
+          content-filepath: .github/issue_templates/tsi-quality-failure.md
+          labels: |
+            data-quality
+            tsi
+            automated-alert
+            priority-high
+      
+      - name: Create simple issue on quality failure (fallback)
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 TSI Data Quality Check Failed for ${{ steps.date.outputs.range }}`,
+              body: `## TSI Data Quality Alert
+              
+              **Date**: ${{ steps.date.outputs.range }}
+              **Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+              
+              ### Possible Issues
+              
+              - ⚠️ NULL values detected in critical TSI metrics (pm2_5, temperature, humidity)
+              - 📉 Data coverage below 90% threshold
+              - 🔍 Schema inconsistencies in raw data
+              - 🚫 Transformation failures
+              
+              ### Investigation Steps
+              
+              1. **Check raw data**:
+                 \`\`\`sql
+                 SELECT 
+                   DATE(ts) as date,
+                   COUNT(*) as total,
+                   COUNTIF(pm2_5 IS NULL) as null_pm25,
+                   COUNTIF(temperature IS NULL) as null_temp
+                 FROM \`sensors.tsi_raw_materialized\`
+                 WHERE DATE(ts) = '${{ steps.date.outputs.start }}'
+                 GROUP BY date
+                 \`\`\`
+              
+              2. **Check Cloud Run job logs**:
+                 \`gcloud run jobs executions list --job weather-data-uploader --limit 5\`
+              
+              3. **Check GCS parquet files**:
+                 \`gsutil ls -lh gs://YOUR_BUCKET/sensors/tsi/${{ steps.date.outputs.start }}*.parquet\`
+              
+              4. **Re-run collection if needed**:
+                 \`make run-collector START=${{ steps.date.outputs.start }} END=${{ steps.date.outputs.start }} SOURCE=tsi\`
+              
+              ### Root Cause Reference
+              
+              This check was added after discovering historical TSI data was loaded without proper API parsing,
+              resulting in all metrics being NULL. See backfill on Oct 6, 2025.
+              
+              **Critical**: TSI data MUST be collected using TSIClient to parse nested measurements.
+              `,
+              labels: ['data-quality', 'tsi', 'automated-alert', 'priority-high']
+            })
+      
+      - name: Report success
+        if: success()
+        run: |
+          echo "✅ TSI data quality checks passed for ${{ steps.date.outputs.range }}"
+          echo "All metrics validated:"
+          echo "  - Raw metric NULL percentages <2%"
+          echo "  - Coverage above 90% threshold"
+          echo "  - Schema consistency maintained"
+          echo "  - Aggregate tables consistent"
