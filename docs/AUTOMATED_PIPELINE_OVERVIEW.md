@@ -1,32 +1,48 @@
 # Automated Data Pipeline - Complete Overview
 
+**Last Updated:** October 6, 2025
+
 ## Executive Summary
 
-**Status: ✅ FULLY AUTOMATED & OPTIMIZED**
+**Status: ✅ FULLY AUTOMATED & PRODUCTION-READY**
 
-The data pipeline is now comprehensive, automated, and production-ready with schema consistency fixes in place. All future TSI data will have consistent float64 types, preventing schema conflicts.
+The data pipeline is comprehensive, automated, and production-ready with:
+- ✅ Schema consistency fixes (typed defaults, float64 enforcement)
+- ✅ Historical data backfilled (71 days, 100% metrics populated)
+- ✅ Cloud Scheduler enabled (daily collection at 5:00 UTC)
+- ✅ NULL metric monitoring (detects issues within 24 hours)
+- ✅ Multi-layer quality validation
 
 ## Pipeline Architecture
 
 ### 1. Data Collection (Automated Daily)
 
-**Workflow:** `.github/workflows/daily-ingest.yml`  
-**Schedule:** 06:45 UTC daily  
-**Status:** ✅ AUTOMATED
+**Cloud Scheduler:** `daily-data-collection-trigger`  
+**Schedule:** 05:00 UTC daily  
+**Cloud Run Job:** `weather-data-uploader`  
+**Status:** ✅ AUTOMATED (Enabled Oct 6, 2025)
 
 **What It Does:**
 
 - Collects data from TSI (air quality) and WU (weather) APIs
-- **✅ NEW: Schema validation integrated** - validates data before upload
-- Uploads to GCS (Cloud Storage) as Parquet files
-- Automatically merges into staging tables
+- Uses proper TSIClient with nested measurement parsing
+- **Schema validation integrated** - validates data before upload
+- Uploads to GCS (Cloud Storage) as Parquet files (~10,633 TSI records/day)
+- Materializes into BigQuery raw tables
 - Runs staging presence & freshness checks
+
+**Recent History:**
+
+- **Oct 6, 2025:** Cloud Scheduler was PAUSED - now ENABLED
+- **Historical backfill:** Re-collected 71 days (July 27 - Oct 5) with proper parsing
+- **Result:** 100% metric population (was all NULL before)
 
 **Schema Fix Applied:**
 
-- ✅ TSI client now initializes all measurements with typed defaults (0.0, not None)
+- ✅ TSI client initializes all measurements with typed defaults (0.0, not None)
 - ✅ Explicit dtype enforcement ensures float64 consistency
 - ✅ Schema validation catches issues before GCS upload
+- ✅ Prevents UNPIVOT from dropping NULL records
 - ✅ All future data will have consistent schemas
 
 ### 2. Data Transformation (Automated Daily)
@@ -38,36 +54,42 @@ The data pipeline is now comprehensive, automated, and production-ready with sch
 **What It Does:**
 
 - Waits for successful ingestion (gate check)
-- Runs 7 transformation SQL scripts:
-  1. `sensor_readings_long` - Unpivot to long format
-  2. `sensor_readings_hourly` - Hourly aggregates
-  3. `sensor_readings_daily` - Daily aggregates
-  4. `sensor_id_map` - Device ID mapping
-  5. `sensor_canonical_location` - Location standardization
-  6. `sensor_location_dim` - Location dimension table
-  7. `views_for_mapping` - Visualization views
+- Runs 8 transformation SQL scripts:
+  1. `01_sensor_readings_long.sql`
+  2. `02_hourly_summary.sql`
+  3. `03_daily_summary.sql`
+  4. `03a_sensor_id_map.sql`
+  5. `04_sensor_canonical_location.sql`
+  6. `04b_sensor_location_dim.sql`
+  7. `05_views_for_mapping.sql`
+  8. `06_source_specific_views.sql`
 
-### 3. Data Quality Monitoring (NEW - Automated Daily)
+### 3. Data Quality Monitoring (Automated Daily)
 
-**Workflow:** `.github/workflows/data-quality-check.yml` ✨ **NEW**  
-**Schedule:** 08:00 UTC daily (after transformations)  
-**Status:** ✅ AUTOMATED
+**Workflow:** `.github/workflows/tsi-data-quality.yml`  
+**Schedule:** 08:30 UTC daily (after transformations)  
+**Status:** ✅ AUTOMATED (Added Oct 6, 2025)
 
 **What It Does:**
 
-- ✅ Checks schema consistency across date partitions
+- ✅ Checks raw table existence and record counts
+- ✅ **CRITICAL: Monitors TSI NULL metrics** (pm2_5, temperature, humidity)
 - ✅ Validates data coverage (90% TSI, 95% WU thresholds)
 - ✅ Compares aggregate table consistency
-- ✅ Fails workflow if issues found
-- ✅ Uploads logs as artifacts
-- ✅ Alerts on PR comments if quality issues detected
+- ✅ Auto-creates GitHub issues on failures
+- ✅ Posts to Microsoft Teams on failures
+- ✅ Provides investigation steps in issue body
 
-**New Script:** `scripts/check_data_quality.py`
+**Script:** `scripts/check_data_quality.py` (556 lines)
 
-- 394 lines of comprehensive quality checks
+- Detects NULL metrics with 2% threshold
 - Supports both TSI and WU sources
-- Flexible date range options
+- Flexible date range options (--days, --start/end)
 - CI/CD integration with `--fail-on-issues` flag
+- Metric-based filtering (identifies TSI vs WU by metric names)
+
+**Why This Matters:**
+In Oct 2025, we discovered 71 days of TSI data had ALL metrics NULL due to bypassing the TSI parser. This monitoring would have detected it within 24 hours.
 
 ### 4. Additional Monitoring (Existing)
 
@@ -169,23 +191,27 @@ for col, dtype in dtype_map.items():
 ## Automation Timeline (Daily)
 
 ```text
-06:30 UTC - Metric Coverage Check starts
-06:45 UTC - Daily Ingestion starts
+05:00 UTC - Data Collection starts (Cloud Scheduler)
             ├── Data Collection (TSI + WU)
-            ├── Schema Validation (NEW ✨)
+            ├── Schema Validation
             ├── Upload to GCS
-            ├── Merge to Staging
+            ├── Materialize to BigQuery
             └── Freshness Checks
 07:25 UTC - Transformations start (after ingestion gate)
-            ├── sensor_readings_long
-            ├── hourly/daily aggregates
-            ├── dimension tables
-            └── views
-08:00 UTC - Data Quality Check starts (NEW ✨)
-            ├── Schema consistency check
-            ├── Coverage validation
-            ├── Aggregate consistency
-            └── Alert if issues found
+            ├── 01_sensor_readings_long.sql
+            ├── 02_hourly_summary.sql
+            ├── 03_daily_summary.sql
+            ├── 03a_sensor_id_map.sql
+            ├── 04_sensor_canonical_location.sql
+            ├── 04b_sensor_location_dim.sql
+            ├── 05_views_for_mapping.sql
+            └── 06_source_specific_views.sql
+08:30 UTC - Data Quality Check starts
+            ├── Raw Table Checks
+            ├── TSI NULL Metric Check
+            ├── Coverage Validation
+            ├── Aggregate Consistency
+            └── Alert on Failure
 ```
 
 ## CI/CD Workflow Updates

@@ -150,7 +150,7 @@ The repo includes `scripts/create_secrets.sh` to idempotently create secrets and
 Example usage:
 
 ```bash
-export WU_API_KEY=abc123 \
+export WU_API_KEY=your-wu-api-key \
   TSI_CLIENT_ID=cid \
   TSI_CLIENT_SECRET=csecret \
   TSI_AUTH_URL=https://auth.example.com/oauth/token

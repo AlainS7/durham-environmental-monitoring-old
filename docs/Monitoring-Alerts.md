@@ -7,7 +7,7 @@ This document outlines the layered approach for surfacing failures and data fres
 | Layer | Purpose | Tooling | Destination |
 |-------|---------|---------|-------------|
 | Runtime Infra | Cloud Run job / Scheduler failures | Cloud Monitoring Alerts | Teams Webhook (+ optional email) |
-| Data Pipeline (dbt) | Model/test/freshness failures | GitHub Actions + dbt tests | Teams Webhook |
+| Data Pipeline | Transformation script failures | GitHub Actions | Teams Webhook |
 | Ingestion Quality | Row/metric threshold regressions | Existing Python scripts + CI | Teams (via workflow failure) |
 | Historical Trend | Cost & volume anomalies | (Future) BigQuery scheduled queries -> custom metric | Teams / Dashboard |
 
@@ -23,12 +23,11 @@ Scripts:
 
 Workflows updated to call this script on failure:
 
-- `.github/workflows/dbt-run-test.yml`
 - `.github/workflows/transformations-execute.yml`
 
 ## Source Freshness
 
-Defined in `transformations/dbt/models/sources.yml` with 26h warn / 36h error windows. The `dbt source freshness` command in the run/test workflow enforces this.
+A data freshness check is performed by the `data-freshness.yml` GitHub Actions workflow. It has a 26h warn / 36h error window.
 
 ## Adding Cloud Monitoring Alerts (Outline)
 
@@ -94,4 +93,4 @@ Include:
 - Multi-env separation (dev vs prod channels)
 
 ---
-Last updated: YYYY-MM-DD
+Last updated: 2025-10-06

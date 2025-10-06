@@ -13,82 +13,73 @@ This guide outlines least-privilege IAM for the Durham Environmental Monitoring 
 
 ## Service Accounts
 
-Create dedicated service accounts:
+Three dedicated service accounts are used to ensure a separation of duties:
 
-```bash
-gcloud iam service-accounts create verifier-sa --display-name="Daily Verifier"
-gcloud iam service-accounts create ingestion-sa --display-name="Ingestion Pipeline"
-```
+1.  **`weather-ingest@...`**: Used by the data collection pipeline to ingest data from APIs and upload it to Cloud Storage.
+2.  **`weather-transform@...`**: Used by the transformation pipeline to run BigQuery jobs that transform raw data into analytics-ready tables.
+3.  **`weather-verify@...`**: Used by the data quality and verification pipelines to run checks against the data in BigQuery.
 
 ## Roles & Permissions
 
-Principle of granting the narrowest predefined roles first; only use custom roles if required.
+Each service account is granted the minimum set of permissions required for its task:
 
-### Verifier SA
-Needs to list tables, read schemas, count rows, and perform a GCS round trip (write + read one object).
+### `weather-ingest@...`
 
-Grant:
-* roles/storage.objectAdmin (scoped to the specific bucket) – if you want write/read test object. For pure read, split into objectViewer + a dedicated prefix writer via bucket IAM conditions.
-* roles/bigquery.dataViewer (dataset level)
-* roles/bigquery.metadataViewer (project or dataset)
-* roles/bigquery.jobUser (project) – to run queries
+*   `roles/storage.objectCreator`: To write Parquet files to the GCS bucket.
+*   `roles/secretmanager.secretAccessor`: To access API keys stored in Secret Manager.
+*   `roles/run.invoker`: To invoke the Cloud Run job for data collection.
 
-Optional hardening: replace objectAdmin with objectCreator + objectViewer and a lifecycle rule to expire test objects.
+### `weather-transform@...`
 
-### Ingestion SA
-Needs to write Parquet objects and load into staging tables.
+*   `roles/bigquery.dataEditor`: To create, update, and delete tables in the BigQuery dataset.
+*   `roles/bigquery.jobUser`: To run BigQuery jobs.
 
-Grant:
-* roles/storage.objectCreator (bucket)
-* roles/storage.objectViewer (bucket) – (optional, if it needs to list)
-* roles/bigquery.dataEditor (dataset) – to insert & create staging tables
-* roles/bigquery.jobUser (project)
+### `weather-verify@...`
 
-Hardening improvement: move from dataEditor to a custom role that only allows bigquery.tables.create + bigquery.tables.get + bigquery.tables.updateData.
-
-### Normalization / Backfill (Human)
-Grant temporarily via gcloud CLI:
-* roles/bigquery.dataEditor (dataset)
-* roles/storage.objectViewer (bucket)
-Revoke after completion (use IAM Conditions with expiration when possible).
-
-### Analytics / BI Users
-* roles/bigquery.dataViewer (dataset list)
-* roles/bigquery.jobUser (if they need ad-hoc queries outside Looker/BI tool – otherwise skip)
-
-## Dataset Policy Example
-
-```bash
-gcloud bigquery datasets add-iam-policy-binding sensors \
-  --member=serviceAccount:verifier-sa@PROJECT_ID.iam.gserviceaccount.com \
-  --role=roles/bigquery.dataViewer
-```
-
-Repeat for ingestion-sa with dataEditor or custom role.
+*   `roles/bigquery.dataViewer`: To read data from the BigQuery dataset.
+*   `roles/bigquery.jobUser`: To run BigQuery jobs.
 
 ## Workload Identity Federation (GitHub → GCP)
 
-1. Create provider:
+Workload Identity Federation is used to allow GitHub Actions to securely authenticate to GCP without using service account keys. Each of the three service accounts is configured to be used by GitHub Actions workflows.
 
-```bash
-gcloud iam workload-identity-pools create github-pool --location=global --display-name="GitHub Pool"
-gcloud iam workload-identity-pools providers create-oidc github-provider \
-  --workload-identity-pool=github-pool \
-  --display-name="GitHub OIDC" \
-  --issuer-uri="https://token.actions.githubusercontent.com" \
-  --allowed-audiences="https://github.com/AlainS7/durham-environmental-monitoring" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository"
-```
+1.  **Create a Workload Identity Pool and Provider:**
 
-1. Bind attribute condition to verifier SA:
+    ```bash
+    gcloud iam workload-identity-pools create github-pool --location=global --display-name="GitHub Pool"
+    gcloud iam workload-identity-pools providers create-oidc github-provider \
+      --workload-identity-pool=github-pool \
+      --display-name="GitHub OIDC" \
+      --issuer-uri="https://token.actions.githubusercontent.com" \
+      --allowed-audiences="https://github.com/AlainS7/durham-environmental-monitoring" \
+      --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository"
+    ```
 
-```bash
-gcloud iam service-accounts add-iam-policy-binding verifier-sa@PROJECT_ID.iam.gserviceaccount.com \
-  --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/AlainS7/durham-environmental-monitoring"
-```
+2.  **Bind the Service Accounts to the Workload Identity Pool:**
 
-1. Store provider and SA email as GitHub secrets: GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_VERIFIER_SA.
+    ```bash
+    # Bind the ingest service account
+    gcloud iam service-accounts add-iam-policy-binding weather-ingest@... \
+      --role=roles/iam.workloadIdentityUser \
+      --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/AlainS7/durham-environmental-monitoring"
+
+    # Bind the transform service account
+    gcloud iam service-accounts add-iam-policy-binding weather-transform@... \
+      --role=roles/iam.workloadIdentityUser \
+      --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/AlainS7/durham-environmental-monitoring"
+
+    # Bind the verify service account
+    gcloud iam service-accounts add-iam-policy-binding weather-verify@... \
+      --role=roles/iam.workloadIdentityUser \
+      --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/AlainS7/durham-environmental-monitoring"
+    ```
+
+3.  **Store the Workload Identity Provider and Service Account Emails as GitHub Secrets:**
+
+    *   `GCP_WORKLOAD_IDENTITY_PROVIDER`
+    *   `GCP_SERVICE_ACCOUNT_INGEST`
+    *   `GCP_SERVICE_ACCOUNT_TRANSFORM`
+    *   `GCP_SERVICE_ACCOUNT_VERIFY`
 
 \n## Bucket Hardening
 \n* Enforce uniform bucket-level access.
