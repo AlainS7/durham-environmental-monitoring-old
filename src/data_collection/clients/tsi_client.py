@@ -81,95 +81,103 @@ class TSIClient(BaseClient):
             longitude = location.get('longitude')
             is_indoor = metadata.get('is_indoor')
             is_public = metadata.get('is_public')
-            friendly_name = metadata.get('friendly_name')
             model = row.get('model')
             cloud_account_id = row.get('cloud_account_id')
             
-            # Initialize all sensor values
-            pm_1_0 = None
-            pm_2_5 = None
-            pm_4_0 = None
-            pm_10 = None
-            pm2_5_aqi = None
-            pm10_aqi = None
-            ncpm0_5 = None
-            ncpm1_0 = None
-            ncpm2_5 = None
-            ncpm4_0 = None
-            ncpm10 = None
-            temp = None
-            rh = None
-            tpsize = None
-            co2_ppm = None
-            co_ppm = None
-            baro_inhg = None
-            o3_ppb = None
-            no2_ppb = None
-            so2_ppb = None
-            ch2o_ppb = None
-            voc_mgm3 = None
+            # Initialize all sensor values with typed defaults (0.0 for float, '' for string, False for bool)
+            # This ensures consistent parquet schemas even when measurements are empty
+            # Using 0.0 instead of None prevents null-type columns in parquet
+            pm_1_0 = 0.0
+            pm_2_5 = 0.0
+            pm_4_0 = 0.0
+            pm_10 = 0.0
+            pm2_5_aqi = 0.0
+            pm10_aqi = 0.0
+            ncpm0_5 = 0.0
+            ncpm1_0 = 0.0
+            ncpm2_5 = 0.0
+            ncpm4_0 = 0.0
+            ncpm10 = 0.0
+            temp = 0.0
+            rh = 0.0
+            tpsize = 0.0
+            co2_ppm = 0.0
+            co_ppm = 0.0
+            baro_inhg = 0.0
+            o3_ppb = 0.0
+            no2_ppb = 0.0
+            so2_ppb = 0.0
+            ch2o_ppb = 0.0
+            voc_mgm3 = 0.0
+            serial = ''  # Initialize serial with empty string
             
             # Extract measurements from nested sensors array
             sensors = row.get('sensors', [])
             for sensor in sensors:
-                serial = sensor.get('serial')  # Get serial from first sensor
+                sensor_serial = sensor.get('serial')
+                if sensor_serial:
+                    serial = sensor_serial  # Override with actual serial if found
                 measurements = sensor.get('measurements', [])
                 for measurement in measurements:
                     name = measurement.get('name', '')
                     value = measurement.get('data', {}).get('value')
                     
+                    # Only update field if value is not None (preserve 0.0 default for missing measurements)
+                    if value is None:
+                        continue
+                    
                     # Map measurement names to fields
                     if name == 'PM 1.0':
-                        pm_1_0 = value
+                        pm_1_0 = float(value)
                     elif name == 'PM 2.5':
-                        pm_2_5 = value
+                        pm_2_5 = float(value)
                     elif name == 'PM 4.0':
-                        pm_4_0 = value
+                        pm_4_0 = float(value)
                     elif name == 'PM 10':
-                        pm_10 = value
+                        pm_10 = float(value)
                     elif name == 'PM 2.5 AQI':
-                        pm2_5_aqi = value
+                        pm2_5_aqi = float(value)
                     elif name == 'PM 10 AQI':
-                        pm10_aqi = value
+                        pm10_aqi = float(value)
                     elif name == 'NC 0.5':
-                        ncpm0_5 = value
+                        ncpm0_5 = float(value)
                     elif name == 'NC 1.0':
-                        ncpm1_0 = value
+                        ncpm1_0 = float(value)
                     elif name == 'NC 2.5':
-                        ncpm2_5 = value
+                        ncpm2_5 = float(value)
                     elif name == 'NC 4.0':
-                        ncpm4_0 = value
+                        ncpm4_0 = float(value)
                     elif name == 'NC 10':
-                        ncpm10 = value
+                        ncpm10 = float(value)
                     elif name == 'Temperature':
-                        temp = value
+                        temp = float(value)
                     elif name == 'Relative Humidity':
-                        rh = value
+                        rh = float(value)
                     elif name == 'Typical Particle Size':
-                        tpsize = value
+                        tpsize = float(value)
                     elif name == 'CO2':
-                        co2_ppm = value
+                        co2_ppm = float(value)
                     elif name == 'CO':
-                        co_ppm = value
+                        co_ppm = float(value)
                     elif name == 'Barometric Pressure':
-                        baro_inhg = value
+                        baro_inhg = float(value)
                     elif name == 'O3':
-                        o3_ppb = value
+                        o3_ppb = float(value)
                     elif name == 'NO2':
-                        no2_ppb = value
+                        no2_ppb = float(value)
                     elif name == 'SO2':
-                        so2_ppb = value
+                        so2_ppb = float(value)
                     elif name == 'CH2O':
-                        ch2o_ppb = value
+                        ch2o_ppb = float(value)
                     elif name == 'VOC':
-                        voc_mgm3 = value
+                        voc_mgm3 = float(value)
             
             data.append({
                 'timestamp': timestamp,
                 'cloud_account_id': cloud_account_id,
                 'device_id': device_id,
                 'model': model,
-                'serial': serial if 'serial' in locals() else None,
+                'serial': serial,
                 'latitude': latitude,
                 'longitude': longitude,
                 'is_indoor': is_indoor,
@@ -205,6 +213,51 @@ class TSIClient(BaseClient):
         df = pd.DataFrame(data)
         log.info(f"TSI DataFrame for device {device_id} date {date_iso}: shape={df.shape}")
         log.debug(f"TSI columns: {list(df.columns)}\nSample:\n{df.head().to_string(index=False)}")
+        
+        # Explicitly set dtypes to ensure consistent parquet schema
+        # This is critical for BigQuery external tables to work correctly
+        dtype_map = {
+            'cloud_account_id': 'object',
+            'device_id': 'object',
+            'model': 'object',
+            'serial': 'object',
+            'latitude': 'float64',
+            'longitude': 'float64',
+            'is_indoor': 'bool',
+            'is_public': 'bool',
+            'pm1_0': 'float64',
+            'pm2_5': 'float64',
+            'pm4_0': 'float64',
+            'pm10': 'float64',
+            'pm2_5_aqi': 'float64',
+            'pm10_aqi': 'float64',
+            'ncpm0_5': 'float64',
+            'ncpm1_0': 'float64',
+            'ncpm2_5': 'float64',
+            'ncpm4_0': 'float64',
+            'ncpm10': 'float64',
+            'temperature': 'float64',
+            'rh': 'float64',
+            'tpsize': 'float64',
+            'co2_ppm': 'float64',
+            'co_ppm': 'float64',
+            'baro_inhg': 'float64',
+            'o3_ppb': 'float64',
+            'no2_ppb': 'float64',
+            'so2_ppb': 'float64',
+            'ch2o_ppb': 'float64',
+            'voc_mgm3': 'float64'
+        }
+        
+        # Apply dtype conversions
+        for col, dtype in dtype_map.items():
+            if col in df.columns:
+                try:
+                    df[col] = df[col].astype(dtype)
+                except Exception as e:
+                    log.warning(f"Could not convert column {col} to {dtype}: {e}")
+        
+        log.debug(f"TSI DataFrame dtypes after conversion:\n{df.dtypes}")
         
         # Convert timestamp using pandas' flexible ISO8601 parser
         df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', utc=True)

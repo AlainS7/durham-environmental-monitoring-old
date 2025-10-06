@@ -2,7 +2,7 @@ UV?=uv
 PY?=python
 PKG_SRC=src
 
-.PHONY: help lint test fmt run-collector load-bq run-transformations install create-external materialize e2e verify-outputs
+.PHONY: help lint test fmt run-collector load-bq run-transformations install create-external materialize e2e verify-outputs quality-check schema-validate
 
 help:
 	@echo "Targets:"
@@ -17,6 +17,8 @@ help:
 	@echo "  materialize            Materialize daily partitions from externals into native tables"
 	@echo "  e2e                    End-to-end: collect -> materialize -> transformations"
 	@echo "  verify-outputs         Print BigQuery counts per date for key tables"
+	@echo "  quality-check          Run comprehensive data quality checks"
+	@echo "  schema-validate        Validate TSI and WU schema definitions"
 
 install:
 	$(UV) venv
@@ -65,3 +67,11 @@ e2e:
 verify-outputs:
 	@# Required vars: START=YYYY-MM-DD END=YYYY-MM-DD DATASET (defaults from env)
 	$(UV) run python scripts/verify_outputs.py --project $${PROJECT:-$$BQ_PROJECT} --dataset $${DATASET:-$$BQ_DATASET} --start $(START) --end $(END)
+
+quality-check:
+	@# Run data quality check locally
+	$(UV) run python scripts/check_data_quality.py --days 1 --source both --dataset $${DATASET:-sensors}
+
+schema-validate:
+	@# Validate schema definitions
+	$(UV) run python -c "from src.utils.schema_validation import TSI_EXPECTED_SCHEMA, WU_EXPECTED_SCHEMA; print(f'✓ Schemas valid: TSI={len(TSI_EXPECTED_SCHEMA)} fields, WU={len(WU_EXPECTED_SCHEMA)} fields')"

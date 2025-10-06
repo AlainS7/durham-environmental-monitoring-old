@@ -44,6 +44,13 @@ jobs:
       run: |
         uv run ruff check .
 
+    - name: Validate schema definitions
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        # Quick validation that schema validation module loads correctly
+        uv run python -c "from src.utils.schema_validation import TSI_EXPECTED_SCHEMA, WU_EXPECTED_SCHEMA; print(f'TSI schema: {len(TSI_EXPECTED_SCHEMA)} fields, WU schema: {len(WU_EXPECTED_SCHEMA)} fields')"
+
     - name: Test with pytest
       env:
         PYTHONPATH: ${{ github.workspace }}

@@ -60,9 +60,33 @@ WITH
       native_sensor_id,
       COALESCE(CAST(latitude_f AS FLOAT64), CAST(latitude AS FLOAT64)) AS latitude,
       COALESCE(CAST(longitude_f AS FLOAT64), CAST(longitude AS FLOAT64)) AS longitude,
+      -- Particulate Matter measurements
+      CAST(pm1_0 AS FLOAT64) AS pm1_0,
       CAST(pm2_5 AS FLOAT64) AS pm2_5,
+      CAST(pm4_0 AS FLOAT64) AS pm4_0,
+      CAST(pm10 AS FLOAT64) AS pm10,
+      CAST(pm2_5_aqi AS FLOAT64) AS pm2_5_aqi,
+      CAST(pm10_aqi AS FLOAT64) AS pm10_aqi,
+      -- Number Concentration measurements
+      CAST(ncpm0_5 AS FLOAT64) AS ncpm0_5,
+      CAST(ncpm1_0 AS FLOAT64) AS ncpm1_0,
+      CAST(ncpm2_5 AS FLOAT64) AS ncpm2_5,
+      CAST(ncpm4_0 AS FLOAT64) AS ncpm4_0,
+      CAST(ncpm10 AS FLOAT64) AS ncpm10,
+      -- Environmental measurements
+      CAST(temperature AS FLOAT64) AS temperature,
       CAST(humidity AS FLOAT64) AS humidity,
-      CAST(temperature AS FLOAT64) AS temperature
+      CAST(tpsize AS FLOAT64) AS tpsize,
+      -- Gas measurements
+      CAST(co2_ppm AS FLOAT64) AS co2_ppm,
+      CAST(co_ppm AS FLOAT64) AS co_ppm,
+      CAST(o3_ppb AS FLOAT64) AS o3_ppb,
+      CAST(no2_ppb AS FLOAT64) AS no2_ppb,
+      CAST(so2_ppb AS FLOAT64) AS so2_ppb,
+      CAST(ch2o_ppb AS FLOAT64) AS ch2o_ppb,
+      CAST(voc_mgm3 AS FLOAT64) AS voc_mgm3,
+      -- Pressure
+      CAST(baro_inhg AS FLOAT64) AS baro_inhg
     FROM `${PROJECT}.${DATASET}.tsi_raw_materialized`
     WHERE ts IS NOT NULL AND DATE(ts) = proc_date
   ),
@@ -84,7 +108,18 @@ WITH
   ),
   tsi_long AS (
     SELECT timestamp, native_sensor_id, latitude, longitude, metric_name, value FROM tsi_src
-    UNPIVOT (value FOR metric_name IN (pm2_5, humidity, temperature))
+    UNPIVOT (value FOR metric_name IN (
+      -- Particulate Matter
+      pm1_0, pm2_5, pm4_0, pm10, pm2_5_aqi, pm10_aqi,
+      -- Number Concentration
+      ncpm0_5, ncpm1_0, ncpm2_5, ncpm4_0, ncpm10,
+      -- Environmental
+      temperature, humidity, tpsize,
+      -- Gases
+      co2_ppm, co_ppm, o3_ppb, no2_ppb, so2_ppb, ch2o_ppb, voc_mgm3,
+      -- Pressure
+      baro_inhg
+    ))
   )
 SELECT timestamp, native_sensor_id, metric_name, value,
        latitude, longitude,
@@ -156,9 +191,33 @@ WITH
       native_sensor_id,
       COALESCE(CAST(latitude_f AS FLOAT64), CAST(latitude AS FLOAT64)) AS latitude,
       COALESCE(CAST(longitude_f AS FLOAT64), CAST(longitude AS FLOAT64)) AS longitude,
+      -- Particulate Matter measurements
+      CAST(pm1_0 AS FLOAT64) AS pm1_0,
       CAST(pm2_5 AS FLOAT64) AS pm2_5,
+      CAST(pm4_0 AS FLOAT64) AS pm4_0,
+      CAST(pm10 AS FLOAT64) AS pm10,
+      CAST(pm2_5_aqi AS FLOAT64) AS pm2_5_aqi,
+      CAST(pm10_aqi AS FLOAT64) AS pm10_aqi,
+      -- Number Concentration measurements
+      CAST(ncpm0_5 AS FLOAT64) AS ncpm0_5,
+      CAST(ncpm1_0 AS FLOAT64) AS ncpm1_0,
+      CAST(ncpm2_5 AS FLOAT64) AS ncpm2_5,
+      CAST(ncpm4_0 AS FLOAT64) AS ncpm4_0,
+      CAST(ncpm10 AS FLOAT64) AS ncpm10,
+      -- Environmental measurements
+      CAST(temperature AS FLOAT64) AS temperature,
       CAST(humidity AS FLOAT64) AS humidity,
-      CAST(temperature AS FLOAT64) AS temperature
+      CAST(tpsize AS FLOAT64) AS tpsize,
+      -- Gas measurements
+      CAST(co2_ppm AS FLOAT64) AS co2_ppm,
+      CAST(co_ppm AS FLOAT64) AS co_ppm,
+      CAST(o3_ppb AS FLOAT64) AS o3_ppb,
+      CAST(no2_ppb AS FLOAT64) AS no2_ppb,
+      CAST(so2_ppb AS FLOAT64) AS so2_ppb,
+      CAST(ch2o_ppb AS FLOAT64) AS ch2o_ppb,
+      CAST(voc_mgm3 AS FLOAT64) AS voc_mgm3,
+      -- Pressure
+      CAST(baro_inhg AS FLOAT64) AS baro_inhg
     FROM `${PROJECT}.${DATASET}.tsi_raw_materialized`
     WHERE ts IS NOT NULL AND DATE(ts) = proc_date
   ),
@@ -180,7 +239,18 @@ WITH
   ),
   tsi_long AS (
     SELECT timestamp, native_sensor_id, latitude, longitude, metric_name, value FROM tsi_src
-    UNPIVOT (value FOR metric_name IN (pm2_5, humidity, temperature))
+    UNPIVOT (value FOR metric_name IN (
+      -- Particulate Matter
+      pm1_0, pm2_5, pm4_0, pm10, pm2_5_aqi, pm10_aqi,
+      -- Number Concentration
+      ncpm0_5, ncpm1_0, ncpm2_5, ncpm4_0, ncpm10,
+      -- Environmental
+      temperature, humidity, tpsize,
+      -- Gases
+      co2_ppm, co_ppm, o3_ppb, no2_ppb, so2_ppb, ch2o_ppb, voc_mgm3,
+      -- Pressure
+      baro_inhg
+    ))
   )
 SELECT timestamp, native_sensor_id, metric_name, value,
        latitude, longitude,

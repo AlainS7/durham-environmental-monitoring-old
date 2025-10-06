@@ -31,6 +31,14 @@ from src.storage.gcs_uploader import GCSUploader
 from src.data_collection.clients.wu_client import WUClient
 from src.data_collection.clients.tsi_client import TSIClient
 from src.utils.config_loader import get_wu_stations, get_tsi_devices
+from src.utils.schema_validation import (
+    validate_tsi_schema,
+    validate_wu_schema,
+    check_tsi_coverage,
+    check_wu_coverage,
+    log_schema_comparison,
+    get_schema_info
+)
 
 log = logging.getLogger(__name__)
 
@@ -433,13 +441,39 @@ def _build_uploader(bucket: str, prefix: str):
 
 
 def _safe_upload(uploader: Any, df: pd.DataFrame, src: str, aggregate: bool, agg_interval: str) -> bool:
+    """
+    Upload DataFrame to GCS with schema validation and error handling.
+    
+    Returns True if upload succeeded, False otherwise.
+    """
     if df.empty:
         log.info(f"Skip {src}: empty")
         return False
+    
     ts_col = 'ts' if 'ts' in df.columns else ('timestamp' if 'timestamp' in df.columns else None)
     if not ts_col:
         log.warning(f"Skip {src}: no ts/timestamp column")
         return False
+    
+    # Validate schema before upload (non-aggregated data only)
+    if not aggregate:
+        if src == 'TSI':
+            schema_valid = validate_tsi_schema(df)
+            coverage_valid = check_tsi_coverage(df)
+            if not schema_valid:
+                log.error("TSI schema validation failed - uploading anyway but data quality may be impacted")
+                log.debug(f"TSI schema info: {get_schema_info(df)}")
+            if not coverage_valid:
+                log.warning("TSI coverage check failed - some critical fields have low coverage")
+        elif src == 'WU':
+            schema_valid = validate_wu_schema(df)
+            coverage_valid = check_wu_coverage(df)
+            if not schema_valid:
+                log.error("WU schema validation failed - uploading anyway but data quality may be impacted")
+                log.debug(f"WU schema info: {get_schema_info(df)}")
+            if not coverage_valid:
+                log.warning("WU coverage check failed - some critical fields have low coverage")
+    
     try:
         uploader.upload_parquet(df, source=src, aggregated=aggregate, interval=agg_interval, ts_column=ts_col)
         return True
